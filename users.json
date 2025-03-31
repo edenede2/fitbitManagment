@@ -1,0 +1,17 @@
+{
+    "Eden": {
+        "password": "$2b$12$z5yPhrVhJ95eT.ZNEUeDdejxDsC/GMUt00DdW6l7ZovML22Qzq.2a",
+        "email": "edenede2@gmail.com",
+        "name": "Eden"
+    },
+    "Omri": {
+        "password": "$2b$12$3AskHDTTC8D.UOuDh3KMsOaJOnfE4CEuKns2Ru0XtDLE588vz1QoW",
+        "email": "omri.radai@gmail.com",
+        "name": "Omri"
+    },
+    "Gidi": {
+        "password": "$2b$12$bB8LclaEo1rhZzoZOI0NJuoi5R2rl1eC2iK789pdEJd3F4ftjQYGS",
+        "email": "gideon.lossin@gmail.com",
+        "name": "Gidi"
+    }
+}
