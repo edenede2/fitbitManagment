@@ -1,5 +1,7 @@
 from Spreadsheet_io.sheets import Spreadsheet
-
+import requests
+import json
+import datetime
 
 BASE_URL2 = "https://api.fitbit.com/1.2/user/-/"
 BASE_URL = "https://api.fitbit.com/1/user/-/"
@@ -74,6 +76,92 @@ class Watch:
     
     def get_header(self):
         return self.header
+    
+    def get_current_hourly_HR(self):
+        current_date = datetime.datetime.now().strftime("%Y-%m-%d")
+        current_time = datetime.datetime.now()
+        current_time_str = current_time.strftime("%H:%M")
+        hour_ago = current_time - datetime.timedelta(hours=1)
+        hour_ago_str = hour_ago.strftime("%H:%M")
+        ihr_endpoint = URL_DICT["Heart Rate Intraday"].format(current_date, hour_ago_str, current_time_str)
+        response = requests.get(ihr_endpoint, headers=self.header)
+        if response.status_code == 200:
+            data = response.json()
+            if data['activities-heart-intraday']['dataset']:
+                heart_rate = data['activities-heart-intraday']['dataset'][-1]['value']
+                return heart_rate
+            else:
+                return None
+        else:
+            print(f"Error: {response.status_code}")
+            return None
+        
+    def get_current_hourly_steps(self):
+        current_date = datetime.datetime.now().strftime("%Y-%m-%d")
+        current_time = datetime.datetime.now()
+        current_time_str = current_time.strftime("%H:%M")
+        hour_ago = current_time - datetime.timedelta(hours=1)
+        hour_ago_str = hour_ago.strftime("%H:%M")
+        ihr_endpoint = URL_DICT["Steps Intraday"].format(current_date, hour_ago_str, current_time_str)
+        response = requests.get(ihr_endpoint, headers=self.header)
+        if response.status_code == 200:
+            data = response.json()
+            if data['activities-steps-intraday']['dataset']:
+                steps = data['activities-steps-intraday']['dataset'][-1]['value']
+                return steps
+            else:
+                return None
+        else:
+            print(f"Error: {response.status_code}")
+            return None
+        
+    def get_current_battery(self):
+        device_endpoint = URL_DICT["device"]
+        response = requests.get(device_endpoint, headers=self.header)
+        if response.status_code == 200:
+            data = response.json()
+            if data:
+                battery_level = data[0]['batteryLevel']
+                return battery_level
+            else:
+                return None
+        else:
+            print(f"Error: {response.status_code}")
+            return None
+        
+    
+    def get_last_sleep_start_end(self):
+        previous_date = datetime.datetime.now() - datetime.timedelta(days=1)
+        previous_date_str = previous_date.strftime("%Y-%m-%d")
+        current_date = datetime.datetime.now().strftime("%Y-%m-%d")
+
+        sleep_endpoint = URL_DICT["Sleep"].format(previous_date_str, current_date)
+        response = requests.get(sleep_endpoint, headers=self.header)
+
+        if response.status_code == 200:
+            data = response.json()
+            if data['sleep']:
+                sleep_start = data['sleep'][0]['startTime']
+                sleep_end = data['sleep'][0]['endTime']
+                return sleep_start, sleep_end
+            else:
+                return None, None
+        else:
+            print(f"Error: {response.status_code}")
+            return None, None
+        
+    def get_last_sleep_duration(self):
+        last_sleep_start, last_sleep_end = self.get_last_sleep_start_end()
+    
+        if last_sleep_start and last_sleep_end:
+            start_time = datetime.datetime.strptime(last_sleep_start, "%Y-%m-%dT%H:%M:%S.%fZ")
+            end_time = datetime.datetime.strptime(last_sleep_end, "%Y-%m-%dT%H:%M:%S.%fZ")
+            duration = end_time - start_time
+            return duration.total_seconds() / 3600
+        else:
+            return None
+        
+    
     
 
 
