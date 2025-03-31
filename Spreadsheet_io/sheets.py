@@ -77,3 +77,37 @@ class Spreadsheet:
     def get_fitbits_details(cls):
         instance = cls.get_instance()
         return instance.spreadsheet.get_worksheet(2).get_all_records()
+
+    @classmethod
+    def get_fitbits_log(cls):
+        instance = cls.get_instance()
+        # return instance.spreadsheet.get_worksheet(3).get_all_records()
+        return instance.spreadsheet.get_worksheet(3).get_all_values()
+
+    @classmethod
+    def append_fitbits_log(cls, fitbits_data):
+        instance = cls.get_instance()
+        worksheet = instance.spreadsheet.get_worksheet(3)
+        
+        new_row = [
+            fitbits_data["project"],
+            fitbits_data["watchName"],
+            fitbits_data["lastSynced"],
+            fitbits_data["lastHR"],
+            fitbits_data["lastHRVal"],
+            fitbits_data["longestHRSeq"],
+            fitbits_data["startActiveDate"],
+            fitbits_data["isActive"],
+            fitbits_data["endActiveDate"],
+            fitbits_data["LastSleepStartDateTime"],
+            fitbits_data["LastSleepEndDateTime"],
+            fitbits_data["LastStepsMean"],
+            fitbits_data["CurrentFailedSync"],
+            fitbits_data["TotalFailedSync"],
+            fitbits_data["CurrentFailedHR"],
+            fitbits_data["TotalFailedHR"],
+            fitbits_data["CurrentFailedSleep"],
+            fitbits_data["TotalFailedSleep"],
+            fitbits_data["CurrentFailedSteps"],
+            fitbits_data["TotalFailedSteps"]
+        ]
