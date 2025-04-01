@@ -36,6 +36,7 @@ class Watch:
         self.user = details.get('user', None) if details else ''
         self.header = get_headers(self.token)
         self.current_student = None
+        self.is_active = details.get('isActive', None) if details else None
 
     def __str__(self):
         return f"Fitbit Watch: {self.name}, Project: {self.project}, User: {self.user}, Token: {self.token}"
@@ -76,6 +77,9 @@ class Watch:
     
     def get_header(self):
         return self.header
+    
+    def get_is_active(self):
+        return self.is_active
     
     def get_current_hourly_HR(self):
         current_date = datetime.datetime.now().strftime("%Y-%m-%d")
