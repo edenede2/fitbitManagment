@@ -2,7 +2,7 @@ import streamlit as st
 
 from Spreadsheet_io.sheets import Spreadsheet
 
-def getMenu(project,user,role,client):
+def getMenu(role):
     sp = Spreadsheet.get_instance()
     projects = sp.get_project_details()
 

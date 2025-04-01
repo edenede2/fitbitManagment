@@ -53,28 +53,40 @@ def load_data():
 
 
 def login_user(credentials):
-    authenticator = stauth.Authenticate(
-        credentials,
-        cookie_name = "fitbit_users",
-        cookie_key = "abcdef",
-        cookie_expiry_days=30,
-        auto_hash=True,
-        api_key=st.secrets["api_key"]
-    )
-    try:
-        authenticator.login(location="sidebar")
-    except Exception as e:
-        st.error(e)
+    # authenticator = stauth.Authenticate(
+    #     credentials,
+    #     cookie_name = "fitbit_users",
+    #     cookie_key = "abcdef",
+    #     cookie_expiry_days=30,
+    #     auto_hash=True,
+    #     api_key=st.secrets["api_key"]
+    # )
+    # try:
+    #     authenticator.login(location="sidebar")
+    # except Exception as e:
+        # st.error(e)
+    if "username" not in st.session_state:
+        st.session_state["username"] = None
+    if "email" not in st.session_state:
+        st.session_state["email"] = None
+    if "role" not in st.session_state:
+        st.session_state["role"] = None
 
+    if st.button("Authenticate"):
+        st.login('google')
 
+    
+    if st.experimental_user.is_logged_in:
+        logout_button = st.button("Logout")
+        if logout_button:
+            st.logout()
 
-    if st.session_state.get('authentication_status'):
-        authenticator.logout(location="sidebar")
-    elif st.session_state.get('authentication_status') is False:
+        st.write(f'Welcome *{st.experimental_user.get("name")}*')
+        st.title('Some content')
+    elif st.experimental_user.is_logged_in is False:
         st.error('Username/password is incorrect')
-    elif st.session_state.get('authentication_status') is None:
+    elif st.experimental_user.is_logged_in is None:
         st.warning('Please enter your username and password')
-
 
 
 def main():
@@ -84,14 +96,14 @@ def main():
     if "authentication_status" not in st.session_state:
         st.session_state["authentication_status"] = None
 
-    if "authentication_status" == None or False:
+    if st.experimental_user["is_logged_in"] == None or False:
         st.title("Home Page")
         st.write("Welcome to the fitbit management system")
         st.write("Please login open the sidebar to access the app")
     else:
-        congrate = congrats().format(st.session_state["name"])
-        st.session_state["role"] = users_dict[st.session_state["name"]]['role']
-        st.session_state["project"] = users_dict[st.session_state["name"]]['project']
+        congrate = congrats().format(st.experimental_user['name'])
+        st.session_state["role"] = users_dict[st.experimental_user['name']]['role']
+        st.session_state["project"] = users_dict[st.experimental_user['name']]['project']
         st.title(congrate)
         st.write("Welcome to the fitbit management system")
         st.write("What would you like to do today?")
@@ -100,10 +112,7 @@ def main():
         spreadsheet = Spreadsheet.get_instance()
         
         projectAc, choice = getMenu(
-            st.session_state["project"],
-            st.session_state["name"],
-            users_dict[st.session_state["name"]]['role'],
-            spreadsheet.client  # Pass the client from the Spreadsheet singleton
+            users_dict[st.experimental_user["name"]]['role'],
         )
 
         if choice == "Dashboard":
