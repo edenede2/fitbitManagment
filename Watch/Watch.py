@@ -91,8 +91,10 @@ class Watch:
         response = requests.get(ihr_endpoint, headers=self.header)
         if response.status_code == 200:
             data = response.json()
+            
             if data['activities-heart-intraday']['dataset']:
                 heart_rate = data['activities-heart-intraday']['dataset'][-1]['value']
+                print(f"Heart Rate: {heart_rate}")
                 return heart_rate
             else:
                 return None
@@ -104,15 +106,23 @@ class Watch:
         current_date = datetime.datetime.now().strftime("%Y-%m-%d")
         current_time = datetime.datetime.now()
         current_time_str = current_time.strftime("%H:%M")
-        hour_ago = current_time - datetime.timedelta(hours=1)
+        hour_ago = current_time - datetime.timedelta(hours=6)
         hour_ago_str = hour_ago.strftime("%H:%M")
         ihr_endpoint = URL_DICT["Steps Intraday"].format(current_date, hour_ago_str, current_time_str)
         response = requests.get(ihr_endpoint, headers=self.header)
         if response.status_code == 200:
             data = response.json()
             if data['activities-steps-intraday']['dataset']:
-                steps = data['activities-steps-intraday']['dataset'][-1]['value']
-                return steps
+                steps_last = next((item for item in reversed(data['activities-steps-intraday']['dataset']) if item['value'] > 0), None)
+                if steps_last:
+                    steps = steps_last['value']
+                    time = steps_last['time']
+                    print(f"Steps: {steps}, Time: {time}")
+                    return steps
+                else:
+                    print("No non-zero steps found.")
+                    return None
+    
             else:
                 return None
         else:
@@ -156,12 +166,29 @@ class Watch:
         
     def get_last_sleep_duration(self):
         last_sleep_start, last_sleep_end = self.get_last_sleep_start_end()
-    
+        
         if last_sleep_start and last_sleep_end:
-            start_time = datetime.datetime.strptime(last_sleep_start, "%Y-%m-%dT%H:%M:%S.%fZ")
-            end_time = datetime.datetime.strptime(last_sleep_end, "%Y-%m-%dT%H:%M:%S.%fZ")
-            duration = end_time - start_time
-            return duration.total_seconds() / 3600
+            try:
+                # Try the format with 'Z' at the end
+                try:
+                    start_time = datetime.datetime.strptime(last_sleep_start, "%Y-%m-%dT%H:%M:%S.%fZ")
+                    end_time = datetime.datetime.strptime(last_sleep_end, "%Y-%m-%dT%H:%M:%S.%fZ")
+                except ValueError:
+                    # Try without the 'Z' at the end
+                    try:
+                        start_time = datetime.datetime.strptime(last_sleep_start, "%Y-%m-%dT%H:%M:%S.%f")
+                        end_time = datetime.datetime.strptime(last_sleep_end, "%Y-%m-%dT%H:%M:%S.%f")
+                    except ValueError:
+                        # Try with fewer decimals for milliseconds
+                        start_time = datetime.datetime.strptime(last_sleep_start, "%Y-%m-%dT%H:%M:%S.000")
+                        end_time = datetime.datetime.strptime(last_sleep_end, "%Y-%m-%dT%H:%M:%S.000")
+                
+                duration = end_time - start_time
+                return duration.total_seconds() / 3600
+            except Exception as e:
+                print(f"Error parsing sleep times: {e}")
+                print(f"Start time: {last_sleep_start}, End time: {last_sleep_end}")
+                return None
         else:
             return None
         
@@ -171,8 +198,8 @@ class Watch:
 
 
 def get_headers(token):
-    headers = HEADERS
-    headers['Authorization'] = f"Bearer {token}"
+    headers = HEADERS.copy()
+    headers['Authorization'] = headers['Authorization'].format(token)
     return headers
     
 

@@ -5,6 +5,7 @@ import polars as pl
 import datetime
 import os
 
+from model.config import get_secrets
 
 class Spreadsheet:
     _instance = None
@@ -26,6 +27,8 @@ class Spreadsheet:
     @staticmethod
     @st.cache_resource
     def _get_client():
+        secrets = get_secrets()
+
         scopes = [
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive",
@@ -33,7 +36,7 @@ class Spreadsheet:
         ]
         
         credentials = Credentials.from_service_account_info(
-            st.secrets["gcp_service_account"], scopes=scopes
+            secrets["gcp_service_account"], scopes=scopes
         )
         
         return gspread.authorize(credentials)
@@ -85,7 +88,6 @@ class Spreadsheet:
     @classmethod
     def get_fitbits_log(cls):
         instance = cls.get_instance()
-        # return instance.spreadsheet.get_worksheet(3).get_all_records()
         return instance.spreadsheet.get_worksheet(3).get_all_values()
 
     @classmethod
@@ -124,27 +126,36 @@ class Spreadsheet:
         Args:
             data_list (list): List of dictionaries containing the watch data.
         """
-        # Get the worksheet by index (3rd worksheet)
-        worksheet = self.spreadsheet.get_worksheet(2)  # 0-indexed, so 2 is the 3rd worksheet
+        # Get the worksheet by index (4th worksheet)
+        worksheet = self.spreadsheet.get_worksheet(3)  # 0-indexed, so 3 is the 4th worksheet
         
         if not data_list:
             print("No data to update in worksheet 3")
             return
             
+        # Define the expected column order based on the sheet structure
+        expected_columns = [
+            "project", "watchName", "lastCheck", "lastSynced", "lastBattary", 
+            "lastHR", "lastSleepStartDateTime", "lastSleepEndDateTime", "lastSteps", 
+            "lastBattaryVal", "lastHRVal", "lastHRSeq", "lastSleepDur", "lastStepsVal",
+            "CurrentFailedSync", "TotalFailedSync", "CurrentFailedHR", "TotalFailedHR",
+            "CurrentFailedSleep", "TotalFailedSleep", "CurrentFailedSteps", "TotalFailedSteps", "ID"
+        ]
+            
         # Clear the current content
         worksheet.clear()
         
-        # Get the column headers from the first dictionary
-        headers = list(data_list[0].keys())
+        # Add headers as the first row
+        worksheet.append_row(expected_columns)
         
-        # Prepare the data rows
-        rows = [headers]  # First row is headers
+        # Add data rows
         for item in data_list:
-            row = [item.get(header, '') for header in headers]
-            rows.append(row)
-        
-        # Update the worksheet with all data at once
-        worksheet.update(rows)
+            # Map data to expected columns format
+            row_data = []
+            for col in expected_columns:
+                row_data.append(str(item.get(col, '')))
+            
+            worksheet.append_row(row_data)
         
         print(f"Updated worksheet 3 with {len(data_list)} records")
 
@@ -207,25 +218,18 @@ class fitbitLog:
 
 
 class serverLogFile:
-    def __init__(self, project, watchName, syncedDateTime, battary, lastHR,
-                 lastSteps, lastSleepStartDateTime, lastSleepEndDateTime, 
-                 lastSleepDuration):
-        # self.project = project
-        # self.watchName = watchName
-        # self.syncedDateTime = syncedDateTime
-        # self.battary = battary
-        # self.lastHR = lastHR
-        # self.lastSteps = lastSteps
-        # self.lastSleepStartDateTime = lastSleepStartDateTime
-        # self.lastSleepEndDateTime = lastSleepEndDateTime
-        # self.lastSteps = lastSteps
-        # self.lastSleepDuration = lastSleepDuration
-        self.path = st.secrets["fitbit_log_path"]
+    def __init__(self, project=None, watchName=None, syncedDateTime=None, battary=None, lastHR=None,
+                 lastSteps=None, lastSleepStartDateTime=None, lastSleepEndDateTime=None, 
+                 lastSleepDuration=None):
+        """Initialize serverLogFile with optional parameters."""
+        self.path = st.secrets.get("fitbit_log_path", "fitbit_log.csv")
 
     def __str__(self):
         return f"Server Log File: {self.path}"
+        
     def __repr__(self):
         return f"Server Log File: {self.path}"
+        
     def __eq__(self, value):
         if isinstance(value, serverLogFile):
             if self.path == value.path:
@@ -263,24 +267,6 @@ class serverLogFile:
     def get_path(self):
         return self.path
     
-    # def get_project(self):
-    #     return self.project
-    # def get_watchName(self):
-    #     return self.watchName
-    # def get_syncedDateTime(self):
-    #     return self.syncedDateTime
-    # def get_battary(self):
-    #     return self.battary
-    # def get_lastHR(self):
-    #     return self.lastHR
-    # def get_lastSteps(self):
-    #     return self.lastSteps
-    # def get_lastSleepStartDateTime(self):
-    #     return self.lastSleepStartDateTime
-    # def get_lastSleepEndDateTime(self):
-    #     return self.lastSleepEndDateTime
-    # def get_lastSleepDuration(self):
-    #     return self.lastSleepDuration
     def get_all(self):
         return self.__dict__
     def get_all_values(self):
@@ -294,62 +280,170 @@ class serverLogFile:
     def get_all_keys_as_string(self):
         return [str(key) for key in self.__dict__.keys()]
     
-    # def update_fitbits_log(self, fitbit_data: pl.DataFrame) -> None:
-    #     # Update the log with the new data
-    #     if os.path.exists(self.path):
-    #         # If the file exists, read it
-    #         df = pl.read_csv(self.path)
-    #     else:
-    #         # If the file doesn't exist, create a new DataFrame
-    #         df = pl.DataFrame({
-    #             "project": [],
-    #             "watchName": [],
-    #             "syncedDateTime": [],
-    #             "battary": [],
-    #             "lastHR": [],
-    #             "lastSteps": [],
-    #             "lastSleepStartDateTime": [],
-    #             "lastSleepEndDateTime": [],
-    #             "lastSleepDuration": [],
-    #             "lastHRDateTime": [],
-    #             "lastStepsDateTime": [],
-    #             "lastSleepDateTime": [],
-    #             "isActive": [],
-    #             "currentFailedSync": [],
-    #             "totalFailedSync": [],
-    #             "currentFailedHR": [],
-    #             "totalFailedHR": [],
-    #             "currentFailedSleep": [],
-    #             "totalFailedSleep": [],
-    #             "currentFailedSteps": [],
-    #             "totalFailedSteps": []
-    #         })
-
-    #     for row in fitbit_data.iter_rows(named=True):
-    #         if row["isActive"] == "FALSE":
-    #             continue
-    #         current_failed_sync = df.filter(pl.col("project") == row["project"]).filter(pl.col("watchName") == row["name"]).select(pl.col("CurrentFailedSync")).to_numpy()[0][0]
-    #         new_row = {
-    #             "project": row["project"],
-    #             "watchName": row["name"],
-    #             "syncedDateTime": row["syncDate"],
-    #             "battary": row["battery"],
-    #             "lastHR": row["HR"],
-    #             "lastSteps": row["steps"],
-    #             "lastSleepStartDateTime": row["sleep_start"],
-    #             "lastSleepEndDateTime": row["sleep_end"],
-    #             "lastSleepDuration": row["sleep_duration"],
-    #             "lastHRDateTime": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S") if row["HR"] else df["lastHRDateTime"].max(),
-    #             "lastStepsDateTime": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S") if row["steps"] else df["lastStepsDateTime"].max(),
-    #             "lastSleepDateTime": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S") if row["sleep_start"] else df["lastSleepDateTime"].max(),
-    #             "isActive": row["isActive"],
-    #             "curr
-
-    #         }
-    #         df = df.vstack(pl.DataFrame(new_row))
-
-    #     df.write_csv(self.path)
-        # Append the new data to the log file
+    def update_fitbits_log(self, fitbit_data: pl.DataFrame) -> None:
+        """
+        Updates the Fitbit log file with new data.
+        
+        Args:
+            fitbit_data (pl.DataFrame): DataFrame containing the watch data.
+        """
+        # Create directory if it doesn't exist
+        log_dir = os.path.dirname(self.path)
+        if log_dir and not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+            
+        # Get current time for timestamp
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Define expected columns for the CSV
+        expected_columns = [
+            "project", "watchName", "lastCheck", "lastSynced", "lastBattary", 
+            "lastHR", "lastSleepStartDateTime", "lastSleepEndDateTime", "lastSteps", 
+            "lastBattaryVal", "lastHRVal", "lastHRSeq", "lastSleepDur", "lastStepsVal",
+            "CurrentFailedSync", "TotalFailedSync", "CurrentFailedHR", "TotalFailedHR",
+            "CurrentFailedSleep", "TotalFailedSleep", "CurrentFailedSteps", "TotalFailedSteps", "ID"
+        ]
+        
+        # Initialize or load existing data
+        if os.path.exists(self.path):
+            try:
+                df = pl.read_csv(self.path)
+                # Ensure all columns exist
+                for col in expected_columns:
+                    if col not in df.columns:
+                        df = df.with_columns(pl.lit(0).alias(col))
+            except Exception as e:
+                print(f"Error reading CSV file: {e}")
+                df = pl.DataFrame({col: [] for col in expected_columns})
+        else:
+            df = pl.DataFrame({col: [] for col in expected_columns})
+        
+        # Process each row from the Fitbit data
+        updated_data = []
+        
+        for row in fitbit_data.iter_rows(named=True):
+            # Create watch ID for matching
+            watch_id = f"{row.get('project', '')}-{row.get('name', '')}"
+            
+            # Check if watch is active
+            is_active = str(row.get('isActive', '')).upper() != 'FALSE'
+            if not is_active:
+                # Skip processing inactive watches
+                continue
+                
+            # Try to find existing data for this watch
+            existing_row = None
+            if not df.is_empty():
+                filtered = df.filter(pl.col("ID") == watch_id)
+                if not filtered.is_empty():
+                    existing_row = filtered.row(0)
+            
+            # Get current failure counters or use defaults
+            if existing_row:
+                curr_failed_sync = int(existing_row[df.columns.index("CurrentFailedSync")] or 0)
+                total_failed_sync = int(existing_row[df.columns.index("TotalFailedSync")] or 0)
+                curr_failed_hr = int(existing_row[df.columns.index("CurrentFailedHR")] or 0)
+                total_failed_hr = int(existing_row[df.columns.index("TotalFailedHR")] or 0)
+                curr_failed_sleep = int(existing_row[df.columns.index("CurrentFailedSleep")] or 0)
+                total_failed_sleep = int(existing_row[df.columns.index("TotalFailedSleep")] or 0)
+                curr_failed_steps = int(existing_row[df.columns.index("CurrentFailedSteps")] or 0)
+                total_failed_steps = int(existing_row[df.columns.index("TotalFailedSteps")] or 0)
+            else:
+                # Default values for new watches
+                curr_failed_sync = 0
+                total_failed_sync = 0
+                curr_failed_hr = 0
+                total_failed_hr = 0
+                curr_failed_sleep = 0
+                total_failed_sleep = 0
+                curr_failed_steps = 0
+                total_failed_steps = 0
+            
+            # Update failure counters based on data availability
+            
+            # Sync - consider failed if no sync date
+            if not row.get("syncDate"):
+                curr_failed_sync += 1
+                total_failed_sync += 1
+            else:
+                curr_failed_sync = 0  # Reset current failures on success
+            
+            # Heart Rate - consider failed if HR is missing or empty
+            if not row.get("HR"):
+                curr_failed_hr += 1
+                total_failed_hr += 1
+            else:
+                curr_failed_hr = 0  # Reset current failures on success
+            
+            # Sleep - consider failed if both sleep start and end times are missing
+            if not row.get("sleep_start") or not row.get("sleep_end"):
+                curr_failed_sleep += 1
+                total_failed_sleep += 1
+            else:
+                curr_failed_sleep = 0  # Reset current failures on success
+                
+            # Steps - consider failed if steps data is missing
+            if not row.get("steps"):
+                curr_failed_steps += 1
+                total_failed_steps += 1
+            else:
+                curr_failed_steps = 0  # Reset current failures on success
+            
+            # Map the data to the expected columns
+            new_row = {
+                "project": row.get("project", ""),
+                "watchName": row.get("name", ""),
+                "lastCheck": now,
+                "lastSynced": row.get("syncDate", ""),
+                "lastBattary": now if row.get("battery") else "",
+                "lastHR": now if row.get("HR") else "",
+                "lastSleepStartDateTime": row.get("sleep_start", ""),
+                "lastSleepEndDateTime": row.get("sleep_end", ""),
+                "lastSteps": now if row.get("steps") else "",
+                "lastBattaryVal": row.get("battery", ""),
+                "lastHRVal": row.get("HR", ""),
+                "lastHRSeq": "",  # This needs to be calculated or determined elsewhere
+                "lastSleepDur": row.get("sleep_duration", ""),
+                "lastStepsVal": row.get("steps", ""),
+                "CurrentFailedSync": curr_failed_sync,
+                "TotalFailedSync": total_failed_sync,
+                "CurrentFailedHR": curr_failed_hr,
+                "TotalFailedHR": total_failed_hr,
+                "CurrentFailedSleep": curr_failed_sleep,
+                "TotalFailedSleep": total_failed_sleep,
+                "CurrentFailedSteps": curr_failed_steps,
+                "TotalFailedSteps": total_failed_steps,
+                "ID": watch_id
+            }
+            
+            updated_data.append(new_row)
+        
+        # Update the DataFrame with new data
+        if updated_data:
+            # Convert to DataFrame
+            updated_df = pl.DataFrame(updated_data)
+            
+            # Merge with existing data - replace rows for watches in the update
+            if not df.is_empty():
+                # Get watch IDs from the updated data
+                updated_ids = updated_df["ID"].to_list()
+                
+                # Filter out rows for watches that are in the update
+                df_filtered = df.filter(~pl.col("ID").is_in(updated_ids))
+                
+                # Combine with updated data
+                if not df_filtered.is_empty():
+                    final_df = pl.concat([df_filtered, updated_df], how="vertical")
+                else:
+                    final_df = updated_df
+            else:
+                final_df = updated_df
+            
+            # Write to CSV
+            final_df.write_csv(self.path)
+            print(f"Updated log file with {len(updated_data)} records")
+        else:
+            print("No active watch data to update in log file")
 
 
 
