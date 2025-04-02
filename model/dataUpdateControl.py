@@ -12,7 +12,7 @@ from typing import Optional, Dict, Any
 
 # Now the imports should work
 from Spreadsheet_io.sheets import Spreadsheet, serverLogFile, fitbitLog
-from Watch.Watch import Watch
+from entity.Watch import Watch
 
 import streamlit as st
 import datetime

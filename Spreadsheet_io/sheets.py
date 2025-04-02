@@ -52,6 +52,17 @@ class Spreadsheet:
         return cls._instance
     
     @classmethod
+    def get_client(cls):
+        """
+        Get the gspread client instance directly from outside the class.
+        
+        Returns:
+            The authorized gspread client object
+        """
+        instance = cls.get_instance()
+        return instance.client
+    
+    @classmethod
     def get_user_details(cls):
         instance = cls.get_instance()
         return instance.spreadsheet.get_worksheet(0).get_all_records()
@@ -66,6 +77,9 @@ class Spreadsheet:
         instance = cls.get_instance()
         return instance.spreadsheet
     
+    # @classmethod
+    # def get
+
     # Add more methods for specific operations as needed
     # For example:
     @classmethod
