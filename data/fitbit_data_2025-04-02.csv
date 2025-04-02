@@ -1,0 +1,2 @@
+project,name,syncDate,battery,HR,steps,sleep_start,sleep_end,sleep_duration,isActive
+fibro,fibro7,2025-04-02 15:54:18,46,73,9,2025-04-01T23:20:30.000,2025-04-02T07:15:30.000,7.916666666666667,TRUE
