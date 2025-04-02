@@ -13,13 +13,13 @@ def getMenu(role):
         project_row = None
 
     if role == 'Admin':
-        menu = ['Dashboard', 'Alert Management', 'Project Management', 'Generate QR', 'Statistics', 'About']
+        menu = ['Homepage','Dashboard', 'Alert Management', 'Project Management', 'Generate QR', 'Statistics', 'About']
     elif role == 'Manager':
-        menu = ['Dashboard', 'Alert Management', 'Project Management', 'Generate QR', 'About']
+        menu = ['Homepage','Dashboard', 'Alert Management', 'Project Management', 'Generate QR', 'About']
     elif role == 'Student':
-        menu = ['Dashboard', 'Alert Management', 'Generate QR', 'About']
+        menu = ['Homepage','Dashboard', 'Alert Management', 'Generate QR', 'About']
     else:
-        menu = ['About']
+        menu = ['Homepage','About']
 
     choice = st.sidebar.selectbox(
         "Menu",

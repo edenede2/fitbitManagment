@@ -8,6 +8,7 @@ import streamlit_authenticator as stauth
 from collections import defaultdict
 from pymongo import MongoClient
 import json
+# import cProfiler
 
 from Decorators.congrates import congrats
 from Menu.menu import getMenu
@@ -71,23 +72,33 @@ def login_user(credentials):
         st.session_state["email"] = None
     if "role" not in st.session_state:
         st.session_state["role"] = None
+    if "login" not in st.session_state:
+        st.session_state["login"] = False if 'is_logged_in' not in st.session_state else st.session_state['is_logged_in']
 
-    if st.button("Authenticate"):
-        st.login('google')
+    # st.json(st.session_state)
 
+    if  "is_logged_in" not in st.experimental_user:
+        if st.experimental_user["is_logged_in"] == False:
+            if st.sidebar.button("Login with Google"):
+            
+                st.login('google')
+
+    if 'email' in st.experimental_user.keys():
+        if st.experimental_user['email'] == 'test@example.com':
+            st.warning('Please login with your Google account')
+        else:    
+            st.json(st.experimental_user)
+            if st.experimental_user.is_logged_in:
+                
+                logout_button = st.sidebar.button("Logout")
+                if logout_button:
+                    st.session_state["login"] = False
+                    st.logout()
+                    
+
+            elif st.experimental_user.is_logged_in is None:
+                st.warning('Please enter your username and password')
     
-    if st.experimental_user.is_logged_in:
-        logout_button = st.button("Logout")
-        if logout_button:
-            st.logout()
-
-        st.write(f'Welcome *{st.experimental_user.get("name")}*')
-        st.title('Some content')
-    elif st.experimental_user.is_logged_in is False:
-        st.error('Username/password is incorrect')
-    elif st.experimental_user.is_logged_in is None:
-        st.warning('Please enter your username and password')
-
 
 def main():
     
@@ -96,40 +107,74 @@ def main():
     if "authentication_status" not in st.session_state:
         st.session_state["authentication_status"] = None
 
-    if st.experimental_user["is_logged_in"] == None or False:
+    if  "is_logged_in" not in st.experimental_user:
+        st.write("Or continue as guest")
         st.title("Home Page")
-        st.write("Welcome to the fitbit management system")
-        st.write("Please login open the sidebar to access the app")
-    else:
-        congrate = congrats().format(st.experimental_user['name'])
-        st.session_state["role"] = users_dict[st.experimental_user['name']]['role']
-        st.session_state["project"] = users_dict[st.experimental_user['name']]['project']
+        congrate = congrats().format('Guest')
+        st.session_state["role"] = 'Guest'
+        st.session_state["project"] = 'Guest'
         st.title(congrate)
+        st.divider()
         st.write("Welcome to the fitbit management system")
         st.write("What would you like to do today?")
-        
-        # Get the spreadsheet client for the menu
-        spreadsheet = Spreadsheet.get_instance()
-        
         projectAc, choice = getMenu(
-            users_dict[st.experimental_user["name"]]['role'],
+            'Guest'
         )
+    else:
+        if st.experimental_user["is_logged_in"] == None or False:
+            # st.title("Home Page")
+            # st.write("Welcome to the fitbit management system")
+            # st.write("Please login open the sidebar to access the app")
+            # projectAc, choice = getMenu(
+            #     'Guest'
+            # )
+            st.write("Or continue as guest")
+            st.title("Home Page")
+            congrate = congrats().format('Guest')
+            st.session_state["role"] = 'Guest'
+            st.session_state["project"] = 'Guest'
+            st.title(congrate)
+            st.divider()
+            st.write("Welcome to the fitbit management system")
+            st.write("What would you like to do today?")
+            projectAc, choice = getMenu(
+                'Guest'
+            )
+            pass
+        else:
+            congrate = congrats().format(st.experimental_user['name'])
+            st.session_state["role"] = users_dict[st.experimental_user['name']]['role']
+            st.session_state["project"] = users_dict[st.experimental_user['name']]['project']
+            st.title(congrate)
+            st.divider()
 
-        if choice == "Dashboard":
-            pass
-        elif choice == "Alert Management":
-            pass
-        elif choice == "Project Management":
-            pass
-        elif choice == "Generate QR":
-            pass
-        elif choice == "Statistics":
-            pass
-        elif choice == "About":
-            pass
+            st.write("Welcome to the fitbit management system")
+            st.write("What would you like to do today?")
+            
+            # Get the spreadsheet client for the menu
+            spreadsheet = Spreadsheet.get_instance()
+            
+            projectAc, choice = getMenu(
+                users_dict[st.experimental_user["name"]]['role'],
+            )
+
+            if choice == "Dashboard":
+                pass
+            elif choice == "Alert Management":
+                pass
+            elif choice == "Project Management":
+                pass
+            elif choice == "Generate QR":
+                pass
+            elif choice == "Statistics":
+                pass
+            elif choice == "About":
+                pass
 
 
 
 
 if __name__ == "__main__":
     main()
+    # cProfiler.run("main()") 
+
