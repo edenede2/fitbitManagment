@@ -54,18 +54,6 @@ def load_data():
 
 
 def login_user(credentials):
-    # authenticator = stauth.Authenticate(
-    #     credentials,
-    #     cookie_name = "fitbit_users",
-    #     cookie_key = "abcdef",
-    #     cookie_expiry_days=30,
-    #     auto_hash=True,
-    #     api_key=st.secrets["api_key"]
-    # )
-    # try:
-    #     authenticator.login(location="sidebar")
-    # except Exception as e:
-        # st.error(e)
     if "username" not in st.session_state:
         st.session_state["username"] = None
     if "email" not in st.session_state:
