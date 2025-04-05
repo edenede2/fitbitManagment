@@ -1,8 +1,5 @@
 import streamlit as st
-import pandas as pd
-import os
 from pathlib import Path
-import datetime
 
 # Import controllers
 from controllers.auth_controller import AuthenticationController
@@ -11,6 +8,7 @@ from controllers.project_controller import ProjectController
 
 # Import views
 from view.dashboard import display_dashboard
+from view.homepage import display_homepage
 
 # Set up app configuration
 st.set_page_config(
@@ -22,10 +20,8 @@ st.set_page_config(
 
 def main():
     """Main application function"""
-    # Initialize controllers
+    # Initialize controllers - only when needed
     auth_controller = AuthenticationController()
-    user_controller = UserController()
-    project_controller = ProjectController()
     
     # Handle authentication in sidebar
     auth_controller.render_auth_ui()
@@ -46,18 +42,20 @@ def main():
             user_project = st.session_state.user_project
         
         # Navigation options based on user role
-        menu_options = ["Dashboard", "Reports", "Settings", "About"]
+        menu_options = ["Home", "Dashboard", "Reports", "Settings", "About"]
         
         # Filter pages based on user role
         if user_role == "Student":
-            menu_options = ["Dashboard", "About"]
+            menu_options = ["Home", "Dashboard", "About"]
         elif user_role == "Guest":
-            menu_options = ["About"]
+            menu_options = ["Home", "About"]
         
         selected_page = st.sidebar.radio("Navigation", menu_options)
         
         # Display the selected page
-        if selected_page == "Dashboard":
+        if selected_page == "Home":
+            display_homepage(user_email, user_role, user_project)
+        elif selected_page == "Dashboard":
             display_dashboard(user_email, user_role, user_project)
         elif selected_page == "Reports":
             st.title("Reports")
@@ -84,6 +82,7 @@ def main():
             - **Student:** Access to assigned watches only
             - **Guest:** Limited access to general information
             """)
+        st.sidebar.button("Logout", on_click=auth_controller.logout_user)
     else:
         # Not logged in
         st.title("Welcome to the Fitbit Management System")
@@ -91,6 +90,8 @@ def main():
         
         # Show login instructions
         st.info("Use the sidebar to log in or try a demo account.")
+
+        st.sidebar.button("login with google", on_click=auth_controller.login_with_google)
 
 if __name__ == "__main__":
     main()

@@ -47,8 +47,11 @@ class ProjectController:
             fitbit_sheet = spreadsheet.get_sheet("fitbit", sheet_type="fitbit")
             fitbit_df = fitbit_sheet.to_dataframe()
             
-            # Filter for this project
-            return fitbit_df[fitbit_df['project'] == project_name]
+            if project_name == "Admin":
+                return fitbit_df
+            else:
+                # Filter for this project
+                return fitbit_df[fitbit_df['project'] == project_name]
         except Exception as e:
             print(f"Error getting watches for project {project_name}: {e}")
             return pd.DataFrame()
