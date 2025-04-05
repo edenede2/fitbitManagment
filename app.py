@@ -1,168 +1,97 @@
-import pickle
 import streamlit as st
-from pathlib import Path
 import pandas as pd
-import gspread
-from google.oauth2.service_account import Credentials
-import streamlit_authenticator as stauth
-from collections import defaultdict
-from pymongo import MongoClient
-import json
-# import cProfiler
+import os
+from pathlib import Path
+import datetime
 
-from Decorators.congrates import congrats
-from Menu.menu import getMenu
-from Spreadsheet_io.sheets import Spreadsheet
+# Import controllers
+from controllers.auth_controller import AuthenticationController
+from controllers.user_controller import UserController
+from controllers.project_controller import ProjectController
 
+# Import views
+from view.dashboard import display_dashboard
 
+# Set up app configuration
 st.set_page_config(
-    page_title="Generate Key",
-    page_icon="🔑",
+    page_title="Fitbit Management System",
+    page_icon="💡",
     layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-
-def load_data():
-    users_dict = defaultdict(dict)
-    credentials = {'usernames': {}}
-    # spreadsheet = get_spreadsheet(client)
-
-    if 'role' not in st.session_state:
-        st.session_state['role'] = None
-    if 'project' not in st.session_state:
-        st.session_state['project'] = None
-
-    sp = Spreadsheet.get_instance()
-    user_details = sp.get_user_details()
-
-    hashed_passwords = st.secrets.app_users.passwords
-    
-
-
-    for i,row in enumerate(user_details):
-        username = row['username']
-        credentials['usernames'][username] = username
-        credentials['usernames'][username] = dict({'password': None, 'email': None, 'name': None})
-        credentials['usernames'][username]['password'] = hashed_passwords[i]
-        credentials['usernames'][username]['email'] = row['email']
-        credentials['usernames'][username]['name'] = username
-        users_dict[username]['role'] = row['role']
-        users_dict[username]['project'] = row['project']
-        
-
-    return users_dict, credentials
-
-
-def login_user(credentials):
-    if "username" not in st.session_state:
-        st.session_state["username"] = None
-    if "email" not in st.session_state:
-        st.session_state["email"] = None
-    if "role" not in st.session_state:
-        st.session_state["role"] = None
-    if "login" not in st.session_state:
-        st.session_state["login"] = False if 'is_logged_in' not in st.session_state else st.session_state['is_logged_in']
-
-    # st.json(st.session_state)
-
-    if  "is_logged_in" not in st.experimental_user:
-        if st.experimental_user["is_logged_in"] == False:
-            if st.sidebar.button("Login with Google"):
-            
-                st.login('google')
-
-    if 'email' in st.experimental_user.keys():
-        if st.experimental_user['email'] == 'test@example.com':
-            st.warning('Please login with your Google account')
-        else:    
-            st.json(st.experimental_user)
-            if st.experimental_user.is_logged_in:
-                
-                logout_button = st.sidebar.button("Logout")
-                if logout_button:
-                    st.session_state["login"] = False
-                    st.logout()
-                    
-
-            elif st.experimental_user.is_logged_in is None:
-                st.warning('Please enter your username and password')
-    
-
 def main():
+    """Main application function"""
+    # Initialize controllers
+    auth_controller = AuthenticationController()
+    user_controller = UserController()
+    project_controller = ProjectController()
     
-    users_dict, credentials = load_data()
-    login_user(credentials)
-    if "authentication_status" not in st.session_state:
-        st.session_state["authentication_status"] = None
-
-    if  "is_logged_in" not in st.experimental_user:
-        st.write("Or continue as guest")
-        st.title("Home Page")
-        congrate = congrats().format('Guest')
-        st.session_state["role"] = 'Guest'
-        st.session_state["project"] = 'Guest'
-        st.title(congrate)
-        st.divider()
-        st.write("Welcome to the fitbit management system")
-        st.write("What would you like to do today?")
-        projectAc, choice = getMenu(
-            'Guest'
-        )
-    else:
-        if st.experimental_user["is_logged_in"] == None or False:
-            # st.title("Home Page")
-            # st.write("Welcome to the fitbit management system")
-            # st.write("Please login open the sidebar to access the app")
-            # projectAc, choice = getMenu(
-            #     'Guest'
-            # )
-            st.write("Or continue as guest")
-            st.title("Home Page")
-            congrate = congrats().format('Guest')
-            st.session_state["role"] = 'Guest'
-            st.session_state["project"] = 'Guest'
-            st.title(congrate)
-            st.divider()
-            st.write("Welcome to the fitbit management system")
-            st.write("What would you like to do today?")
-            projectAc, choice = getMenu(
-                'Guest'
-            )
-            pass
+    # Handle authentication in sidebar
+    auth_controller.render_auth_ui()
+    
+    # Check if user is logged in (either through Streamlit auth or demo mode)
+    is_logged_in = st.experimental_user.is_logged_in or st.session_state.get('user_role') is not None
+    
+    if is_logged_in:
+        # Get user info - either from Streamlit auth or session state (for demo)
+        if st.experimental_user.is_logged_in:
+            user_email = st.experimental_user.email
+            user_role = st.session_state.user_role
+            user_project = st.session_state.user_project
         else:
-            congrate = congrats().format(st.experimental_user['name'])
-            st.session_state["role"] = users_dict[st.experimental_user['name']]['role']
-            st.session_state["project"] = users_dict[st.experimental_user['name']]['project']
-            st.title(congrate)
-            st.divider()
-
-            st.write("Welcome to the fitbit management system")
-            st.write("What would you like to do today?")
+            # Demo mode
+            user_email = "demo@example.com"
+            user_role = st.session_state.user_role
+            user_project = st.session_state.user_project
+        
+        # Navigation options based on user role
+        menu_options = ["Dashboard", "Reports", "Settings", "About"]
+        
+        # Filter pages based on user role
+        if user_role == "Student":
+            menu_options = ["Dashboard", "About"]
+        elif user_role == "Guest":
+            menu_options = ["About"]
+        
+        selected_page = st.sidebar.radio("Navigation", menu_options)
+        
+        # Display the selected page
+        if selected_page == "Dashboard":
+            display_dashboard(user_email, user_role, user_project)
+        elif selected_page == "Reports":
+            st.title("Reports")
+            st.info("Reports functionality will be implemented here")
+        elif selected_page == "Settings":
+            st.title("Settings")
+            st.info("Settings functionality will be implemented here")
+        elif selected_page == "About":
+            st.title("About")
+            st.write("""
+            ## Fitbit Management System
             
-            # Get the spreadsheet client for the menu
-            spreadsheet = Spreadsheet.get_instance()
+            This application allows monitoring and management of Fitbit devices across different projects.
             
-            projectAc, choice = getMenu(
-                users_dict[st.experimental_user["name"]]['role'],
-            )
-
-            if choice == "Dashboard":
-                pass
-            elif choice == "Alert Management":
-                pass
-            elif choice == "Project Management":
-                pass
-            elif choice == "Generate QR":
-                pass
-            elif choice == "Statistics":
-                pass
-            elif choice == "About":
-                pass
-
-
-
+            ### Features
+            - Real-time device monitoring
+            - Historical data analysis
+            - User assignment and management
+            - Battery and health tracking
+            
+            ### User Roles
+            - **Admin:** Full access to all projects and features
+            - **Manager:** Access to specific project data and settings
+            - **Student:** Access to assigned watches only
+            - **Guest:** Limited access to general information
+            """)
+    else:
+        # Not logged in
+        st.title("Welcome to the Fitbit Management System")
+        st.write("Please log in to access the dashboard and features.")
+        
+        # Show login instructions
+        st.info("Use the sidebar to log in or try a demo account.")
 
 if __name__ == "__main__":
     main()
-    # cProfiler.run("main()") 
 

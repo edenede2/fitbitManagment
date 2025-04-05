@@ -1,12 +1,15 @@
 from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Set, Any, Union
+from typing import Optional, List, Dict, Set, Any, Union, Type, TYPE_CHECKING
 from collections import defaultdict
 import uuid
 from abc import ABC, abstractmethod
 from enum import Enum
 
 from entity.User import User, UserRole, Observer, Subject, UserRepository, Permission
-from entity.Watch import Watch, WatchAssignmentManager, WatchFactory
+
+# Use TYPE_CHECKING to avoid circular imports at runtime
+if TYPE_CHECKING:
+    from entity.Watch import Watch, WatchAssignmentManager, WatchFactory
 from entity.Sheet import Sheet, Spreadsheet, SheetFactory
 
 class ProjectStatus(str, Enum):
@@ -47,7 +50,7 @@ class Project(Subject):
     status: ProjectStatus = ProjectStatus.ACTIVE
     description: str = ""
     spreadsheets: Dict[str, ProjectSpreadsheet] = field(default_factory=dict)
-    watches: Dict[str, Watch] = field(default_factory=dict)
+    watches: Dict[str, Any] = field(default_factory=dict)  # Use Any to avoid circular import
     managers: Set[str] = field(default_factory=set)
     students: Set[str] = field(default_factory=set)
     admins: Set[str] = field(default_factory=set)
@@ -99,7 +102,7 @@ class Project(Subject):
                 self.notify("sheet_removed", spreadsheet_id=spreadsheet_id, sheet_name=sheet_name)
     
     # Watch management
-    def add_watch(self, watch: Watch) -> None:
+    def add_watch(self, watch: Any) -> None:  # Use Any to avoid circular import
         """Add a watch to this project"""
         self.watches[watch.name] = watch
         self.notify("watch_added", watch_name=watch.name)
@@ -110,11 +113,11 @@ class Project(Subject):
             del self.watches[watch_name]
             self.notify("watch_removed", watch_name=watch_name)
     
-    def get_watches(self) -> List[Watch]:
+    def get_watches(self) -> List[Any]:  # Use Any to avoid circular import
         """Get all watches in this project"""
         return list(self.watches.values())
     
-    def get_active_watches(self) -> List[Watch]:
+    def get_active_watches(self) -> List[Any]:  # Use Any to avoid circular import
         """Get all active watches in this project"""
         return [watch for watch in self.watches.values() if watch.is_active]
     

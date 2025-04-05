@@ -11,6 +11,8 @@ This system uses Google Spreadsheets as a database, with specialized entity clas
 - **Spreadsheet Management**: Handles connections to Google Sheets API
 - **Entity Layer**: Provides object representations of spreadsheet data
 - **Data Processing**: Converts between spreadsheet data and Pandas/Polars DataFrames
+- **Server Integration**: Automated data collection via cron jobs
+- **Web Interface**: Streamlit-based UI with role-based access control
 
 ## Design Patterns
 
@@ -23,6 +25,257 @@ The system implements several design patterns:
 5. **Data Validation**: Through `SheetSchema` to enforce data structure
 6. **Repository Pattern**: Used in `UserRepository` and `ProjectRepository` for efficient data management
 7. **Observer Pattern**: Used in `Project` and `User` classes to notify listeners of changes
+8. **Builder Pattern**: In `RequestBuilder` for creating API requests with different parameters
+9. **Entity-Control-Boundary (ECB)**: Architectural pattern used to organize the application
+
+## Google Sheets Integration Guide
+
+This section provides detailed instructions on connecting Google Sheets to your application and using the Sheet classes.
+
+### Setting Up Google Sheets API
+
+Before you can connect to Google Sheets, you need to set up the Google API:
+
+1. **Create a Google Cloud Project**:
+   - Go to the [Google Cloud Console](https://console.cloud.google.com/)
+   - Create a new project or select an existing one
+   - Enable the Google Sheets API and Google Drive API
+
+2. **Create Service Account Credentials**:
+   - In the Google Cloud Console, go to "APIs & Services" > "Credentials"
+   - Click "Create Credentials" > "Service Account"
+   - Download the JSON key file
+   - Store this file securely
+
+3. **Configure Streamlit Secrets**:
+   - Create a `.streamlit/secrets.toml` file with:
+   ```toml
+   [gcp_service_account]
+   type = "service_account"
+   project_id = "your-project-id"
+   private_key_id = "your-private-key-id"
+   private_key = "your-private-key"
+   client_email = "your-client-email"
+   client_id = "your-client-id"
+   auth_uri = "https://accounts.google.com/o/oauth2/auth"
+   token_uri = "https://oauth2.googleapis.com/token"
+   auth_provider_x509_cert_url = "https://www.googleapis.com/oauth2/v1/certs"
+   client_x509_cert_url = "your-cert-url"
+
+   spreadsheet_key = "your-spreadsheet-id"
+   fitbit_log_path = "path/to/fitbit_log.csv"
+   ```
+
+4. **Share Spreadsheet with Service Account**:
+   - Share your Google Spreadsheet with the service account email (client_email in your JSON key)
+   - Grant editor permissions
+
+### Connecting to Google Sheets
+
+There are two ways to connect to Google Sheets in the application:
+
+#### 1. Using the Enhanced Entity Sheet Classes
+
+```python
+from entity.Sheet import Spreadsheet, GoogleSheetsAdapter, SheetFactory
+
+# Create a spreadsheet instance
+spreadsheet = Spreadsheet(
+    name="Fitbit Database",
+    api_key="your-spreadsheet-id-from-url"
+)
+
+# Connect to Google Sheets (loads all worksheets)
+GoogleSheetsAdapter.connect(spreadsheet)
+
+# Get a specific sheet with proper typing
+user_sheet = spreadsheet.get_sheet("Users", sheet_type="user")
+
+# Access data in the sheet
+all_users = user_sheet.data  # List of user records as dictionaries
+```
+
+#### 2. Using the Legacy Spreadsheet Access (via Compatibility Layer)
+
+```python
+from entity.Sheet import LegacySpreadsheet as Spreadsheet
+
+# Get singleton instance
+spreadsheet = Spreadsheet.get_instance()
+
+# Access worksheets by index
+user_details = spreadsheet.get_user_details()  # First worksheet (index 0)
+project_details = spreadsheet.get_project_details()  # Second worksheet (index 1)
+fitbit_details = spreadsheet.get_fitbits_details()  # Third worksheet (index 2)
+```
+
+### Detailed Example: Connecting to User Sheet for Authentication
+
+This example shows how to integrate Google Sheets with user authentication:
+
+```python
+from entity.Sheet import Spreadsheet, GoogleSheetsAdapter
+from entity.User import UserFactory, UserRepository
+
+def load_users_from_sheet():
+    # Step 1: Connect to the spreadsheet
+    spreadsheet = Spreadsheet(
+        name="Fitbit Database",
+        api_key="your-spreadsheet-id"  # From your secrets
+    )
+    GoogleSheetsAdapter.connect(spreadsheet)
+    
+    # Step 2: Get the Users sheet
+    user_sheet = spreadsheet.get_sheet("Users", sheet_type="user")
+    
+    # Step 3: Transform sheet data to User objects
+    user_repo = UserRepository.get_instance()
+    
+    for user_data in user_sheet.data:
+        # Create user from sheet data
+        user = UserFactory.create_from_dict(user_data)
+        
+        # Add to repository for efficient lookup
+        user_repo.add(user)
+    
+    return user_repo
+
+def authenticate_user(email, password):
+    # Get the user repository (populated from sheet)
+    user_repo = load_users_from_sheet()
+    
+    # Find user by email
+    user = user_repo.get_by_email(email)
+    
+    if user and verify_password(user, password):
+        # Update last login time
+        user.update_last_login()
+        
+        # Save changes back to sheet
+        save_user_to_sheet(user)
+        
+        return user
+    
+    return None
+
+def save_user_to_sheet(user):
+    # Get the spreadsheet connection
+    spreadsheet = Spreadsheet(
+        name="Fitbit Database",
+        api_key="your-spreadsheet-id"
+    )
+    GoogleSheetsAdapter.connect(spreadsheet)
+    
+    # Get the Users sheet
+    user_sheet = spreadsheet.get_sheet("Users", sheet_type="user")
+    
+    # Find and update the user record
+    for i, user_record in enumerate(user_sheet.data):
+        if user_record.get("email") == user.email:
+            # Update the record
+            user_sheet.data[i] = user.to_dict()
+            break
+    
+    # Save changes back to Google Sheets
+    GoogleSheetsAdapter.save(spreadsheet, "Users")
+```
+
+### Google Sheets Schema for Users
+
+For the authentication system to work properly, your Users sheet should have the following structure:
+
+| id | name | email | role | last_login | projects |
+|----|------|-------|------|------------|----------|
+| uuid-1 | John Smith | john@example.com | admin | 2023-08-15T10:30:00 | project1,project2 |
+| uuid-2 | Jane Doe | jane@example.com | manager | 2023-08-14T14:22:00 | project1 |
+| uuid-3 | Student1 | student1@example.com | student | 2023-08-10T09:15:00 | project1 |
+
+### Streamlined Google Sheets Integration in Controllers
+
+The application architecture includes controllers that handle Google Sheets integration for you:
+
+```python
+from controllers.user_controller import UserController
+
+# Initialize the controller
+user_controller = UserController()
+
+# Get all users (automatically loads from sheet)
+all_users = user_controller.get_all_users()
+
+# Find user by email (for login)
+user = user_controller.get_user_by_email("john@example.com")
+
+# Get users by role
+admin_users = user_controller.get_users_by_role("admin")
+```
+
+### Working with Multiple Sheet Types
+
+The system supports different sheet types with appropriate schemas:
+
+```python
+# UserSheet - for user data
+user_sheet = spreadsheet.get_sheet("Users", sheet_type="user")
+
+# ProjectSheet - for project data
+project_sheet = spreadsheet.get_sheet("Projects", sheet_type="project")
+
+# FitbitSheet - for Fitbit device data
+fitbit_sheet = spreadsheet.get_sheet("Devices", sheet_type="fitbit")
+
+# LogSheet - for log data
+log_sheet = spreadsheet.get_sheet("Logs", sheet_type="log")
+```
+
+### Update Strategies
+
+When updating sheet data, you can choose from three strategies:
+
+```python
+# Append new data to existing data
+spreadsheet.update_sheet("Users", new_user, strategy="append")
+
+# Replace existing data with new data
+spreadsheet.update_sheet("Logs", log_data, strategy="replace")
+
+# Merge new data with existing data (for dictionaries)
+spreadsheet.update_sheet("Settings", settings, strategy="merge")
+```
+
+### Converting Between Sheets and DataFrames
+
+The system makes it easy to work with both Pandas and Polars DataFrames:
+
+```python
+# Convert sheet to DataFrame
+pandas_df = user_sheet.to_dataframe(engine="pandas")
+polars_df = user_sheet.to_dataframe(engine="polars")
+
+# Update sheet from DataFrame
+user_sheet.from_dataframe(updated_df)
+```
+
+### Automating Sheet Updates with Cron Jobs
+
+For automating data collection and sheet updates:
+
+1. **Set up secrets.json for server use**:
+   Create a `model/secrets.json` file with the same credentials as your Streamlit secrets.
+   
+2. **Run the data collection script**:
+   ```bash
+   python run_data_collection.py
+   ```
+   
+3. **Set up a cron job** (Linux/Mac):
+   ```
+   # Run every hour
+   0 * * * * /path/to/python /path/to/run_data_collection.py
+   
+   # Run every 15 minutes
+   */15 * * * * /path/to/python /path/to/run_data_collection.py
+   ```
 
 ## Entity Layer
 
@@ -73,6 +326,7 @@ The system supports multiple user roles with specific permissions:
 - **Manager**: Can manage one project and its users/watches
 - **Student**: Can view data for their assigned project
 - **Researcher**: Can read data across projects but not modify
+- **Guest**: Limited access for exploring the system
 
 ```python
 # Check if a user has a specific permission
@@ -270,183 +524,17 @@ student_watches = assignment_manager.get_student_watches(student)
 watch_history = assignment_manager.get_watch_history(watch)
 ```
 
-### Simplified Data Retrieval
+## Server Integration and Automation
 
-The Watch class provides convenience methods for common operations:
+The system includes robust server-side components for automated data collection and processing.
 
-```python
-# Get current heart rate
-hr = watch.get_current_hourly_HR()
+### Cron-Based Data Collection
 
-# Get battery level
-battery = watch.get_current_battery()
-
-# Get sleep duration
-sleep_duration = watch.get_last_sleep_duration()
-```
-
-### Creating DataFrame for Visualization
-
-The Watch class makes it easy to get data in DataFrame format for dashboards:
+A scheduled task system collects Fitbit data at regular intervals:
 
 ```python
-# Get heart rate data as DataFrame
-hr_df = watch.get_data_as_dataframe(
-    'Heart Rate Intraday',
-    start_date=datetime.datetime.now(),
-    start_time=datetime.datetime.now() - datetime.timedelta(hours=6),
-    end_time=datetime.datetime.now()
-)
-
-# Now you can easily plot this with any visualization library
-import plotly.express as px
-fig = px.line(hr_df, x='datetime', y='value', title="Heart Rate")
+# Run the data collection process
+python run_data_collection.py
 ```
 
-### Creating Watches from Spreadsheet Data
-
-The `WatchFactory` simplifies creating Watch objects from spreadsheet data:
-
-```python
-# Get watch data from spreadsheet
-spreadsheet = Spreadsheet.get_instance()
-watches_data = spreadsheet.get_worksheet("Fitbits").get_all_records()
-
-# Create Watch objects
-watches = WatchFactory.create_from_spreadsheet(watches_data)
-```
-
-## Google Sheets Integration
-
-The `GoogleSheetsAdapter` connects entity classes with the actual Google Sheets API:
-
-```python
-# Connect to actual Google Sheets
-spreadsheet = GoogleSheetsAdapter.connect(spreadsheet)
-
-# Save changes back to Google Sheets
-GoogleSheetsAdapter.save(spreadsheet, sheet_name="Users")
-```
-
-## Update Strategies
-
-Three update strategies are available:
-
-1. **AppendStrategy**: Add new data to existing data
-2. **ReplaceStrategy**: Replace existing data with new data
-3. **MergeStrategy**: Merge new data with existing data (for dictionaries)
-
-```python
-# Update a sheet with new data using append strategy
-spreadsheet.update_sheet("Users", new_data, strategy="append")
-```
-
-## Server Log Integration (Spreadsheet_io/sheets.py)
-
-The system includes integration with server logs for tracking Fitbit data:
-
-### Spreadsheet Singleton
-
-The `Spreadsheet` class is implemented as a singleton to ensure a single connection to Google Sheets:
-
-```python
-# Get the spreadsheet instance
-spreadsheet = Spreadsheet.get_instance()
-
-# Access spreadsheet data
-users = spreadsheet.get_user_details()
-projects = spreadsheet.get_project_details()
-fitbits = spreadsheet.get_fitbits_details()
-```
-
-### Log Management
-
-The `serverLogFile` class manages logging of Fitbit data to a CSV file:
-
-```python
-from Spreadsheet_io.sheets import serverLogFile
-
-# Initialize log file
-log_file = serverLogFile()
-
-# Update log with Fitbit data
-log_file.update_fitbits_log(fitbit_data_df)
-```
-
-### Fitbit Log Format
-
-The system tracks comprehensive log information for each Fitbit device:
-
-- Basic info: project, watch name, last sync time
-- Health metrics: heart rate, sleep, steps
-- Diagnostics: battery level, failure counters
-- Timestamps for last successful data points
-
-## Data Validation
-
-Each sheet type includes a schema for data validation:
-
-```python
-# Validate data against schema
-user_sheet = SheetFactory.create_sheet("user", "Users")
-is_valid = user_sheet.schema.validate(data)
-
-if is_valid:
-    user_sheet.data = data
-else:
-    print("Invalid data format for user sheet")
-```
-
-## Complete System Integration
-
-All components work together to provide a comprehensive system:
-
-```python
-# 1. Set up the core repositories
-user_repo = UserRepository.get_instance()
-project_repo = ProjectRepository.get_instance()
-
-# 2. Create a project
-project = ProjectFactory.create_project("Sleep Study")
-project_repo.add(project)
-
-# 3. Create and add users
-manager = UserFactory.create_manager("Research Lead", project.id)
-user_repo.add(manager)
-project.add_manager(manager.id)
-
-student = UserFactory.create_student("Participant 1", project.id)
-user_repo.add(student)
-project.add_student(student.id)
-
-# 4. Set up spreadsheet access
-spreadsheet = Spreadsheet(name="Sleep Data", api_key="your_key")
-project.add_spreadsheet(spreadsheet, ["Participants", "SleepData", "HeartRate"])
-
-# 5. Create and assign watches
-watch = WatchFactory.create_from_details({
-    "name": "Watch001",
-    "project": project.name,
-    "token": "fitbit_token"
-})
-project.add_watch(watch)
-
-# 6. Assign watch to student
-assignment_manager = WatchAssignmentManager()
-assignment_manager.assign_watch(watch, student)
-
-# 7. Retrieve and process data
-hr_data = watch.fetch_data("Heart Rate Intraday", 
-                          start_date=datetime.datetime.now() - datetime.timedelta(days=1),
-                          start_time=datetime.datetime.now() - datetime.timedelta(hours=8),
-                          end_time=datetime.datetime.now())
-
-# 8. Convert to DataFrame for visualization
-hr_df = watch.get_data_as_dataframe("Heart Rate Intraday", hr_data)
-
-# 9. Update sheet with new data
-spreadsheet.update_sheet("HeartRate", hr_df, strategy="append")
-
-# 10. Save data back to Google Sheets
-GoogleSheetsAdapter.save(spreadsheet, "HeartRate")
-```
+Command-line options for flexibility:
