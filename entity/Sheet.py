@@ -111,6 +111,14 @@ class SheetFactory:
             'project': ProjectSheet,
             'fitbit': FitbitSheet,
             'log': LogSheet,
+            'bulldog': BulldogSheet,
+            'qualtrics_nova': QualtricsNovaSheet,
+            'fitbit_alerts_config': FitbitAlertsConfig,
+            'qualtrics_alert_config': QualtricsAlertConfig,
+            'late_nums': LateNums,
+            'suspicious_nums': SuspiciousNums,
+            'student_fitbit': FitbitStudent,
+            
             'generic': Sheet
         }
         
@@ -158,6 +166,57 @@ class LogSheet(Sheet):
                 'CurrentFailedHR',	'TotalFailedHR', 'CurrentFailedSleep', 'TotalFailedSleep',
                 'CurrentFailedSteps', 'TotalFailedSteps', 'ID'],
         required_columns=['timestamp', 'event']
+    ))
+
+
+@dataclass
+class BulldogSheet(Sheet):
+    """Sheet for storing bulldog data"""
+    schema: SheetSchema = field(default_factory=lambda: SheetSchema(
+        columns=['שם',	'נייד',	'קטגוריה ( לא חובה )',	'סטטוס שליחה',	'זמן שליחה'],
+        required_columns=['שם', 'נייד']
+    ))
+
+@dataclass
+class QualtricsNovaSheet(Sheet):
+    """Sheet for storing Qualtrics Nova data"""
+    schema: SheetSchema = field(default_factory=lambda: SheetSchema(
+        columns=['num','currentDate','startDate','endDate','status','finished'],
+        required_columns=['num', 'currentDate']
+    ))
+
+@dataclass
+class FitbitAlertsConfig(Sheet):
+    """Sheet for storing Fitbit alerts configuration"""
+    schema: SheetSchema = field(default_factory=lambda: SheetSchema(
+        columns=['project','currentSyncThr', 'totalSyncThr', 'currentHrThr', 'totalHrThr',
+                'currentSleepThr', 'totalSleepThr', 'currentStepsThr', 'totalStepsThr', 'batteryThr',
+                'manager'],
+        required_columns=['project', 'watchName']
+    ))
+
+@dataclass
+class QualtricsAlertConfig(Sheet):
+    """Sheet for storing Qualtrics alerts configuration"""
+    schema: SheetSchema = field(default_factory=lambda: SheetSchema(
+        columns=['hoursThr', 'project', 'manager'],
+        required_columns=['hoursThr', 'project']
+    ))
+
+@dataclass
+class LateNums(Sheet):
+    """Sheet for storing late numbers"""
+    schema: SheetSchema = field(default_factory=lambda: SheetSchema(
+        columns=['nums', 'sentTime', 'hoursLate', 'lastUpdated'],
+        required_columns=['nums', 'sentTime']
+    ))
+
+@dataclass
+class SuspiciousNums(Sheet):
+    """Sheet for storing suspicious numbers"""
+    schema: SheetSchema = field(default_factory=lambda: SheetSchema(
+        columns=['nums', 'filledTime', 'lastUpdated'],
+        required_columns=['nums', 'filledTime']
     ))
 
 @dataclass
@@ -298,7 +357,60 @@ class GoogleSheetsAdapter:
         # Map worksheets to Sheet objects
         for worksheet in google_spreadsheet.worksheets():
             sheet_name = worksheet.title
-            records = worksheet.get_all_records()
+            if r'שליחה לרשימת תפוצה' in sheet_name:
+                sheet_name = 'bulldog'
+            # White list of sheet names
+            sheets_names = [
+                "user", "project", "fitbit", "log", "bulldog", "qualtrics_nova", "FitbitLog",
+                "fitbit_alerts_config", "qualtrics_alert_config", "late_nums", "suspicious_nums",
+                "qualtrics_nova", "student_fitbit"
+            ]
+            if sheet_name not in sheets_names:
+                continue
+                
+            try:
+                # For bulldog sheet with duplicate headers, use a custom extraction
+                if sheet_name == 'bulldog':
+                    # Get all values including headers
+                    all_values = worksheet.get_all_values()
+                    if len(all_values) > 0:
+                        # Get the first 5 columns only
+                        headers = all_values[0][:5]
+                        # Extract records (skip header row)
+                        records = []
+                        for row in all_values[1:]:
+                            if any(row[:5]):  # Skip empty rows
+                                record = {headers[i]: row[i] if i < len(row) else "" 
+                                        for i in range(len(headers))}
+                                records.append(record)
+                else:
+                    # For other sheets, try the normal approach
+                    records = worksheet.get_all_records()
+            except Exception as e:
+                print(f"Error getting records from {sheet_name}: {e}")
+                # Fallback for any sheet with problematic headers
+                try:
+                    all_values = worksheet.get_all_values()
+                    if len(all_values) > 0:
+                        headers = all_values[0]
+                        # Create unique headers
+                        unique_headers = []
+                        seen = {}
+                        for h in headers:
+                            if h in seen:
+                                seen[h] += 1
+                                unique_headers.append(f"{h}_{seen[h]}")
+                            else:
+                                seen[h] = 0
+                                unique_headers.append(h)
+                        
+                        # Get records with unique headers
+                        records = worksheet.get_all_records(expected_headers=unique_headers)
+                    else:
+                        records = []
+                except Exception as e2:
+                    print(f"Fallback also failed for {sheet_name}: {e2}")
+                    records = []
             
             # Determine sheet type based on content or name
             sheet_type = 'generic'
@@ -310,6 +422,24 @@ class GoogleSheetsAdapter:
                 sheet_type = 'fitbit'
             elif 'log' in sheet_name.lower():
                 sheet_type = 'log'
+            elif sheet_name == 'bulldog':
+                sheet_type = 'bulldog'
+            elif 'qualtrics' in sheet_name.lower():
+                sheet_type = 'qualtrics_nova'
+            elif 'fitbitlog' in sheet_name.lower():
+                sheet_type = 'log'
+            elif 'fitbit_alerts_config' in sheet_name.lower():
+                sheet_type = 'fitbit_alerts_config'
+            elif 'qualtrics_alert_config' in sheet_name.lower():
+                sheet_type = 'qualtrics_alert_config'
+            elif 'late_nums' in sheet_name.lower():
+                sheet_type = 'late_nums'
+            elif 'suspicious_nums' in sheet_name.lower():
+                sheet_type = 'suspicious_nums'
+            elif 'student_fitbit' in sheet_name.lower():
+                sheet_type = 'student_fitbit'
+            elif 'qualtrics_nova' in sheet_name.lower():
+                sheet_type = 'qualtrics_nova'
             
             # Create and populate the sheet
             sheet = SheetFactory.create_sheet(sheet_type, sheet_name)
@@ -983,3 +1113,128 @@ fitbitLog = FitbitLog
 
 
 
+# Add this class to your file
+class AlertAnalyzer:
+    """Analyzes WhatsApp alerts and message statuses."""
+    
+    @staticmethod
+    def analyze_whatsapp_messages(bulldog_sheet, alert_sheet, hours_threshold=48):
+        """
+        Analyze WhatsApp messages for status and identify suspicious numbers.
+        
+        Args:
+            bulldog_sheet: Sheet containing WhatsApp message data
+            alert_sheet: Sheet containing patient alert data
+            hours_threshold: Hours to consider for recent messages
+            
+        Returns:
+            tuple: (recent_messages DataFrame, suspicious_numbers DataFrame)
+        """
+        import datetime
+        import polars as pl
+        
+        # Convert bulldog sheet to DataFrame with proper column names
+        sheet_df = bulldog_sheet.to_dataframe(engine="polars").with_columns(
+            pl.col('שם').alias('name'),
+            pl.col('נייד').alias('phone'),
+            pl.col('קטגוריה ( לא חובה )').alias('category'),
+            pl.col('סטטוס שליחה').alias('status'),
+            pl.col('זמן שליחה').alias('time')
+        ).select(
+            pl.col('phone'),
+            pl.col('category'),
+            pl.col('status'),
+            pl.col('time')
+        )
+        
+        # Clean phone numbers
+        sheet_df = sheet_df.with_columns(
+            pl.col('phone').str.slice(-9).alias('phone')
+        )
+        
+        # Convert alert sheet to DataFrame with cleaned phone numbers
+        alert_df = alert_sheet.to_dataframe(engine="polars").with_columns(
+            pl.col('num').cast(pl.String).replace('-', '').replace(' ', '').alias('phone')
+        )
+        
+        # Convert time column to datetime
+        try:
+            sheet_df = sheet_df.with_columns(
+                pl.col('time').str.strptime(pl.Datetime, format="%d/%m/%Y %H:%M").alias('datetime')
+            )
+        except Exception as e:
+            print(f"Error converting time to datetime: {e}")
+            # Add a fallback datetime column
+            sheet_df = sheet_df.with_columns(
+                pl.lit(datetime.datetime.now()).alias('datetime')
+            )
+        
+        # Get current time
+        now = datetime.datetime.now()
+        
+        # Filter successfully sent messages
+        sent_messages = sheet_df.filter(pl.col('status') == 'נשלח בהצלחה')
+        
+        # Calculate hours since message was sent
+        sent_messages = sent_messages.with_columns(
+            ((now - pl.col('datetime')).dt.total_hours()).alias('hours_since_sent')
+        )
+        
+        # Filter recent messages within threshold
+        recent_messages = sent_messages.filter(pl.col('hours_since_sent') <= hours_threshold)
+        
+        # Calculate hours left until threshold
+        recent_messages = recent_messages.with_columns(
+            (hours_threshold - pl.col('hours_since_sent')).alias('hours_left')
+        )
+        
+        # Get list of all phones that received messages
+        contacted_phones = sent_messages.select('phone').unique()
+        
+        # Find phones in alert_df that are not in sheet_df (suspicious numbers)
+        if 'phone' in alert_df.columns:
+            alert_phones = alert_df.select('phone','endDate').unique()
+            suspicious_phones = alert_phones.filter(
+                ~pl.col('phone').is_in(contacted_phones.get_column('phone'))
+            )
+        else:
+            suspicious_phones = pl.DataFrame(schema={'phone': pl.String})
+        
+        return recent_messages, suspicious_phones
+        
+    @staticmethod
+    def generate_alert_report(recent_messages, suspicious_numbers):
+        """
+        Generate a formatted report from alert analysis.
+        
+        Args:
+            recent_messages: DataFrame of recent messages
+            suspicious_numbers: DataFrame of suspicious numbers
+            
+        Returns:
+            str: Formatted report text
+        """
+        report = []
+        
+        report.append(f"==== WhatsApp Alert Report ====")
+        report.append(f"Generated on: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        report.append("")
+        
+        report.append(f"== Recent Messages ==")
+        report.append(f"Total: {recent_messages.height} messages")
+        
+        if recent_messages.height > 0:
+            report.append("\nTop 10 recent messages:")
+            for row in recent_messages.select(['name', 'phone', 'time', 'hours_left']).head(10).iter_rows(named=True):
+                report.append(f"- {row['name']} ({row['phone']}): Sent {row['time']}, {row['hours_left']:.1f} hours left")
+        
+        report.append("")
+        report.append(f"== Suspicious Numbers ==")
+        report.append(f"Total: {suspicious_numbers.height} numbers")
+        
+        if suspicious_numbers.height > 0:
+            report.append("\nSuspicious numbers (top 10):")
+            for row in suspicious_numbers.head(10).iter_rows(named=True):
+                report.append(f"- {row['phone']}")
+        
+        return "\n".join(report)
