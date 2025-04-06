@@ -7,7 +7,7 @@ from typing import Optional, Dict, List, Any, Union, Callable, TypeVar, TYPE_CHE
 from enum import Enum
 from abc import ABC, abstractmethod
 from entity.User import User
-
+import streamlit as st
 # Use string references for Project to avoid circular imports
 if TYPE_CHECKING:
     from entity.Project import Project
@@ -82,10 +82,14 @@ class RequestBuilder:
         
     def with_date_range(self, start_date: Union[datetime.datetime, str], end_date: Union[datetime.datetime, str] = None) -> 'RequestBuilder':
         """Set date range for the request with proper formatting"""
+        st.write(f"start_date: {start_date}")
+        st.write(f"start_date type: {type(start_date)}")
         if isinstance(start_date, datetime.datetime):
             self.params['start_date'] = start_date.strftime(self.date_format)
         elif isinstance(start_date, str):
             self.params['start_date'] = start_date
+        elif isinstance(start_date, datetime.date):
+            self.params['start_date'] = start_date.strftime(self.date_format)
             
         if end_date:
             if isinstance(end_date, datetime.datetime):
@@ -189,7 +193,8 @@ class RequestBuilder:
             )
         elif self.endpoint_type == 'device':
             self.url = url_template
-            
+        
+        st.write(f"Request URL: {self.url}")
         if self.is_intraday_endpoint() and 'start_date' in self.params and 'end_date' in self.params:
             day_params = self.split_date_range_for_intraday()
             
@@ -536,9 +541,11 @@ class Watch:
             
         if 'limit' in kwargs:
             builder.with_limit(kwargs['limit'])
-            
+        
+        st.write(f"builder.params: {builder.params}")
         # Build the request
         request = builder.build()
+        st.write(f"Request URL: {request['url']}")
         
         # Handle multi-day intraday request if needed
         if isinstance(request, dict) and request.get('multiday', False):
@@ -696,6 +703,8 @@ class Watch:
         """Get data as a pandas DataFrame"""
         if data is None:
             data = self.fetch_data(endpoint_type, **kwargs)
+        st.write(f"Data fetched: {data}")
+        # st.json(data)
         processor = ProcessorFactory.get_processor(endpoint_type)
         processed_data = processor.process(data)
         return processor.to_dataframe(processed_data)

@@ -7,10 +7,144 @@ import plotly.express as px
 import plotly.graph_objects as go
 from pathlib import Path
 import os
+import time
+import functools
+from datetime import timedelta
 
 from controllers.project_controller import ProjectController
 from entity.Sheet import Spreadsheet, GoogleSheetsAdapter
 from entity.Watch import Watch, WatchFactory
+
+# Add a cache decorator for API calls
+@st.cache_data(ttl=300)  # Cache for 5 minutes
+def cached_get_watches(user_email, user_role, user_project):
+    project_controller = ProjectController()
+    if user_role == "Admin":
+        return project_controller.get_watches_for_project(user_project)
+    elif user_role == "Manager":
+        return project_controller.get_watches_for_project(user_project)
+    elif user_role == "Student":
+        return project_controller.get_watches_for_student(user_email)
+    else:
+        return pd.DataFrame()
+
+# Cache watch data retrieval
+@st.cache_data(ttl=600)  # Cache for 10 minutes
+def fetch_watch_data(watch_name, signal_type, start_date, end_date, should_fetch=False):
+    """
+    Get data for a specific watch without using any Streamlit widgets.
+    This function can be safely cached.
+    """
+    if not should_fetch:
+        return pd.DataFrame()
+    
+    # Validate dates - don't allow future dates
+    today = datetime.date.today()
+    if isinstance(start_date, datetime.date) and start_date > today:
+        st.warning(f"Start date {start_date} is in the future. Using today's date instead.")
+        start_date = today
+    if isinstance(end_date, datetime.date) and end_date > today:
+        st.warning(f"End date {end_date} is in the future. Using today's date instead.")
+        end_date = today
+    
+    # Get the watch details to create a Watch object
+    watch_details = cached_get_watch_details(watch_name)
+    if not watch_details:
+        return pd.DataFrame()
+    
+    try:
+        # Create a Watch object using the factory
+        watch = WatchFactory.create_from_details(watch_details)
+        df = pd.DataFrame()
+        
+        # Map signal type to appropriate endpoint and method
+        if signal_type == "HR":
+            # Convert date objects to strings in the format YYYY-MM-DD
+            start_date_str = start_date.strftime("%Y-%m-%d") if isinstance(start_date, datetime.date) else start_date
+            
+            st.info(f"Fetching heart rate data for date: {start_date_str}")
+            
+            # Determine if we're fetching data for today, and if so, use current time as end_time
+            is_today = start_date.strftime("%Y-%m-%d") == datetime.date.today().strftime("%Y-%m-%d")
+            end_time = datetime.datetime.now().strftime("%H:%M") if is_today else "23:59"
+            
+            # Fetch heart rate data from Fitbit API
+            try:
+                data = watch.fetch_data(
+                    'Heart Rate Intraday',
+                    start_date=start_date_str,  # Pass date as string
+                    start_time="00:00",
+                    end_time=end_time
+                )
+                # Process data with Watch class method
+                df = watch.get_data_as_dataframe('Heart Rate Intraday', data)
+                
+                # Rename columns for consistency with dashboard display
+                if not df.empty and 'value' in df.columns:
+                    df = df.rename(columns={'value': 'HR'})
+                    df['syncDate'] = df['datetime']
+            except Exception as hr_error:
+                st.error(f"Heart Rate API error: {str(hr_error)}")
+                return pd.DataFrame()
+                
+        elif signal_type == "steps":
+            # Convert date objects to strings in the format YYYY-MM-DD
+            start_date_str = start_date.strftime("%Y-%m-%d") if isinstance(start_date, datetime.date) else start_date
+            
+            # Determine if we're fetching data for today, and if so, use current time as end_time
+            is_today = start_date.strftime("%Y-%m-%d") == datetime.date.today().strftime("%Y-%m-%d")
+            end_time = datetime.datetime.now().strftime("%H:%M") if is_today else "23:59"
+            
+            # Fetch steps data from Fitbit API
+            data = watch.fetch_data(
+                'Steps Intraday',
+                start_date=start_date_str,  # Pass date as string
+                start_time="00:00",
+                end_time=end_time
+            )
+            # Process data with Watch class method
+            df = watch.get_data_as_dataframe('Steps Intraday', data)
+            
+            # Rename columns for consistency with dashboard display
+            if not df.empty and 'value' in df.columns:
+                df = df.rename(columns={'value': 'steps'})
+                df['syncDate'] = df['datetime']
+                
+        elif signal_type == "sleep_duration":
+            # Convert date objects to strings in the format YYYY-MM-DD
+            start_date_str = start_date.strftime("%Y-%m-%d") if isinstance(start_date, datetime.date) else start_date
+            end_date_str = end_date.strftime("%Y-%m-%d") if isinstance(end_date, datetime.date) else end_date
+            
+            # Fetch sleep data from Fitbit API
+            data = watch.fetch_data(
+                'Sleep',
+                start_date=start_date_str,  # Pass date as string
+                end_date=end_date_str       # Pass date as string
+            )
+            # Process data with Watch class method
+            sleep_data = watch.process_data('Sleep', data)
+            
+            # Convert to DataFrame with proper formatting
+            if sleep_data:
+                df = pd.DataFrame(sleep_data)
+                # Create a syncDate column for consistency
+                df['syncDate'] = pd.to_datetime(df['start_time'])
+                df['sleep_duration'] = df['duration'].apply(lambda x: x / (1000 * 60 * 60) if x else 0)  # Convert ms to hours
+        
+        # Add watch name column
+        if not df.empty:
+            df['name'] = watch_name
+            
+        return df
+    except Exception as e:
+        st.error(f"General error in fetch_watch_data: {str(e)}")
+        return pd.DataFrame()
+
+# Add a cache decorator for watch details
+@st.cache_data(ttl=300)  # Cache for 5 minutes
+def cached_get_watch_details(watch_name):
+    project_controller = ProjectController()
+    return project_controller.get_watch_details(watch_name)
 
 def get_available_watches(user_email, user_role, user_project):
     """
@@ -24,114 +158,17 @@ def get_available_watches(user_email, user_role, user_project):
     Returns:
         DataFrame: DataFrame of available watches
     """
-    project_controller = ProjectController()
-    
-    # Filter watches based on user role and project
-    if user_role == "Admin":
-        # Admin can see all watches across all projects
-        return project_controller.get_watches_for_project(user_project)
-    elif user_role == "Manager":
-        # Manager can see watches in their project
-        return project_controller.get_watches_for_project(user_project)
-    elif user_role == "Student":
-        # Student can see watches paired with them
-        return project_controller.get_watches_for_student(user_email)
-    else:
-        # Guest sees no watches
-        return pd.DataFrame()
-
-def get_watch_data(watch_name, signal_type, start_date, end_date):
-    """
-    Get data for a specific watch, signal type, and date range.
-    
-    Args:
-        watch_name (str): Name of the watch
-        signal_type (str): Type of signal (HR, sleep, steps, etc.)
-        start_date (datetime): Start date for data range
-        end_date (datetime): End date for data range
-    
-    Returns:
-        pd.DataFrame: DataFrame with the requested data
-    """
-    # Get the watch details to create a Watch object
-    project_controller = ProjectController()
-    watch_details = project_controller.get_watch_details(watch_name)
-    load_single_button = st.button("Load Single Button")
-    if not watch_details:
-        st.error(f"Could not find details for watch: {watch_name}")
-        return pd.DataFrame()
-    
+    # Use cached function to avoid hitting API limits
     try:
-        # Create a Watch object using the factory
-        watch = WatchFactory.create_from_details(watch_details)
-        
-        # Map signal type to appropriate endpoint and method
-        if signal_type == "HR":
-            if load_single_button:
-                data = watch.fetch_data(
-                    'Heart Rate Intraday',
-                    start_date=start_date,
-                    end_date=end_date,
-                    start_time="00:00",
-                    end_time="23:59"
-                )
-                # Process data with Watch class method
-                df = watch.get_data_as_dataframe('Heart Rate Intraday', data)
-                
-                # Rename columns for consistency with dashboard display
-                if not df.empty and 'value' in df.columns:
-                    df = df.rename(columns={'value': 'HR'})
-                    df['syncDate'] = df['datetime']
-                
-        elif signal_type == "steps":
-            if load_single_button:
-                # Fetch steps data from Fitbit API
-                data = watch.fetch_data(
-                    'Steps Intraday',
-                    start_date=start_date,
-                    end_date=end_date,
-                    start_time="00:00",
-                    end_time="23:59"
-                )
-                # Process data with Watch class method
-                df = watch.get_data_as_dataframe('Steps Intraday', data)
-                
-                # Rename columns for consistency with dashboard display
-                if not df.empty and 'value' in df.columns:
-                    df = df.rename(columns={'value': 'steps'})
-                    df['syncDate'] = df['datetime']
-                
-        elif signal_type == "sleep_duration":
-            if load_single_button:
-                # Fetch sleep data from Fitbit API
-                data = watch.fetch_data(
-                    'Sleep',
-                    start_date=start_date,
-                    end_date=end_date
-                )
-                # Process data with Watch class method
-                sleep_data = watch.process_data('Sleep', data)
-                
-                # Convert to DataFrame with proper formatting
-                if sleep_data:
-                    df = pd.DataFrame(sleep_data)
-                    # Create a syncDate column for consistency
-                    df['syncDate'] = pd.to_datetime(df['start_time'])
-                    df['sleep_duration'] = df['duration'].apply(lambda x: x / (1000 * 60 * 60) if x else 0)  # Convert ms to hours
-                else:
-                    df = pd.DataFrame()
-        else:
-            st.warning(f"Unsupported signal type: {signal_type}")
-            return pd.DataFrame()
-        
-        # Add watch name column
-        if not df.empty:
-            df['name'] = watch_name
-            
-        return df
+        return cached_get_watches(user_email, user_role, user_project)
     except Exception as e:
-        st.error(f"Error fetching data from Fitbit API: {e}")
-        return pd.DataFrame()
+        st.error(f"Error getting watches: {e}")
+        # If we hit an API limit, wait and retry once
+        time.sleep(2)
+        try:
+            return cached_get_watches(user_email, user_role, user_project)
+        except:
+            return pd.DataFrame()
 
 def display_dashboard(user_email, user_role, user_project):
     """
@@ -168,6 +205,7 @@ def display_dashboard(user_email, user_role, user_project):
             # Date range selector with better defaults
             col1, col2 = st.columns(2)
             with col1:
+                # Keep as datetime object, don't convert to string
                 start_date = st.date_input(
                     "Start Date", 
                     datetime.datetime.now() - datetime.timedelta(days=7),
@@ -180,6 +218,36 @@ def display_dashboard(user_email, user_role, user_project):
                     min_value=start_date,
                     max_value=datetime.datetime.now()
                 )
+            
+            # Create a session state variable to track current view date if not exists
+            if 'current_view_date' not in st.session_state:
+                st.session_state.current_view_date = start_date
+            
+            # Date navigation within the selected range
+            col1, col2, col3 = st.columns([1, 3, 1])
+            
+            with col1:
+                if st.button("◀️ Previous Day"):
+                    # Move backward one day, but not before start_date
+                    if st.session_state.current_view_date > start_date:
+                        st.session_state.current_view_date -= datetime.timedelta(days=1)
+            
+            with col2:
+                # Display current view date
+                current_date_str = st.session_state.current_view_date.strftime("%B %d, %Y")
+                st.markdown(f"<h3 style='text-align: center;'>📅 {current_date_str}</h3>", unsafe_allow_html=True)
+                
+                # Show progress in date range
+                date_range = (end_date - start_date).days
+                if date_range > 0:
+                    current_progress = (st.session_state.current_view_date - start_date).days / date_range
+                    st.progress(min(1.0, max(0.0, current_progress)))
+            
+            with col3:
+                if st.button("Next Day ▶️"):
+                    # Move forward one day, but not after end_date
+                    if st.session_state.current_view_date < end_date:
+                        st.session_state.current_view_date += datetime.timedelta(days=1)
             
             # Signal selector
             signal_options = ["Heart Rate", "Steps", "Sleep"]
@@ -194,9 +262,40 @@ def display_dashboard(user_email, user_role, user_project):
             
             signal_column = signal_map.get(selected_signal)
             
-            # Get and display data
+            # Move the button outside of the cached function
+            load_data_button = st.button("Load Data")
+            
+            # Get and display data with caching to avoid API limits - use current view date
             with st.spinner(f"Loading {selected_signal} data directly from Fitbit API..."):
-                data = get_watch_data(selected_watch, signal_column, start_date, end_date)
+                # Pass the current view date to the function
+                data = fetch_watch_data(
+                    selected_watch, 
+                    signal_column, 
+                    st.session_state.current_view_date,  # Use the navigation date 
+                    st.session_state.current_view_date,  # Same day for intraday data
+                    should_fetch=load_data_button
+                )
+                
+                # Optionally show raw data for debugging
+                if load_data_button and data.empty:
+                    st.error(f"No data returned for {selected_signal}")
+                    
+                    # Debug information
+                    watch_details = cached_get_watch_details(selected_watch)
+                    if watch_details:
+                        try:
+                            watch = WatchFactory.create_from_details(watch_details)
+                            
+                            if signal_column == "HR":
+                                raw_data = watch.fetch_data(
+                                    'Heart Rate Intraday',
+                                    start_date=st.session_state.current_view_date,
+                                    start_time="00:00",
+                                    end_time="23:59"
+                                )
+                                st.json(raw_data)
+                        except Exception as e:
+                            st.error(f"Error fetching raw data: {e}")
             
             if not data.empty:
                 # Display with mitosheet
@@ -247,7 +346,7 @@ def display_dashboard(user_email, user_role, user_project):
                         st.metric("Minimum", f"{data[signal_column].min():.2f}")
                     with col3:
                         st.metric("Maximum", f"{data[signal_column].max():.2f}")
-            else:
+            elif load_data_button:
                 st.info(f"No {selected_signal} data available for the selected date range")
         
         with tab2:
@@ -255,8 +354,7 @@ def display_dashboard(user_email, user_role, user_project):
             
             # Get and display watch details
             with st.spinner("Loading watch details directly from Fitbit API..."):
-                project_controller = ProjectController()
-                watch_details = project_controller.get_watch_details(selected_watch)
+                watch_details = cached_get_watch_details(selected_watch)
                 
                 # Create Watch object and update with latest information from API
                 if watch_details:

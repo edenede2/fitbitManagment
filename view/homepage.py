@@ -35,6 +35,7 @@ def display_homepage(user_email, user_role, user_project):
                         # Update last login time in the sheet
                         user_entry['last_login'] = last_login.isoformat()
                         spreadsheet.update_sheet("user", "user", user_entry)
+                        GoogleSheetsAdapter.save(spreadsheet)
                     else:
                         last_login = datetime.datetime.fromisoformat(user_entry.get('last_login'))
                 except ValueError:
@@ -63,7 +64,7 @@ def display_homepage(user_email, user_role, user_project):
         st.metric("Your Role", user_role)
         
     with col2:
-        st.metric("Active Project", user_project)
+        st.metric("Project", user_project)
             
     with col3:
         # Get watch count from entity layer

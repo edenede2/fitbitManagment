@@ -62,7 +62,7 @@ class AuthenticationController:
     def render_auth_ui(self):
         """Render the authentication UI in the sidebar"""
         # Display login state and buttons
-        if st.experimental_user.is_logged_in:  # Remove parentheses - it's a property, not a method
+        if st.experimental_user.is_logged_in: 
             user_email = st.experimental_user.email
             user_name = st.experimental_user.name
             
