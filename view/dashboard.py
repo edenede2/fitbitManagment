@@ -14,6 +14,8 @@ from datetime import timedelta
 from controllers.project_controller import ProjectController
 from entity.Sheet import Spreadsheet, GoogleSheetsAdapter
 from entity.Watch import Watch, WatchFactory
+from model.config import get_secrets
+from entity.AsyncSheetsManager import AsyncSheetsManager
 
 # Add a cache decorator for API calls
 @st.cache_data(ttl=300)  # Cache for 5 minutes
@@ -261,64 +263,91 @@ def display_dashboard(user_email, user_role, user_project):
             }
             
             signal_column = signal_map.get(selected_signal)
-            
+            if not "load_data_button" in st.session_state:
+                st.session_state.load_data_button = False
             # Move the button outside of the cached function
-            load_data_button = st.button("Load Data")
+            st.session_state.load_data_button = st.button("Load Data")
             
-            # Get and display data with caching to avoid API limits - use current view date
-            with st.spinner(f"Loading {selected_signal} data directly from Fitbit API..."):
-                # Pass the current view date to the function
+            # Debug information
+            watch_details = cached_get_watch_details(selected_watch)
+            if watch_details:
+                try:
+                    watch = WatchFactory.create_from_details(watch_details)
+                    
+                    if signal_column == "HR":
+                        raw_data = watch.fetch_data(
+                            'Heart Rate Intraday',
+                            start_date=st.session_state.current_view_date,
+                            start_time="00:00",
+                            end_time="23:59"
+                        )
+                        # st.json(raw_data)
+                except Exception as e:
+                    st.error(f"Error fetching raw data: {e}")
+            
+            # Initialize session state variables if they don't exist
+            if "current_data" not in st.session_state:
+                st.session_state.current_data = None
+            if "loaded_watch" not in st.session_state:
+                st.session_state.loaded_watch = None
+            if "loaded_date" not in st.session_state:
+                st.session_state.loaded_date = None
+            if "loaded_signal" not in st.session_state:
+                st.session_state.loaded_signal = None
+            
+            # Check if we need to fetch new data (button clicked or different watch/date/signal)
+            need_new_data = (st.session_state.load_data_button or 
+                             st.session_state.loaded_watch != selected_watch or
+                             st.session_state.loaded_date != st.session_state.current_view_date or
+                             st.session_state.loaded_signal != signal_column)
+            
+            # Fetch data if needed
+            if need_new_data and st.session_state.load_data_button:
+                # Fetch the new data
                 data = fetch_watch_data(
                     selected_watch, 
                     signal_column, 
-                    st.session_state.current_view_date,  # Use the navigation date 
-                    st.session_state.current_view_date,  # Same day for intraday data
-                    should_fetch=load_data_button
+                    st.session_state.current_view_date,
+                    st.session_state.current_view_date,
+                    should_fetch=True
                 )
                 
-                # Optionally show raw data for debugging
-                if load_data_button and data.empty:
-                    st.error(f"No data returned for {selected_signal}")
-                    
-                    # Debug information
-                    watch_details = cached_get_watch_details(selected_watch)
-                    if watch_details:
-                        try:
-                            watch = WatchFactory.create_from_details(watch_details)
-                            
-                            if signal_column == "HR":
-                                raw_data = watch.fetch_data(
-                                    'Heart Rate Intraday',
-                                    start_date=st.session_state.current_view_date,
-                                    start_time="00:00",
-                                    end_time="23:59"
-                                )
-                                st.json(raw_data)
-                        except Exception as e:
-                            st.error(f"Error fetching raw data: {e}")
+                # Update session state with the new data and selection
+                if not data.empty:
+                    st.session_state.current_data = data
+                    st.session_state.loaded_watch = selected_watch
+                    st.session_state.loaded_date = st.session_state.current_view_date
+                    st.session_state.loaded_signal = signal_column
+                    st.success(f"Data loaded successfully for {selected_watch}")
+                else:
+                    st.error(f"No data available for {selected_signal} on {st.session_state.current_view_date}")
             
-            if not data.empty:
+            # Display data if it exists in session state and matches current selection
+            if (st.session_state.current_data is not None and 
+                st.session_state.loaded_watch == selected_watch and 
+                st.session_state.loaded_signal == signal_column):
+                
                 # Display with mitosheet
                 st.subheader(f"{selected_signal} Data Table")
-                spreadsheet(data)
+                spreadsheet(st.session_state.current_data)
                 
                 # Show a plotly chart
                 st.subheader(f"{selected_signal} Visualization")
                 
                 # Create visualization based on signal type
                 if signal_column == "HR":
-                    fig = px.line(data, x='syncDate', y='HR', 
+                    fig = px.line(st.session_state.current_data, x='syncDate', y='HR', 
                                  title=f'Heart Rate for {selected_watch}',
                                  labels={'syncDate': 'Date/Time', 'HR': 'Heart Rate (bpm)'},
                                  line_shape='spline')
                     fig.update_traces(line=dict(color='firebrick', width=2))
                 elif signal_column == "steps":
-                    fig = px.bar(data, x='syncDate', y='steps', 
+                    fig = px.bar(st.session_state.current_data, x='syncDate', y='steps', 
                                 title=f'Steps for {selected_watch}',
                                 labels={'syncDate': 'Date/Time', 'steps': 'Step Count'},
                                 color_discrete_sequence=['green'])
                 elif signal_column == "sleep_duration":
-                    fig = px.bar(data, x='syncDate', y='sleep_duration', 
+                    fig = px.bar(st.session_state.current_data, x='syncDate', y='sleep_duration', 
                                 title=f'Sleep Duration for {selected_watch}',
                                 labels={'syncDate': 'Date/Time', 'sleep_duration': 'Sleep (hours)'},
                                 color_discrete_sequence=['darkblue'])
@@ -339,14 +368,14 @@ def display_dashboard(user_email, user_role, user_project):
                 st.subheader("Summary Statistics")
                 col1, col2, col3 = st.columns(3)
                 
-                if signal_column in data.columns:
+                if signal_column in st.session_state.current_data.columns:
                     with col1:
-                        st.metric("Average", f"{data[signal_column].mean():.2f}")
+                        st.metric("Average", f"{st.session_state.current_data[signal_column].mean():.2f}")
                     with col2:
-                        st.metric("Minimum", f"{data[signal_column].min():.2f}")
+                        st.metric("Minimum", f"{st.session_state.current_data[signal_column].min():.2f}")
                     with col3:
-                        st.metric("Maximum", f"{data[signal_column].max():.2f}")
-            elif load_data_button:
+                        st.metric("Maximum", f"{st.session_state.current_data[signal_column].max():.2f}")
+            elif st.session_state.load_data_button:
                 st.info(f"No {selected_signal} data available for the selected date range")
         
         with tab2:
@@ -382,7 +411,7 @@ def display_dashboard(user_email, user_role, user_project):
                                 
                                 st.success("✅ Device data refreshed successfully!")
                         else:
-                            # Use existing data from watch_details without API calls
+                            # Use existing data from watch_details without making API calls
                             # If some values are missing in watch_details, initialize them without API calls
                             if 'lastBatteryLevel' not in watch_details:
                                 watch_details['lastBatteryLevel'] = watch.battery_level
@@ -495,7 +524,107 @@ def display_dashboard(user_email, user_role, user_project):
                     if user_role in ["Admin", "Manager"]:
                         with st.expander("Student Assignment"):
                             st.info("This section allows assignment of this watch to students")
-                            # Fetch students for this project
-                            # Add assignment UI here
+                            try:
+                                # Initialize AsyncSheetsManager if not already set up
+                                if "async_sheets_manager" not in st.session_state:
+                                    sheets_manager = AsyncSheetsManager.get_instance()
+                                    connected = sheets_manager.connect(
+                                        "FitbitData", 
+                                        get_secrets().get('spreadsheet_key')
+                                    )
+                                    sheets_manager.start_worker()
+                                    st.session_state.async_sheets_manager = sheets_manager
+                                else:
+                                    sheets_manager = st.session_state.async_sheets_manager
+                                
+                                # Get or initialize the watch's chat messages in session state
+                                watch_chat_key = f"chat_{selected_watch}"
+                                if watch_chat_key not in st.session_state:
+                                    # Try to fetch existing messages for this watch
+                                    try:
+                                        sp = Spreadsheet(name="FitbitData",
+                                                        api_key=get_secrets().get('spreadsheet_key'))
+                                        GoogleSheetsAdapter.connect(sp)
+                                        student_sheet = sp.get_sheet("chats", sheet_type="chats")
+                                        student_df = student_sheet.to_dataframe(engine='polars')
+                                        
+                                        if student_df.is_empty() or "watchName" not in student_df.columns:
+                                            st.session_state[watch_chat_key] = []
+                                        else:
+                                            # Filter to get only messages for this watch
+                                            watch_df = student_df.filter(pl.col("watchName") == selected_watch)
+                                            st.session_state[watch_chat_key] = watch_df.to_dicts() if not watch_df.is_empty() else []
+                                    except Exception as e:
+                                        # If there's an error, start with an empty chat
+                                        st.warning(f"Error loading chat history: {str(e)}")
+                                        st.session_state[watch_chat_key] = []
+                                
+                                # Initialize a message counter if it doesn't exist
+                                if "message_counter" not in st.session_state:
+                                    st.session_state.message_counter = 0
+                                
+                                # Display any debug info from the sheets manager
+                                debug_info = sheets_manager.get_debug_info()
+                                if debug_info and st.checkbox("Show debug info", value=False):
+                                    with st.expander("Sheet Saving Debug Info"):
+                                        for msg in debug_info:
+                                            st.text(msg)
+                                
+                                # Display chat messages directly from session state
+                                st.subheader("Chat Messages")
+                                
+                                # Display all messages for this watch
+                                messages = st.session_state[watch_chat_key]
+                                if not messages:
+                                    st.info("No messages yet. Start a conversation!")
+                                else:
+                                    # Show messages in a scrollable container
+                                    with st.container():
+                                        for msg in messages:
+                                            with st.chat_message("human"):
+                                                st.markdown(f"**{msg.get('user', 'Unknown')}**: {msg.get('content', '')}")
+                                                st.markdown(f"**date:** {msg.get('datetime', 'Unknown date')}")
+                                                st.divider()
+                                
+                                # Use a form for message input to better control submission
+                                with st.form(key=f"chat_form_{selected_watch}", clear_on_submit=True):
+                                    new_message = st.text_area("Type your message", key="message_text", height=100)
+                                    submit_button = st.form_submit_button("Send Message")
+                                    
+                                    if submit_button and new_message.strip():
+                                        # Format datetime as string for consistency
+                                        now = datetime.datetime.now()
+                                        dt_string = now.strftime("%Y-%m-%d %H:%M:%S")
+                                        
+                                        # Create new message dictionary
+                                        new_row = {
+                                            "user": user_email,
+                                            "content": new_message.strip(),
+                                            "datetime": dt_string,
+                                            "watchName": selected_watch
+                                        }
+                                        
+                                        try:
+                                            # Update local session state immediately for UI responsiveness
+                                            current_messages = list(st.session_state[watch_chat_key])
+                                            current_messages.append(new_row)
+                                            st.session_state[watch_chat_key] = current_messages
+                                            
+                                            # Add to async queue for background saving
+                                            sheets_manager.add_message(new_row)
+                                            
+                                            # Provide immediate feedback to user
+                                            st.success("Message sent! Saving to sheet in background.")
+                                            
+                                            # Increment counter for unique widget keys
+                                            st.session_state.message_counter += 1
+                                            
+                                        except Exception as e:
+                                            st.error(f"Error queueing message: {str(e)}")
+                            except Exception as e:
+                                st.error(f"Error with chat functionality: {str(e)}")
+                                import traceback
+                                st.code(traceback.format_exc())
+
                 else:
                     st.warning("Could not retrieve watch details. Device may be offline or not registered.")

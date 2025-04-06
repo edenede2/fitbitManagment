@@ -82,8 +82,8 @@ class RequestBuilder:
         
     def with_date_range(self, start_date: Union[datetime.datetime, str], end_date: Union[datetime.datetime, str] = None) -> 'RequestBuilder':
         """Set date range for the request with proper formatting"""
-        st.write(f"start_date: {start_date}")
-        st.write(f"start_date type: {type(start_date)}")
+        # st.write(f"start_date: {start_date}")
+        # st.write(f"start_date type: {type(start_date)}")
         if isinstance(start_date, datetime.datetime):
             self.params['start_date'] = start_date.strftime(self.date_format)
         elif isinstance(start_date, str):
@@ -128,6 +128,11 @@ class RequestBuilder:
     
     def with_limit(self, limit: int) -> 'RequestBuilder':
         self.params['limit'] = limit
+        return self
+    
+    def with_activity_type(self, activity_type: str) -> 'RequestBuilder':
+        """Set activity type for activity-related endpoints"""
+        self.params['activity_type'] = activity_type
         return self
     
     def is_intraday_endpoint(self) -> bool:
@@ -194,7 +199,7 @@ class RequestBuilder:
         elif self.endpoint_type == 'device':
             self.url = url_template
         
-        st.write(f"Request URL: {self.url}")
+        # st.write(f"Request URL: {self.url}")
         if self.is_intraday_endpoint() and 'start_date' in self.params and 'end_date' in self.params:
             day_params = self.split_date_range_for_intraday()
             
@@ -549,7 +554,7 @@ class Watch:
         if 'limit' in kwargs:
             builder.with_limit(kwargs['limit'])
         
-        st.write(f"builder.params: {builder.params}")
+        # st.write(f"builder.params: {builder.params}")
         # Build the request
         request = builder.build()
         
