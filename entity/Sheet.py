@@ -118,7 +118,7 @@ class SheetFactory:
             'late_nums': LateNums,
             'suspicious_nums': SuspiciousNums,
             'student_fitbit': FitbitStudent,
-            
+            'chats': ChatsSheet,
             'generic': Sheet
         }
         
@@ -164,7 +164,8 @@ class LogSheet(Sheet):
                 'lastSteps','lastBattaryVal','lastHRVal', 'lastHRSeq',
                 'lastSleepDur',	'lastStepsVal',	'CurrentFailedSync', 'TotalFailedSync'
                 'CurrentFailedHR',	'TotalFailedHR', 'CurrentFailedSleep', 'TotalFailedSleep',
-                'CurrentFailedSteps', 'TotalFailedSteps', 'ID'],
+                'CurrentFailedSteps', 'TotalFailedSteps','CurrentFailedBattary', 'TotalFailedBattary',
+                  'ID'],
         required_columns=['timestamp', 'event']
     ))
 
@@ -225,6 +226,14 @@ class FitbitStudent(Sheet):
     schema: SheetSchema = field(default_factory=lambda: SheetSchema(
         columns=['email', 'watch'],
         required_columns=['email', 'watch']
+    ))
+
+@dataclass
+class ChatsSheet(Sheet):
+    """Sheet for storing chat data"""
+    schema: SheetSchema = field(default_factory=lambda: SheetSchema(
+        columns=['watchName', 'user', 'content', 'timestamp'],
+        required_columns=['watchName', 'user']
     ))
 
 
@@ -363,7 +372,7 @@ class GoogleSheetsAdapter:
             sheets_names = [
                 "user", "project", "fitbit", "log", "bulldog", "qualtrics_nova", "FitbitLog",
                 "fitbit_alerts_config", "qualtrics_alert_config", "late_nums", "suspicious_nums",
-                "qualtrics_nova", "student_fitbit"
+                "qualtrics_nova", "student_fitbit", "chats"
             ]
             if sheet_name not in sheets_names:
                 continue
