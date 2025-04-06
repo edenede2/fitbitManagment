@@ -11,13 +11,9 @@ google-auth-oauthlib>=1.0.0
 plotly>=5.13.0
 matplotlib>=3.7.0
 
-# Fitbit API access
-fitbit-python>=1.0.0
 
 # Database interaction
 sqlalchemy>=2.0.0
-
-# Additional utilities
-requests>=2.28.0
 python-dotenv>=1.0.0
-pyyaml>=6.0
+# Additional utilities
+requests>=2.28.0python-dotenv>=1.0.0pyyaml>=6.0rich>=10.14.0  # Added since it's used for improved exception logging
