@@ -2,3 +2,4 @@
 fitbit_log.csv
 data/
 reports/
+.streamlit/

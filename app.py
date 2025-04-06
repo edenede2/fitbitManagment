@@ -5,11 +5,14 @@ from pathlib import Path
 from controllers.auth_controller import AuthenticationController
 from controllers.user_controller import UserController
 from controllers.project_controller import ProjectController
-
+from pages.alerts_config import alerts_config_page
 # Import views
 from view.dashboard import display_dashboard
 from view.homepage import display_homepage
 # from view.alertConfig import display_alerts
+
+# Import the fitbit management functionality
+from pages.fitbit_management import load_fitbit_datatable
 
 # Set up app configuration
 st.set_page_config(
@@ -18,6 +21,19 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+def show_fitbit_management():
+    """Show the Fitbit management page with the current user's details."""
+    # Get current user details from session state
+    user_details = st.session_state.get('user_data', None)
+    
+    # Check if user is logged in
+    if user_details is None:
+        st.error("You must be logged in to access this feature.")
+        return
+    
+    # Load the fitbit management datatable with user details
+    load_fitbit_datatable(user_details)
 
 def main():
     """Main application function"""
@@ -43,23 +59,30 @@ def main():
             user_project = st.session_state.user_project
         
         # Navigation options based on user role
-        menu_options = ["Home", "Dashboard", "Reports","Alerts" "Settings", "About"]
+        menu_options = ["Home", "Dashboard", "Fitbit Managment", "Alerts Configuration", "Settings", "About"]
         
         # Filter pages based on user role
         if user_role == "Student":
             menu_options = ["Home", "Dashboard", "About"]
         elif user_role == "Guest":
             menu_options = ["Home", "About"]
-        
+
         selected_page = st.sidebar.radio("Navigation", menu_options)
         
+        # Add Fitbit Device Management button for Admin and Manager roles
+        if 'user_data' in st.session_state and st.session_state['user_data'].get('role', '').lower() in ['admin', 'manager']:
+            if st.sidebar.button("Fitbit Device Management"):
+                st.session_state['current_page'] = 'fitbit_management'
+
         # Display the selected page
-        if selected_page == "Home":
+        if selected_page == "Fitbit Managment":
+            load_fitbit_datatable(user_email, user_role, user_project)
+        elif selected_page == "Home":
             display_homepage(user_email, user_role, user_project)
         elif selected_page == "Dashboard":
             display_dashboard(user_email, user_role, user_project)
-        # elif selected_page == "Alerts":
-        #     display_alerts(user_email, user_role, user_project)
+        elif selected_page == "Alerts Configuration":
+            alerts_config_page(user_email)
         elif selected_page == "Reports":
             st.title("Reports")
             st.info("Reports functionality will be implemented here")
