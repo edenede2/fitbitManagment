@@ -8,22 +8,23 @@ if project_root not in sys.path:
     sys.path.append(project_root)
 
 import polars as pl
-from typing import Optional, Dict, Any
-
-# Now the imports should work
-from Spreadsheet_io.sheets import Spreadsheet, serverLogFile, fitbitLog
-from entity.Watch import Watch
-
-import streamlit as st
+from typing import Optional, Dict, Any, List
 import datetime
+
+
+# Import enhanced components
+from entity.Watch import Watch, WatchFactory
+from entity.Project import Project, ProjectRepository
 
 def get_watch_details() -> pl.DataFrame:
     """
     Fetches watch details from the spreadsheet and returns them as a Polars DataFrame.
+    Uses both legacy and enhanced components for compatibility.
     
     Returns:
         pl.DataFrame: A DataFrame containing watch details.
     """
+    # Get data from legacy Spreadsheet
     SP = Spreadsheet.get_instance()
     watch_details = SP.get_fitbits_details()
     
@@ -44,15 +45,22 @@ def get_watch_details() -> pl.DataFrame:
     # Initialize with empty DataFrame with proper schema
     new_rows = pl.DataFrame(schema=schema)
     
+    # Use enhanced Watch class with the old Watch details
     for row in watch_details:
-        if row['isActive'] == 'FALSE':
+        if row.get('isActive', '').upper() == 'FALSE':
             continue
-        watch = Watch(row)
+            
+        # Create a new Watch object using the enhanced class
+        watch = Watch(
+            name=row.get('name', ''),
+            project=row.get('project', ''),
+            token=row.get('token', '')
+        )
         
         # Convert all values to strings to maintain type consistency
         watch_dict = {
-            'project': str(watch.get_project() or ""),
-            'name': str(watch.get_name() or ""),
+            'project': str(watch.project or ""),
+            'name': str(watch.name or ""),
             'syncDate': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             'battery': str(watch.get_current_battery() or ""),
             'HR': str(watch.get_current_hourly_HR() or ""),
@@ -60,7 +68,7 @@ def get_watch_details() -> pl.DataFrame:
             'sleep_start': str(watch.get_last_sleep_start_end()[0] or ""),
             'sleep_end': str(watch.get_last_sleep_start_end()[1] or ""),
             'sleep_duration': str(watch.get_last_sleep_duration() or ""),
-            'isActive': str(watch.get_is_active() or ""),
+            'isActive': str(watch.is_active or ""),
         }
         
         # Create DataFrame with the same schema
@@ -73,12 +81,36 @@ def get_watch_details() -> pl.DataFrame:
 
 def update_log() -> None:
     """
-    Updates the log of a specific watch in the spreadsheet.
+    Updates the log of watches in the spreadsheet.
+    Handles both legacy and enhanced components.
     """
-    SP = Spreadsheet.get_instance()
+    # Get watch data
     watch_data = get_watch_details()
+    
+    # Update legacy serverLogFile
     fb_log = serverLogFile()
     fb_log.update_fitbits_log(watch_data)
+    
+    # Also update enhanced entity sheet if possible
+    try:
+        SP = Spreadsheet.get_instance()
+        entity_spreadsheet = SP.get_entity_spreadsheet()
+        
+        # Convert polars DataFrame to pandas for compatibility
+        pandas_df = watch_data.to_pandas()
+        
+        # Update the entity sheet
+        fitbit_sheet = entity_spreadsheet.get_sheet("FitbitData", "fitbit")
+        entity_spreadsheet.update_sheet("FitbitData", pandas_df, strategy="replace")
+        
+        # Save changes back to Google Sheets
+        from entity.Sheet import GoogleSheetsAdapter
+        GoogleSheetsAdapter.save(entity_spreadsheet, "FitbitData")
+        
+        print("Updated both legacy and enhanced sheets")
+    except Exception as e:
+        print(f"Warning: Could not update enhanced entity sheet: {e}")
+        print("Only legacy sheet was updated")
 
 def save_to_csv(data: pl.DataFrame) -> None:
     """
@@ -88,7 +120,7 @@ def save_to_csv(data: pl.DataFrame) -> None:
         data (pl.DataFrame): The watch data to save.
     """
     # Create directory if it doesn't exist
-    csv_dir = Path("/home/psylab-6028/fitbitmanagment/fitbitManagment/data")
+    csv_dir = Path(project_root) / "data"
     csv_dir.mkdir(parents=True, exist_ok=True)
     
     # Convert all data to strings to avoid type mismatches
@@ -173,30 +205,6 @@ def update_worksheet_3(data: pl.DataFrame) -> None:
     # Get current time for timestamps
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
-    # Get existing log data to access failure counters
-    log_path = st.secrets.get("fitbit_log_path", "fitbit_log.csv")
-    existing_failure_data = {}
-    
-    if os.path.exists(log_path):
-        try:
-            log_df = pl.read_csv(log_path)
-            # Create a dictionary with watch IDs as keys and failure counts as values
-            for row in log_df.iter_rows(named=True):
-                watch_id = row.get("ID", "")
-                if watch_id:
-                    existing_failure_data[watch_id] = {
-                        "CurrentFailedSync": int(row.get("CurrentFailedSync", 0)),
-                        "TotalFailedSync": int(row.get("TotalFailedSync", 0)),
-                        "CurrentFailedHR": int(row.get("CurrentFailedHR", 0)),
-                        "TotalFailedHR": int(row.get("TotalFailedHR", 0)),
-                        "CurrentFailedSleep": int(row.get("CurrentFailedSleep", 0)),
-                        "TotalFailedSleep": int(row.get("TotalFailedSleep", 0)),
-                        "CurrentFailedSteps": int(row.get("CurrentFailedSteps", 0)),
-                        "TotalFailedSteps": int(row.get("TotalFailedSteps", 0))
-                    }
-        except Exception as e:
-            print(f"Error reading log file: {e}")
-    
     # Transform data to match expected column structure
     transformed_data = []
     
@@ -204,27 +212,11 @@ def update_worksheet_3(data: pl.DataFrame) -> None:
         # Create watch ID
         watch_id = f"{row.get('project', '')}-{row.get('name', '')}"
         
-        # Get existing failure counts or use defaults
-        failure_data = existing_failure_data.get(watch_id, {})
-        
-        # Calculate current failure counters
-        curr_failed_sync = 0 if row.get("syncDate") else failure_data.get("CurrentFailedSync", 0) + 1
-        total_failed_sync = failure_data.get("TotalFailedSync", 0) + (0 if row.get("syncDate") else 1)
-        
-        curr_failed_hr = 0 if row.get("HR") else failure_data.get("CurrentFailedHR", 0) + 1
-        total_failed_hr = failure_data.get("TotalFailedHR", 0) + (0 if row.get("HR") else 1)
-        
-        curr_failed_sleep = 0 if (row.get("sleep_start") and row.get("sleep_end")) else failure_data.get("CurrentFailedSleep", 0) + 1
-        total_failed_sleep = failure_data.get("TotalFailedSleep", 0) + (0 if (row.get("sleep_start") and row.get("sleep_end")) else 1)
-        
-        curr_failed_steps = 0 if row.get("steps") else failure_data.get("CurrentFailedSteps", 0) + 1
-        total_failed_steps = failure_data.get("TotalFailedSteps", 0) + (0 if row.get("steps") else 1)
-        
         watch_dict = {
             "project": row.get("project", ""),
             "watchName": row.get("name", ""),
             "lastCheck": now,
-            "lastSynced": row.get("syncDate", now),
+            "lastSynced": row.get("syncDate", ""),
             "lastBattary": now if row.get("battery") else "",
             "lastHR": now if row.get("HR") else "",
             "lastSleepStartDateTime": row.get("sleep_start", ""),
@@ -235,14 +227,6 @@ def update_worksheet_3(data: pl.DataFrame) -> None:
             "lastHRSeq": "",  # Would need to calculate or get from another source
             "lastSleepDur": row.get("sleep_duration", ""),
             "lastStepsVal": row.get("steps", ""),
-            "CurrentFailedSync": curr_failed_sync,
-            "TotalFailedSync": total_failed_sync,
-            "CurrentFailedHR": curr_failed_hr,
-            "TotalFailedHR": total_failed_hr,
-            "CurrentFailedSleep": curr_failed_sleep,
-            "TotalFailedSleep": total_failed_sleep,
-            "CurrentFailedSteps": curr_failed_steps,
-            "TotalFailedSteps": total_failed_steps,
             "ID": watch_id
         }
         transformed_data.append(watch_dict)
