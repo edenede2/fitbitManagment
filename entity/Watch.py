@@ -503,6 +503,8 @@ class Watch:
     is_active: bool = True
     last_sync_time: Optional[datetime.datetime] = None
     battery_level: Optional[int] = None
+    # Add data caching
+    _cached_data: Dict[str, Dict] = field(default_factory=dict)
     
     def __post_init__(self):
         """Initialize after the dataclass initialization"""
@@ -512,7 +514,7 @@ class Watch:
             "Accept": "application/json",
             "Authorization": f"Bearer {token_value}"
         }
-        
+    
     def __eq__(self, other):
         """Equal comparison based on watch name and project"""
         if not isinstance(other, Watch):
@@ -523,8 +525,13 @@ class Watch:
         """Hash for using in dictionaries and sets"""
         return hash((self.name, self.project))
     
-    def fetch_data(self, endpoint_type: str, **kwargs) -> Dict:
+    def fetch_data(self, endpoint_type: str, force_fetch: bool = False, **kwargs) -> Dict:
         """Fetch data from Fitbit API using the Builder pattern"""
+        # Return cached data if available and force_fetch is False
+        cache_key = f"{endpoint_type}_{json.dumps(kwargs, default=str)}"
+        if not force_fetch and cache_key in self._cached_data:
+            return self._cached_data[cache_key]
+            
         builder = RequestBuilder(endpoint_type, self.token)
         
         # Apply request parameters based on kwargs
@@ -545,11 +552,13 @@ class Watch:
         st.write(f"builder.params: {builder.params}")
         # Build the request
         request = builder.build()
-        st.write(f"Request URL: {request['url']}")
         
         # Handle multi-day intraday request if needed
         if isinstance(request, dict) and request.get('multiday', False):
-            return self.handle_multiday_request(request)
+            result = self.handle_multiday_request(request)
+            if result:
+                self._cached_data[cache_key] = result
+            return result
         
         # Execute the request
         response = requests.get(request['url'], headers=request['headers'])
@@ -557,8 +566,13 @@ class Watch:
         if response.status_code != 200:
             print(f"Error fetching {endpoint_type} data: {response.status_code}")
             return {}
+        
+        result = response.json()
+        # Cache the result
+        if result:
+            self._cached_data[cache_key] = result
             
-        return response.json()
+        return result
     
     def handle_multiday_request(self, multiday_request: Dict) -> Dict:
         """
@@ -699,19 +713,18 @@ class Watch:
         processor = ProcessorFactory.get_processor(endpoint_type)
         return processor.process(data)
     
-    def get_data_as_dataframe(self, endpoint_type: str, data: Dict = None, **kwargs) -> pd.DataFrame:
+    def get_data_as_dataframe(self, endpoint_type: str, data: Dict = None, force_fetch: bool = False, **kwargs) -> pd.DataFrame:
         """Get data as a pandas DataFrame"""
         if data is None:
-            data = self.fetch_data(endpoint_type, **kwargs)
-        st.write(f"Data fetched: {data}")
-        # st.json(data)
+            data = self.fetch_data(endpoint_type, force_fetch=force_fetch, **kwargs)
+        
         processor = ProcessorFactory.get_processor(endpoint_type)
         processed_data = processor.process(data)
         return processor.to_dataframe(processed_data)
     
-    def update_device_info(self) -> None:
+    def update_device_info(self, force_fetch: bool = False) -> None:
         """Update device information (battery, sync time, etc.)"""
-        data = self.fetch_data('device')
+        data = self.fetch_data('device', force_fetch=force_fetch)
         
         if data and isinstance(data, list) and len(data) > 0:
             device = data[0]  # Get the first device
@@ -730,13 +743,14 @@ class Watch:
                     except ValueError:
                         print(f"Could not parse sync time: {sync_time}")
     
-    def get_current_hourly_HR(self) -> Optional[int]:
+    def get_current_hourly_HR(self, force_fetch: bool = False) -> Optional[int]:
         """Get the current hourly heart rate (convenience method)"""
         current_date = datetime.datetime.now()
         hour_ago = current_date - datetime.timedelta(hours=1)
         
         data = self.fetch_data(
             'Heart Rate Intraday',
+            force_fetch=force_fetch,
             start_date=current_date,
             start_time=hour_ago,
             end_time=current_date
@@ -748,13 +762,14 @@ class Watch:
             return processed_data[-1]['value']
         return None
     
-    def get_current_hourly_steps(self) -> Optional[int]:
+    def get_current_hourly_steps(self, force_fetch: bool = False) -> Optional[int]:
         """Get the current hourly steps (convenience method)"""
         current_date = datetime.datetime.now()
         hours_ago = current_date - datetime.timedelta(hours=6)
         
         data = self.fetch_data(
             'Steps Intraday',
+            force_fetch=force_fetch,
             start_date=current_date,
             start_time=hours_ago,
             end_time=current_date
@@ -768,18 +783,20 @@ class Watch:
                     return step_data['value']
         return None
     
-    def get_current_battery(self) -> Optional[int]:
+    def get_current_battery(self, force_fetch: bool = False) -> Optional[int]:
         """Get the current battery level (convenience method)"""
-        self.update_device_info()
+        if force_fetch:
+            self.update_device_info(force_fetch=True)
         return self.battery_level
     
-    def get_last_sleep_start_end(self) -> tuple:
+    def get_last_sleep_start_end(self, force_fetch: bool = False) -> tuple:
         """Get the last sleep start and end times (convenience method)"""
         yesterday = datetime.datetime.now() - datetime.timedelta(days=1)
         today = datetime.datetime.now()
         
         data = self.fetch_data(
             'Sleep',
+            force_fetch=force_fetch,
             start_date=yesterday,
             end_date=today
         )
@@ -791,9 +808,9 @@ class Watch:
             return sleep_record.get('start_time'), sleep_record.get('end_time')
         return None, None
     
-    def get_last_sleep_duration(self) -> Optional[float]:
+    def get_last_sleep_duration(self, force_fetch: bool = False) -> Optional[float]:
         """Get the last sleep duration in hours (convenience method)"""
-        start_time, end_time = self.get_last_sleep_start_end()
+        start_time, end_time = self.get_last_sleep_start_end(force_fetch=force_fetch)
         if not start_time or not end_time:
             return None
         try:
@@ -811,6 +828,10 @@ class Watch:
         except Exception as e:
             print(f"Error calculating sleep duration: {e}")
             return None
+            
+    def clear_cache(self) -> None:
+        """Clear the cached data"""
+        self._cached_data = {}
 
 # ===== Watch Factory =====
 
