@@ -114,7 +114,7 @@ class SheetFactory:
             'bulldog': BulldogSheet,
             'qualtrics_nova': QualtricsNovaSheet,
             'fitbit_alerts_config': FitbitAlertsConfig,
-            'qualtrics_alert_config': QualtricsAlertConfig,
+            'qualtrics_alerts_config': QualtricsAlertConfig,
             'late_nums': LateNums,
             'suspicious_nums': SuspiciousNums,
             'student_fitbit': FitbitStudent,
@@ -371,7 +371,7 @@ class GoogleSheetsAdapter:
             # White list of sheet names
             sheets_names = [
                 "user", "project", "fitbit", "log", "bulldog", "qualtrics_nova", "FitbitLog",
-                "fitbit_alerts_config", "qualtrics_alert_config", "late_nums", "suspicious_nums",
+                "fitbit_alerts_config", "qualtrics_alerts_config", "late_nums", "suspicious_nums",
                 "qualtrics_nova", "student_fitbit", "chats"
             ]
             if sheet_name not in sheets_names:
