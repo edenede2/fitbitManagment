@@ -9,6 +9,7 @@ from controllers.project_controller import ProjectController
 # Import views
 from view.dashboard import display_dashboard
 from view.homepage import display_homepage
+# from view.alertConfig import display_alerts
 
 # Set up app configuration
 st.set_page_config(
@@ -42,7 +43,7 @@ def main():
             user_project = st.session_state.user_project
         
         # Navigation options based on user role
-        menu_options = ["Home", "Dashboard", "Reports", "Settings", "About"]
+        menu_options = ["Home", "Dashboard", "Reports","Alerts" "Settings", "About"]
         
         # Filter pages based on user role
         if user_role == "Student":
@@ -57,6 +58,8 @@ def main():
             display_homepage(user_email, user_role, user_project)
         elif selected_page == "Dashboard":
             display_dashboard(user_email, user_role, user_project)
+        # elif selected_page == "Alerts":
+        #     display_alerts(user_email, user_role, user_project)
         elif selected_page == "Reports":
             st.title("Reports")
             st.info("Reports functionality will be implemented here")

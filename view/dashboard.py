@@ -352,116 +352,150 @@ def display_dashboard(user_email, user_role, user_project):
         with tab2:
             st.subheader(f"Device Details: {selected_watch}")
             
+            # Add a refresh button to explicitly fetch fresh data
+            refresh_device = st.button("🔄 Refresh Device Data")
+            
             # Get and display watch details
-            with st.spinner("Loading watch details directly from Fitbit API..."):
+            with st.spinner("Loading watch details..."):
                 watch_details = cached_get_watch_details(selected_watch)
                 
-                # Create Watch object and update with latest information from API
+                # Create Watch object and update with latest information from API only when refresh is clicked
                 if watch_details:
                     try:
                         watch = WatchFactory.create_from_details(watch_details)
-                        watch.update_device_info()
                         
-                        # Update watch_details with fresh data from the API
-                        watch_details['lastBatteryLevel'] = watch.battery_level
-                        watch_details['lastSynced'] = watch.last_sync_time.isoformat() if watch.last_sync_time else ""
-                        watch_details['lastHeartRate'] = watch.get_current_hourly_HR() or ""
-                        watch_details['lastSteps'] = watch.get_current_hourly_steps() or ""
-                        sleep_start, sleep_end = watch.get_last_sleep_start_end()
-                        watch_details['lastSleepStart'] = sleep_start or ""
-                        watch_details['lastSleepEnd'] = sleep_end or ""
-                        watch_details['lastSleepDuration'] = watch.get_last_sleep_duration() or ""
+                        # Only make API calls when refresh button is clicked
+                        if refresh_device:
+                            with st.spinner("Fetching latest data from Fitbit API..."):
+                                # Force fetch fresh data from the API
+                                watch.update_device_info(force_fetch=True)
+                                
+                                # Update watch_details with fresh data from the API
+                                watch_details['lastBatteryLevel'] = watch.battery_level
+                                watch_details['lastSynced'] = watch.last_sync_time.isoformat() if watch.last_sync_time else ""
+                                watch_details['lastHeartRate'] = watch.get_current_hourly_HR(force_fetch=True) or ""
+                                watch_details['lastSteps'] = watch.get_current_hourly_steps(force_fetch=True) or ""
+                                sleep_start, sleep_end = watch.get_last_sleep_start_end(force_fetch=True)
+                                watch_details['lastSleepStart'] = sleep_start or ""
+                                watch_details['lastSleepEnd'] = sleep_end or ""
+                                watch_details['lastSleepDuration'] = watch.get_last_sleep_duration(force_fetch=True) or ""
+                                
+                                st.success("✅ Device data refreshed successfully!")
+                        else:
+                            # Use existing data from watch_details without API calls
+                            # If some values are missing in watch_details, initialize them without API calls
+                            if 'lastBatteryLevel' not in watch_details:
+                                watch_details['lastBatteryLevel'] = watch.battery_level
+                            if 'lastSynced' not in watch_details and watch.last_sync_time:
+                                watch_details['lastSynced'] = watch.last_sync_time.isoformat()
+                            
+                            # These will use cached values without making API calls
+                            if 'lastHeartRate' not in watch_details:
+                                watch_details['lastHeartRate'] = ""
+                            if 'lastSteps' not in watch_details:
+                                watch_details['lastSteps'] = ""
+                            if 'lastSleepStart' not in watch_details:
+                                watch_details['lastSleepStart'] = ""
+                            if 'lastSleepEnd' not in watch_details:
+                                watch_details['lastSleepEnd'] = ""
+                            if 'lastSleepDuration' not in watch_details:
+                                watch_details['lastSleepDuration'] = ""
                     except Exception as e:
-                        st.error(f"Error updating watch data from API: {e}")
-            
-            if watch_details:
-                # Display in a nice format with expanders
-                col1, col2 = st.columns(2)
+                        st.error(f"Error with watch data: {e}")
                 
-                with col1:
-                    st.markdown("### 📋 Basic Information")
-                    st.info(f"**Name:** {watch_details.get('name', '')}")
-                    st.info(f"**Project:** {watch_details.get('project', '')}")
+                if refresh_device:
+                    st.info("Using freshly fetched data from Fitbit API")
+                else:
+                    st.info("Using cached data. Click 'Refresh Device Data' for real-time information.")
+                
+                if watch_details:
+                    # Display in a nice format with expanders
+                    col1, col2 = st.columns(2)
                     
-                    # Battery level with gauge chart
-                    battery_level = watch_details.get('lastBatteryLevel', '0')
-                    try:
-                        battery_level = int(battery_level)
-                    except:
-                        battery_level = 0
+                    with col1:
+                        st.markdown("### 📋 Basic Information")
+                        st.info(f"**Name:** {watch_details.get('name', '')}")
+                        st.info(f"**Project:** {watch_details.get('project', '')}")
                         
-                    st.markdown("### 🔋 Battery Status")
-                    
-                    fig = go.Figure(go.Indicator(
-                        mode = "gauge+number",
-                        value = battery_level,
-                        domain = {'x': [0, 1], 'y': [0, 1]},
-                        title = {'text': "Battery Level (%)"},
-                        gauge = {
-                            'axis': {'range': [0, 100]},
-                            'bar': {'color': "darkgreen"},
-                            'steps': [
-                                {'range': [0, 20], 'color': "red"},
-                                {'range': [20, 50], 'color': "orange"},
-                                {'range': [50, 100], 'color': "lightgreen"}
-                            ],
-                            'threshold': {
-                                'line': {'color': "red", 'width': 4},
-                                'thickness': 0.75,
-                                'value': 20
+                        # Battery level with gauge chart
+                        battery_level = watch_details.get('lastBatteryLevel', '0')
+                        try:
+                            battery_level = int(battery_level)
+                        except:
+                            battery_level = 0
+                            
+                        st.markdown("### 🔋 Battery Status")
+                        
+                        fig = go.Figure(go.Indicator(
+                            mode = "gauge+number",
+                            value = battery_level,
+                            domain = {'x': [0, 1], 'y': [0, 1]},
+                            title = {'text': "Battery Level (%)"},
+                            gauge = {
+                                'axis': {'range': [0, 100]},
+                                'bar': {'color': "darkgreen"},
+                                'steps': [
+                                    {'range': [0, 20], 'color': "red"},
+                                    {'range': [20, 50], 'color': "orange"},
+                                    {'range': [50, 100], 'color': "lightgreen"}
+                                ],
+                                'threshold': {
+                                    'line': {'color': "red", 'width': 4},
+                                    'thickness': 0.75,
+                                    'value': 20
+                                }
                             }
-                        }
-                    ))
+                        ))
 
-                    fig.update_layout(height=250, margin=dict(l=10, r=10, t=50, b=10))
-                    st.plotly_chart(fig, use_container_width=True)
-                
-                with col2:
-                    st.markdown("### 📊 Latest Metrics")
-                    st.info(f"**Last Synced:** {watch_details.get('lastSynced', '')}")
-                    st.info(f"**Heart Rate:** {watch_details.get('lastHeartRate', '')} bpm")
-                    st.info(f"**Steps:** {watch_details.get('lastSteps', '')}")
+                        fig.update_layout(height=250, margin=dict(l=10, r=10, t=50, b=10))
+                        st.plotly_chart(fig, use_container_width=True)
                     
-                    st.markdown("### 💤 Sleep Information")
-                    st.info(f"**Last Sleep Start:** {watch_details.get('lastSleepStart', '')}")
-                    st.info(f"**Last Sleep End:** {watch_details.get('lastSleepEnd', '')}")
-                    st.info(f"**Sleep Duration:** {watch_details.get('lastSleepDuration', '')} hours")
-                
-                # Status warnings section
-                st.markdown("### ⚠️ Device Status")
-                
-                status_ok = True
-                
-                # Check battery level
-                if watch_details.get('lastBatteryLevel'):
-                    try:
-                        battery_level = int(watch_details.get('lastBatteryLevel', 0))
-                        if battery_level < 20:
-                            st.warning(f"🔋 Battery level is low ({battery_level}%). Please charge the device.")
-                            status_ok = False
-                    except:
-                        pass
-                
-                # Calculate time since last sync
-                if watch_details.get('lastSynced'):
-                    try:
-                        last_sync = pd.to_datetime(watch_details.get('lastSynced'))
-                        time_since_sync = datetime.datetime.now() - last_sync
+                    with col2:
+                        st.markdown("### 📊 Latest Metrics")
+                        st.info(f"**Last Synced:** {watch_details.get('lastSynced', '')}")
+                        st.info(f"**Heart Rate:** {watch_details.get('lastHeartRate', '')} bpm")
+                        st.info(f"**Steps:** {watch_details.get('lastSteps', '')}")
                         
-                        if time_since_sync.total_seconds() > 86400:  # More than 24 hours
-                            st.warning(f"⏰ Device hasn't synced in {time_since_sync.days} days and {time_since_sync.seconds//3600} hours. Please check connection.")
-                            status_ok = False
-                    except:
-                        pass
-                
-                if status_ok:
-                    st.success("✅ All systems normal. Device is functioning properly.")
-                
-                # User assignment section (if Admin or Manager)
-                if user_role in ["Admin", "Manager"]:
-                    with st.expander("Student Assignment"):
-                        st.info("This section allows assignment of this watch to students")
-                        # Fetch students for this project
-                        # Add assignment UI here
-            else:
-                st.warning("Could not retrieve watch details. Device may be offline or not registered.")
+                        st.markdown("### 💤 Sleep Information")
+                        st.info(f"**Last Sleep Start:** {watch_details.get('lastSleepStart', '')}")
+                        st.info(f"**Last Sleep End:** {watch_details.get('lastSleepEnd', '')}")
+                        st.info(f"**Sleep Duration:** {watch_details.get('lastSleepDuration', '')} hours")
+                    
+                    # Status warnings section
+                    st.markdown("### ⚠️ Device Status")
+                    
+                    status_ok = True
+                    
+                    # Check battery level
+                    if watch_details.get('lastBatteryLevel'):
+                        try:
+                            battery_level = int(watch_details.get('lastBatteryLevel', 0))
+                            if battery_level < 20:
+                                st.warning(f"🔋 Battery level is low ({battery_level}%). Please charge the device.")
+                                status_ok = False
+                        except:
+                            pass
+                    
+                    # Calculate time since last sync
+                    if watch_details.get('lastSynced'):
+                        try:
+                            last_sync = pd.to_datetime(watch_details.get('lastSynced'))
+                            time_since_sync = datetime.datetime.now() - last_sync
+                            
+                            if time_since_sync.total_seconds() > 86400:  # More than 24 hours
+                                st.warning(f"⏰ Device hasn't synced in {time_since_sync.days} days and {time_since_sync.seconds//3600} hours. Please check connection.")
+                                status_ok = False
+                        except:
+                            pass
+                    
+                    if status_ok:
+                        st.success("✅ All systems normal. Device is functioning properly.")
+                    
+                    # User assignment section (if Admin or Manager)
+                    if user_role in ["Admin", "Manager"]:
+                        with st.expander("Student Assignment"):
+                            st.info("This section allows assignment of this watch to students")
+                            # Fetch students for this project
+                            # Add assignment UI here
+                else:
+                    st.warning("Could not retrieve watch details. Device may be offline or not registered.")
