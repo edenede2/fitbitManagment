@@ -844,7 +844,8 @@ class ServerLogFile:
             "lastHR", "lastSleepStartDateTime", "lastSleepEndDateTime", "lastSteps", 
             "lastBattaryVal", "lastHRVal", "lastHRSeq", "lastSleepDur", "lastStepsVal",
             "CurrentFailedSync", "TotalFailedSync", "CurrentFailedHR", "TotalFailedHR",
-            "CurrentFailedSleep", "TotalFailedSleep", "CurrentFailedSteps", "TotalFailedSteps", "ID"
+            "CurrentFailedSleep", "TotalFailedSleep", "CurrentFailedSteps", "TotalFailedSteps",
+            "CurrentFailedBattary", "TotalFailedBattary", "ID"
         ]
         
         try:
@@ -932,7 +933,7 @@ class ServerLogFile:
                     "lastHRSeq": self._calculate_hr_sequence(row),
                     "lastSleepDur": row.get("sleep_duration", ""),
                     "lastStepsVal": row.get("steps", ""),
-                    "CurrentFailedSync": 0,  # Reset failures for new record
+                    "CurrentFailedSync": 0,  
                     "TotalFailedSync": 0,
                     "CurrentFailedHR": 0,
                     "TotalFailedHR": 0,
@@ -940,6 +941,8 @@ class ServerLogFile:
                     "TotalFailedSleep": 0,
                     "CurrentFailedSteps": 0,
                     "TotalFailedSteps": 0,
+                    "CurrentFailedBattary": 0,
+                    "TotalFailedBattary": 0,
                     "ID": watch_id
                 }
                 
@@ -967,7 +970,8 @@ class ServerLogFile:
                         "lastHR", "lastSleepStartDateTime", "lastSleepEndDateTime", "lastSteps", 
                         "lastBattaryVal", "lastHRVal", "lastHRSeq", "lastSleepDur", "lastStepsVal",
                         "CurrentFailedSync", "TotalFailedSync", "CurrentFailedHR", "TotalFailedHR",
-                        "CurrentFailedSleep", "TotalFailedSleep", "CurrentFailedSteps", "TotalFailedSteps", "ID"
+                        "CurrentFailedSleep", "TotalFailedSleep", "CurrentFailedSteps", "TotalFailedSteps",
+                        "CurrentFailedBattary", "TotalFailedBattary", "ID"
                     ]
                     
                     # Add headers as the first row

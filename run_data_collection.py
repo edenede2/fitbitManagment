@@ -708,6 +708,7 @@ def hourly_data_collection():
                     print(f"  Watches with heart rate failures: {stats.get('hr_failures', 0)}")
                     print(f"  Watches with sleep failures: {stats.get('sleep_failures', 0)}")
                     print(f"  Watches with steps failures: {stats.get('steps_failures', 0)}")
+                    print(f"  Watches with battery failures: {stats.get('battery_failures', 0)}")
                     print(f"  Total watches with any failure: {stats.get('total_failures', 0)}")
             else:
                 print(f"[{datetime.datetime.now()}] Failed to update log data")
