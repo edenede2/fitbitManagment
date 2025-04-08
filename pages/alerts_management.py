@@ -50,7 +50,7 @@ def load_suspicious_numbers(spreadsheet:Spreadsheet):
     
     # Add column for verification if not exists - FIXED to use Polars syntax
     if 'accepted' not in df.columns:
-        df = df.with_column(pl.lit(False).alias('accepted'))
+        df = df.with_columns(pl.lit(False).alias('accepted'))
         
     return df, suspicious_sheet
 
@@ -62,7 +62,7 @@ def load_late_numbers(spreadsheet:Spreadsheet):
     
     # Add column for verification if not exists - FIXED to use Polars syntax
     if 'accepted' not in df.columns:
-        df = df.with_column(pl.lit(False).alias('accepted'))
+        df = df.with_columns(pl.lit(False).alias('accepted'))
         
     return df, late_sheet
 
@@ -162,7 +162,7 @@ def show_alerts_management(user_email, user_role, user_project):
         else:
             # Add time ago information if endDate column exists
             if 'endDate' in total_answers_df.columns:
-                total_answers_df = total_answers_df.with_column(
+                total_answers_df = total_answers_df.with_columns(
                     pl.col('endDate').apply(format_time_ago).alias('Time Ago')
                 )
             
@@ -221,7 +221,7 @@ def show_alerts_management(user_email, user_role, user_project):
         else:
             # Add human-readable time ago column for display
             if 'filledTime' in suspicious_df.columns:
-                suspicious_df = suspicious_df.with_column(
+                suspicious_df = suspicious_df.with_columns(
                     pl.col('filledTime').apply(format_time_ago).alias('Time Ago')
                 )
                 
@@ -278,7 +278,7 @@ def show_alerts_management(user_email, user_role, user_project):
                     
                     # Update timestamp for modified rows
                     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    updated_df = updated_df.with_column(pl.lit(now).alias('lastUpdated'))
+                    updated_df = updated_df.with_columns(pl.lit(now).alias('lastUpdated'))
                     
                     # Update the sheet
                     spreadsheet.update_sheet("suspicious_nums", updated_df)
@@ -301,7 +301,7 @@ def show_alerts_management(user_email, user_role, user_project):
         else:
             # Add human-readable time ago column
             if 'sentTime' in late_df.columns:
-                late_df = late_df.with_column(
+                late_df = late_df.with_columns(
                     pl.col('sentTime').apply(format_time_ago).alias('Time Ago')
                 )
                 
@@ -360,7 +360,7 @@ def show_alerts_management(user_email, user_role, user_project):
                     
                     # Update timestamp for modified rows
                     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    updated_df = updated_df.with_column(pl.lit(now).alias('lastUpdated'))
+                    updated_df = updated_df.with_columns(pl.lit(now).alias('lastUpdated'))
                     
                     # Update the sheet
                     spreadsheet.update_sheet("late_nums", updated_df)
