@@ -119,7 +119,7 @@ class AuthenticationController:
     def login_with_google(self):
         """Redirect to Google login"""
         # This is a placeholder that will trigger Streamlit's built-in authentication
-        st.experimental_user.login()
+        st.login("google")
     
     def demo_login(self, email: str, role: str, project: str):
         """Set up a demo login with specified role and project"""
