@@ -384,7 +384,7 @@ def _update_accepted_numbers(spreadsheet: Spreadsheet, df, selected_numbers, she
         
         # Use the GoogleSheetsAdapter to explicitly save changes to Google Sheets
         adapter = GoogleSheetsAdapter()
-        adapter.save(updated_data, sheet_name)
+        adapter.save(spreadsheet, sheet_name)
         
         return True
     return False
