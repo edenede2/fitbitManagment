@@ -62,7 +62,7 @@ def get_user_fitbit_config(spreadsheet:Spreadsheet, user_email):
 def get_user_qualtrics_config(spreadsheet:Spreadsheet, user_email):
     """Get Qualtrics configuration for the current user"""
     # Get the qualtrics alerts config sheet
-    GoogleSheetsAdapter.connect(spreadsheet)
+    # GoogleSheetsAdapter.connect(spreadsheet)
     qualtrics_config_sheet = spreadsheet.get_sheet("qualtrics_alerts_config", "qualtrics_alerts_config")
 
     # st.write(qualtrics_config_sheet)
@@ -113,7 +113,7 @@ def save_qualtrics_config(spreadsheet:Spreadsheet, config_data):
 
     return True
 
-def alerts_config_page(user_email):
+def alerts_config_page(user_email, spreadsheet: Spreadsheet) -> None:
     """Main function for the alerts configuration page"""
     st.title("Alerts Configuration")
     
@@ -128,7 +128,7 @@ def alerts_config_page(user_email):
     
     # Load data
     # user_email = st.session_state['user_email']
-    spreadsheet = load_spreadsheet()
+    # spreadsheet = load_spreadsheet()
     
     # Create tabs for the two configuration types
     tab1, tab2 = st.tabs(["Fitbit Alerts", "Qualtrics Alerts"])
