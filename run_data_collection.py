@@ -50,6 +50,21 @@ def analyze_whatsapp_messages():
         bulldog_sheet = whatsapp_spreadsheet.get_sheet("bulldog", sheet_type="bulldog")
         alert_sheet = alert_spreadsheet.get_sheet("EMA", sheet_type="EMA")
         
+        # Get the existing suspicious and late number sheets to check for accepted entries
+        existing_suspicious_nums = None
+        existing_late_nums = None
+        
+        try:
+            if "suspicious_nums" in alert_spreadsheet.sheets:
+                existing_suspicious_nums = alert_spreadsheet.get_sheet("suspicious_nums", sheet_type="suspicious_nums")
+                existing_suspicious_nums_df = existing_suspicious_nums.to_dataframe(engine="polars")
+            
+            if "late_nums" in alert_spreadsheet.sheets:
+                existing_late_nums = alert_spreadsheet.get_sheet("late_nums", sheet_type="late_nums")
+                existing_late_nums_df = existing_late_nums.to_dataframe(engine="polars")
+        except Exception as e:
+            print(f"Error retrieving existing number sheets: {e}")
+        
         # Get threshold from qualtrics_alerts_config or use default
         hours_threshold = 48  # Default threshold
         config_sheet = alert_spreadsheet.get_sheet("qualtrics_alerts_config", sheet_type="qualtrics_alerts_config")
@@ -78,25 +93,47 @@ def analyze_whatsapp_messages():
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         late_nums_data = []
         for row in late_responses.iter_rows(named=True):
-            late_nums_data.append({
-                'nums': row['phone'],
-                'sentTime': row['time'],
-                'hoursLate': f"{row['hours_left']:.2f}",
-                'lastUpdated': now,
-                'accepted': 'FALSE'
-            })
+            # Skip if this number is already accepted in existing late_nums
+            should_skip = False
+            if existing_late_nums_df is not None and not existing_late_nums_df.is_empty():
+                matches = existing_late_nums_df.filter(
+                    (pl.col('nums') == row['phone']) & 
+                    (pl.col('accepted').str.to_uppercase() == 'TRUE')
+                )
+                if not matches.is_empty():
+                    should_skip = True
+            
+            if not should_skip:
+                late_nums_data.append({
+                    'nums': row['phone'],
+                    'sentTime': row['time'],
+                    'hoursLate': f"{row['hours_left']:.2f}",
+                    'lastUpdated': now,
+                    'accepted': 'FALSE'
+                })
         
         # Format suspicious numbers for the SuspiciousNums sheet
         suspicious_nums_data = []
         for row in suspicious_numbers.iter_rows(named=True):
-            # Check if 'endDate' exists, otherwise use current time
-            filled_time = row.get('endDate', now) if hasattr(row, 'get') else now
-            suspicious_nums_data.append({
-                'nums': row['phone'],
-                'filledTime': filled_time,
-                'lastUpdated': now,
-                'accepted': row.get('accepted', 'FALSE')
-            })
+            # Skip if this number is already accepted in existing suspicious_nums
+            should_skip = False
+            if existing_suspicious_nums_df is not None and not existing_suspicious_nums_df.is_empty():
+                matches = existing_suspicious_nums_df.filter(
+                    (pl.col('nums') == row['phone']) & 
+                    (pl.col('accepted').str.to_uppercase() == 'TRUE')
+                )
+                if not matches.is_empty():
+                    should_skip = True
+            
+            if not should_skip:
+                # Check if 'endDate' exists, otherwise use current time
+                filled_time = row.get('endDate', now) if hasattr(row, 'get') else now
+                suspicious_nums_data.append({
+                    'nums': row['phone'],
+                    'filledTime': filled_time,
+                    'lastUpdated': now,
+                    'accepted': row.get('accepted', 'FALSE')
+                })
         
         # Make sure we have the sheets before updating
         try:
@@ -579,7 +616,11 @@ def check_qualtrics_alerts(suspicious_numbers, config_data):
     alerts_sent = {}
     
     try:
-        suspicious_numbers = suspicious_numbers.filter(pl.col('accepted') == 'FALSE')
+        # Only consider numbers with 'accepted' set to FALSE - case insensitive check
+        suspicious_numbers = suspicious_numbers.filter(
+            pl.col('accepted').str.to_uppercase() == 'FALSE'
+        )
+        
         # Skip if either data frame is empty
         if suspicious_numbers.is_empty() or config_data.is_empty():
             print("No data available for Qualtrics alerts check")
@@ -670,6 +711,114 @@ def check_qualtrics_alerts(suspicious_numbers, config_data):
         print(traceback.format_exc())
         return alerts_sent
 
+def check_late_nums_alerts(late_numbers, config_data):
+    """
+    Check late response numbers against alert thresholds and send email alerts.
+    
+    Args:
+        late_numbers: DataFrame containing late response numbers
+        config_data: DataFrame containing alert configuration
+        
+    Returns:
+        dict: Summary of alerts sent
+    """
+    alerts_sent = {}
+    
+    try:
+        # Only consider numbers with 'accepted' set to FALSE - case insensitive check
+        late_numbers = late_numbers.filter(
+            pl.col('accepted').str.to_uppercase() == 'FALSE'
+        )
+        
+        # Skip if either data frame is empty
+        if late_numbers.is_empty() or config_data.is_empty():
+            print("No data available for late numbers alerts check")
+            return alerts_sent
+        
+        # Group data by project
+        project_configs = {}
+        for row in config_data.iter_rows(named=True):
+            project = row.get('project', '')
+            if not project:
+                continue
+                
+            # Store config for this project
+            project_configs[project] = {
+                'hoursThr': float(row.get('hoursThr', 48) or 48),  # Default to 48 hours
+                'manager': row.get('manager', '')
+            }
+        
+        # For each project configuration
+        for project, config in project_configs.items():
+            manager_email = config['manager']
+            hours_threshold = config['hoursThr']
+            
+            if not manager_email:
+                print(f"No manager email configured for project: {project}")
+                continue
+            
+            # Create HTML report if there are late numbers
+            if late_numbers.height > 0:
+                html = f"""
+                <html>
+                <head>
+                    <style>
+                        body {{ font-family: Arial, sans-serif; line-height: 1.6; }}
+                        .alert {{ color: #D8000C; background-color: #FFD2D2; padding: 10px; margin-bottom: 15px; }}
+                        table {{ border-collapse: collapse; width: 100%; }}
+                        th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+                        th {{ background-color: #f2f2f2; }}
+                        tr:nth-child(even) {{ background-color: #f9f9f9; }}
+                    </style>
+                </head>
+                <body>
+                    <h2>Late Response Alert: Project {project}</h2>
+                    <p>The following phone numbers are approaching the {hours_threshold} hour threshold for WhatsApp responses:</p>
+                    
+                    <table>
+                        <tr>
+                            <th>Phone Number</th>
+                            <th>Message Sent Time</th>
+                            <th>Hours Left</th>
+                        </tr>
+                """
+                
+                # Add each late number to the table
+                for row in late_numbers.iter_rows(named=True):
+                    html += f"""
+                    <tr>
+                        <td>{row['nums']}</td>
+                        <td>{row.get('sentTime', 'Unknown')}</td>
+                        <td>{row.get('hoursLate', 'Unknown')}</td>
+                    </tr>
+                    """
+                
+                # Close the HTML
+                html += """
+                    </table>
+                    <p>This is an automated alert from the Fitbit Management System.</p>
+                </body>
+                </html>
+                """
+                
+                # Send the email
+                subject = f"Late Response Alert: Project {project} has {late_numbers.height} pending responses"
+                result = send_email_alert(manager_email, subject, html)
+                
+                # Track results
+                if result:
+                    alerts_sent[project] = {
+                        'manager': manager_email,
+                        'late_numbers': late_numbers.height
+                    }
+        
+        return alerts_sent
+        
+    except Exception as e:
+        print(f"Error checking late numbers alerts: {e}")
+        print(traceback.format_exc())
+        return alerts_sent
+
 def hourly_data_collection():
     """Main function to run hourly data collection and alerts"""
     print(f"[{datetime.datetime.now()}] Starting hourly data collection...")
@@ -727,13 +876,48 @@ def hourly_data_collection():
         fitbit_config_sheet = spreadsheet.get_sheet("fitbit_alerts_config", sheet_type="fitbit_alerts_config")
         qualtrics_config_sheet = spreadsheet.get_sheet("qualtrics_alerts_config", sheet_type="qualtrics_alerts_config")
         
+        fitbit_config_data = fitbit_config_sheet.to_dataframe(engine="polars")
+        qualtrics_config_data = qualtrics_config_sheet.to_dataframe(engine="polars")
+        
+        # Create a unified manager email mapping for all projects
+        # Priority: use fitbit config emails as primary source if available
+        manager_emails = {}
+        
+        # First populate from fitbit config
+        if not fitbit_config_data.is_empty():
+            for row in fitbit_config_data.iter_rows(named=True):
+                project = row.get('project', '')
+                manager = row.get('manager', '')
+                if project and manager:
+                    manager_emails[project] = manager
+        
+        # Then add any missing projects from qualtrics config
+        if not qualtrics_config_data.is_empty():
+            for row in qualtrics_config_data.iter_rows(named=True):
+                project = row.get('project', '')
+                manager = row.get('manager', '')
+                if project and manager and project not in manager_emails:
+                    manager_emails[project] = manager
+        
+        print(f"Consolidated manager emails for {len(manager_emails)} projects")
+        
         # Step 4: Get log data for Fitbit alerts
         log_sheet = spreadsheet.get_sheet("FitbitLog", sheet_type="log")
         log_data = log_sheet.to_dataframe(engine="polars")
         
         # Step 5: Check alerts and send emails
-        if not log_data.is_empty():
-            fitbit_config_data = fitbit_config_sheet.to_dataframe(engine="polars")
+        if not log_data.is_empty() and not fitbit_config_data.is_empty():
+            # Update manager emails in config before sending alerts to ensure consistency
+            for i in range(len(fitbit_config_data)):
+                project = fitbit_config_data.row(i)[fitbit_config_data.columns.index('project')]
+                if project in manager_emails:
+                    fitbit_config_data = fitbit_config_data.with_columns(
+                        pl.when(pl.col('project') == project)
+                        .then(pl.lit(manager_emails[project]))
+                        .otherwise(pl.col('manager'))
+                        .alias('manager')
+                    )
+            
             fitbit_alerts = check_fitbit_alerts(log_data, fitbit_config_data)
             
             if fitbit_alerts:
@@ -741,20 +925,45 @@ def hourly_data_collection():
             else:
                 print("No Fitbit alerts sent")
         
-        # Step 6: Check Qualtrics alerts
-        qualtrics_config_data = qualtrics_config_sheet.to_dataframe(engine="polars")
-        
-        # Get suspicious numbers from previous analysis
-        suspicious_numbers_sheet = spreadsheet.get_sheet("suspicious_nums", sheet_type="suspicious_nums")
-        suspicious_numbers = suspicious_numbers_sheet.to_dataframe(engine="polars")
-        
-        if not suspicious_numbers.is_empty():
-            qualtrics_alerts = check_qualtrics_alerts(suspicious_numbers, qualtrics_config_data)
+        # Step 6: Check Qualtrics alerts - suspicious numbers
+        if not qualtrics_config_data.is_empty():
+            # Update manager emails in qualtrics config to be consistent
+            for i in range(len(qualtrics_config_data)):
+                project = qualtrics_config_data.row(i)[qualtrics_config_data.columns.index('project')]
+                if project in manager_emails:
+                    qualtrics_config_data = qualtrics_config_data.with_columns(
+                        pl.when(pl.col('project') == project)
+                        .then(pl.lit(manager_emails[project]))
+                        .otherwise(pl.col('manager'))
+                        .alias('manager')
+                    )
             
-            if qualtrics_alerts:
-                print(f"Sent Qualtrics alerts to {len(qualtrics_alerts)} managers")
-            else:
-                print("No Qualtrics alerts sent")
+            # Get suspicious numbers from previous analysis
+            suspicious_numbers_sheet = spreadsheet.get_sheet("suspicious_nums", sheet_type="suspicious_nums")
+            suspicious_numbers = suspicious_numbers_sheet.to_dataframe(engine="polars")
+            
+            if not suspicious_numbers.is_empty():
+                qualtrics_alerts = check_qualtrics_alerts(suspicious_numbers, qualtrics_config_data)
+                
+                if qualtrics_alerts:
+                    print(f"Sent Qualtrics alerts to {len(qualtrics_alerts)} managers")
+                else:
+                    print("No Qualtrics alerts sent")
+        
+        # Step 7: Check Late Numbers alerts (using the same manager emails as other alerts)
+        try:
+            late_numbers_sheet = spreadsheet.get_sheet("late_nums", sheet_type="late_nums")
+            late_numbers = late_numbers_sheet.to_dataframe(engine="polars")
+            
+            if not late_numbers.is_empty() and not qualtrics_config_data.is_empty():
+                late_nums_alerts = check_late_nums_alerts(late_numbers, qualtrics_config_data)
+                
+                if late_nums_alerts:
+                    print(f"Sent Late Numbers alerts to {len(late_nums_alerts)} managers")
+                else:
+                    print("No Late Numbers alerts sent")
+        except Exception as late_error:
+            print(f"Error processing late numbers: {late_error}")
         
         print(f"[{datetime.datetime.now()}] Hourly data collection and alerts completed")
         
