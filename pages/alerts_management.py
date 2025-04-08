@@ -181,7 +181,17 @@ def show_alerts_management(user_email, user_role, user_project):
             # Display data with editor
             st.subheader(f"Total Answers ({filtered_df.height} entries)")
             # Convert to pandas for data editor
-            edited_df = st.data_editor(filtered_df.to_pandas(), key="total_answers_editor")
+            
+            # Check if Accepted column exists and configure it as a checkbox
+            column_config = {}
+            if 'accepted' in filtered_df.columns:
+                column_config["accepted"] = st.column_config.CheckboxColumn("Accepted", help="Mark as accepted")
+            
+            edited_df = st.data_editor(
+                filtered_df.to_pandas(),
+                key="total_answers_editor",
+                column_config=column_config
+            )
             
             # Check if data was edited and save changes
             if st.button("Save Changes to Total Answers", key="save_total_answers"):
@@ -258,7 +268,13 @@ def show_alerts_management(user_email, user_role, user_project):
             edited_suspicious_df = st.data_editor(
                 display_df.to_pandas(), 
                 key="suspicious_editor",
-                disabled=["Time Ago"]  # Time Ago is calculated, not directly editable
+                disabled=["Time Ago"],  # Time Ago is calculated, not directly editable
+                column_config={
+                    "Accepted": st.column_config.CheckboxColumn(
+                        "Accepted", 
+                        help="Mark number as accepted"
+                    )
+                }
             )
             
             # Save changes button
@@ -339,7 +355,13 @@ def show_alerts_management(user_email, user_role, user_project):
             edited_late_df = st.data_editor(
                 display_df.to_pandas(), 
                 key="late_editor",
-                disabled=["Time Ago"]  # Time Ago is calculated, not directly editable
+                disabled=["Time Ago"],  # Time Ago is calculated, not directly editable
+                column_config={
+                    "Accepted": st.column_config.CheckboxColumn(
+                        "Accepted", 
+                        help="Mark number as accepted"
+                    )
+                }
             )
             
             # Save changes button
