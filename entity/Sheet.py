@@ -356,7 +356,7 @@ class GoogleSheetsAdapter:
     """Adapter for connecting entity layer Spreadsheet with Google Sheets API"""
     
     @staticmethod
-    @sheets_cache(timeout=300)  # Cache for 5 minutes
+    # @sheets_cache(timeout=300)  # Cache for 5 minutes
     def connect(spreadsheet: Spreadsheet) -> Spreadsheet:
         """Connect the entity Spreadsheet with the actual Google Sheets API"""
         # Get API instance
