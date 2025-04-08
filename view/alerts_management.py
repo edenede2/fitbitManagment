@@ -33,6 +33,12 @@ if "show_accepted_suspicious" not in st.session_state:
 if "show_accepted_late" not in st.session_state:
     st.session_state.show_accepted_late = False
 
+# Add additional session state for tracking pending changes
+if "pending_suspicious_changes" not in st.session_state:
+    st.session_state.pending_suspicious_changes = {}
+if "pending_late_changes" not in st.session_state:
+    st.session_state.pending_late_changes = {}
+
 # ---- Functions for loading and updating sheet data ----
 
 # Create a simple connection to the spreadsheet - don't cache the object
@@ -211,6 +217,16 @@ def toggle_show_accepted_late():
         # Initialize it if it doesn't exist yet
         st.session_state.show_accepted_late = True
 
+# New function to handle pending changes for suspicious numbers
+def handle_suspicious_status_change(phone_number, new_status):
+    """Store suspicious number status change in session state without saving to sheet yet"""
+    st.session_state.pending_suspicious_changes[phone_number] = new_status
+
+# New function to handle pending changes for late numbers
+def handle_late_status_change(phone_number, new_status):
+    """Store late number status change in session state without saving to sheet yet"""
+    st.session_state.pending_late_changes[phone_number] = new_status
+
 # Create a main function that can be called from app.py
 def show_alerts_management(user_email, user_role, user_project, spreadsheet: Spreadsheet) -> None:
     """Main function to display the alerts management page - can be called from app.py"""
@@ -219,6 +235,10 @@ def show_alerts_management(user_email, user_role, user_project, spreadsheet: Spr
         st.session_state.show_accepted_suspicious = False
     if "show_accepted_late" not in st.session_state:
         st.session_state.show_accepted_late = False
+    if "pending_suspicious_changes" not in st.session_state:
+        st.session_state.pending_suspicious_changes = {}
+    if "pending_late_changes" not in st.session_state:
+        st.session_state.pending_late_changes = {}
     
     # Page configuration
     st.title("📊 Alert Management")
@@ -388,6 +408,26 @@ def show_alerts_management(user_email, user_role, user_project, spreadsheet: Spr
                     ~pl.col('accepted').cast(str).str.to_lowercase().is_in(['true', 'yes', '1', 't'])
                 )
             
+            # Apply any pending changes to the display dataframe (doesn't change original data)
+            if st.session_state.pending_suspicious_changes:
+                # Create a copy of the dataframe to apply pending changes
+                display_copy = filtered_df.clone()
+                
+                # Create a modified version with pending changes applied
+                for phone, new_status in st.session_state.pending_suspicious_changes.items():
+                    # Create a mask for the row to update
+                    mask = pl.col("nums") == phone
+                    # Update the status in the display copy
+                    display_copy = display_copy.with_columns(
+                        pl.when(mask)
+                          .then(pl.lit(new_status))
+                          .otherwise(pl.col("accepted"))
+                          .alias("accepted")
+                    )
+                
+                # Use the modified dataframe for display
+                filtered_df = display_copy
+            
             # Display data table with better column names
             st.subheader(f"Suspicious Numbers ({filtered_df.height} entries)")
             
@@ -431,49 +471,21 @@ def show_alerts_management(user_email, user_role, user_project, spreadsheet: Spr
                     # Get the row index from the display dataframe
                     selected_idx = pandas_df[pandas_df['Phone Number'] == selected_phone].index[0]
                     
-                    # Get current acceptance status
-                    current_status = pandas_df.loc[selected_idx, 'Accepted']
+                    # Get current acceptance status, checking pending changes first
+                    if selected_phone in st.session_state.pending_suspicious_changes:
+                        current_status = st.session_state.pending_suspicious_changes[selected_phone]
+                    else:
+                        current_status = pandas_df.loc[selected_idx, 'Accepted']
                     
-                    # Display form to update status
-                    with st.form(key="suspicious_update_form"):
-                        new_status = st.checkbox("Mark as Accepted", 
-                                               value=current_status,
-                                               key=f"suspicious_accept_{selected_idx}")
-                        
-                        submit_button = st.form_submit_button("Update Status")
-                        
-                        if submit_button:
-                            try:
-                                # Update the status
-                                updated_df = suspicious_df.clone()  # Use full dataset, not filtered
-                                # Create a mask for the row we want to update
-                                mask = pl.col("nums") == selected_phone
-                                
-                                # Update the accepted status and timestamp
-                                now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                updated_df = updated_df.with_columns([
-                                    pl.when(mask)
-                                      .then(pl.lit("TRUE" if new_status else "FALSE"))
-                                      .otherwise(pl.col("accepted"))
-                                      .alias("accepted"),
-                                    pl.when(mask)
-                                      .then(pl.lit(now))
-                                      .otherwise(pl.col("lastUpdated"))
-                                      .alias("lastUpdated")
-                                ])
-                                
-                                # Update the sheet using our helper function
-                                if update_sheet_data("suspicious_nums", updated_df):
-                                    st.success(f"Updated status for {selected_phone} to {'Accepted' if new_status else 'Not Accepted'}")
-                                    
-                                    # Clear cached data for this sheet
-                                    st.session_state.cached_suspicious_df = None
-                                    
-                                    # Add slight delay to avoid immediate refresh
-                                    time.sleep(0.5)
-                                    st.rerun()
-                            except Exception as e:
-                                st.error(f"Error updating status: {str(e)}")
+                    # Create the checkbox for accepting/rejecting
+                    new_status = st.checkbox("Mark as Accepted", 
+                                           value=current_status,
+                                           key=f"suspicious_accept_{selected_idx}")
+                    
+                    # Store the change in pending changes if it differs from current status
+                    if new_status != current_status:
+                        handle_suspicious_status_change(selected_phone, new_status)
+                        st.rerun()  # Refresh to show the changes in the table
             
             # Show details about the selected number
             with col2:
@@ -486,6 +498,56 @@ def show_alerts_management(user_email, user_role, user_project, spreadsheet: Spr
                     st.markdown(f"**Time Ago:** {row.get('Time Ago', 'N/A')}")
                     st.markdown(f"**Last Reviewed:** {row.get('Last Reviewed', 'N/A')}")
                     st.markdown(f"**Current Status:** {'Accepted' if row.get('Accepted', False) else 'Not Accepted'}")
+            
+            # Add a save button at the bottom to commit all pending changes
+            if st.session_state.pending_suspicious_changes:
+                st.divider()
+                st.write(f"**{len(st.session_state.pending_suspicious_changes)}** phone numbers have pending status changes.")
+                
+                # Display the pending changes
+                pending_changes_text = ""
+                for phone, status in st.session_state.pending_suspicious_changes.items():
+                    pending_changes_text += f"• {phone}: {'Accept' if status else 'Not Accept'}\n"
+                
+                with st.expander("Show pending changes"):
+                    st.text(pending_changes_text)
+                
+                # Add the save button
+                if st.button("Save All Changes", key="save_suspicious_changes"):
+                    try:
+                        # Update the status for all pending changes
+                        updated_df = suspicious_df.clone()
+                        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        
+                        for phone, status in st.session_state.pending_suspicious_changes.items():
+                            # Create a mask for each row to update
+                            mask = pl.col("nums") == phone
+                            
+                            # Update the status and timestamp for matching rows
+                            updated_df = updated_df.with_columns([
+                                pl.when(mask)
+                                  .then(pl.lit("TRUE" if status else "FALSE"))
+                                  .otherwise(pl.col("accepted"))
+                                  .alias("accepted"),
+                                pl.when(mask)
+                                  .then(pl.lit(now))
+                                  .otherwise(pl.col("lastUpdated"))
+                                  .alias("lastUpdated")
+                            ])
+                        
+                        # Update the sheet
+                        if update_sheet_data("suspicious_nums", updated_df):
+                            st.success(f"Updated status for {len(st.session_state.pending_suspicious_changes)} phone numbers")
+                            
+                            # Clear pending changes and cached data
+                            st.session_state.pending_suspicious_changes = {}
+                            st.session_state.cached_suspicious_df = None
+                            
+                            # Add slight delay to avoid immediate refresh
+                            time.sleep(0.5)
+                            st.rerun()
+                    except Exception as e:
+                        st.error(f"Error updating statuses: {str(e)}")
 
     # ----- Late Numbers Tab -----
     with tab3:
@@ -516,6 +578,26 @@ def show_alerts_management(user_email, user_role, user_project, spreadsheet: Spr
                 filtered_df = late_df.filter(
                     ~pl.col('accepted').cast(str).str.to_lowercase().is_in(['true', 'yes', '1', 't'])
                 )
+            
+            # Apply any pending changes to the display dataframe (doesn't change original data)
+            if st.session_state.pending_late_changes:
+                # Create a copy of the dataframe to apply pending changes
+                display_copy = filtered_df.clone()
+                
+                # Create a modified version with pending changes applied
+                for phone, new_status in st.session_state.pending_late_changes.items():
+                    # Create a mask for the row to update
+                    mask = pl.col("nums") == phone
+                    # Update the status in the display copy
+                    display_copy = display_copy.with_columns(
+                        pl.when(mask)
+                          .then(pl.lit(new_status))
+                          .otherwise(pl.col("accepted"))
+                          .alias("accepted")
+                    )
+                
+                # Use the modified dataframe for display
+                filtered_df = display_copy
             
             # Create a copy for display with better column names
             display_df = filtered_df.clone()
@@ -561,49 +643,21 @@ def show_alerts_management(user_email, user_role, user_project, spreadsheet: Spr
                     # Get the row index from the display dataframe
                     selected_idx = pandas_df[pandas_df['Phone Number'] == selected_phone].index[0]
                     
-                    # Get current acceptance status
-                    current_status = pandas_df.loc[selected_idx, 'Accepted']
+                    # Get current acceptance status, checking pending changes first
+                    if selected_phone in st.session_state.pending_late_changes:
+                        current_status = st.session_state.pending_late_changes[selected_phone]
+                    else:
+                        current_status = pandas_df.loc[selected_idx, 'Accepted']
                     
-                    # Display form to update status
-                    with st.form(key="late_update_form"):
-                        new_status = st.checkbox("Mark as Accepted", 
-                                               value=current_status,
-                                               key=f"late_accept_{selected_idx}")
-                        
-                        submit_button = st.form_submit_button("Update Status")
-                        
-                        if submit_button:
-                            try:
-                                # Update the status
-                                updated_df = late_df.clone()  # Use full dataset, not filtered
-                                # Create a mask for the row we want to update
-                                mask = pl.col("nums") == selected_phone
-                                
-                                # Update the accepted status and timestamp
-                                now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                updated_df = updated_df.with_columns([
-                                    pl.when(mask)
-                                      .then(pl.lit("TRUE" if new_status else "FALSE"))
-                                      .otherwise(pl.col("accepted"))
-                                      .alias("accepted"),
-                                    pl.when(mask)
-                                      .then(pl.lit(now))
-                                      .otherwise(pl.col("lastUpdated"))
-                                      .alias("lastUpdated")
-                                ])
-                                
-                                # Update the sheet using our helper function
-                                if update_sheet_data("late_nums", updated_df):
-                                    st.success(f"Updated status for {selected_phone} to {'Accepted' if new_status else 'Not Accepted'}")
-                                    
-                                    # Clear cached data for this sheet
-                                    st.session_state.cached_late_df = None
-                                    
-                                    # Add slight delay to avoid immediate refresh
-                                    time.sleep(0.5)
-                                    st.rerun()
-                            except Exception as e:
-                                st.error(f"Error updating status: {str(e)}")
+                    # Create the checkbox for accepting/rejecting
+                    new_status = st.checkbox("Mark as Accepted", 
+                                           value=current_status,
+                                           key=f"late_accept_{selected_idx}")
+                    
+                    # Store the change in pending changes if it differs from current status
+                    if new_status != current_status:
+                        handle_late_status_change(selected_phone, new_status)
+                        st.rerun()  # Refresh to show the changes in the table
             
             # Show details about the selected number
             with col2:
@@ -617,6 +671,56 @@ def show_alerts_management(user_email, user_role, user_project, spreadsheet: Spr
                     st.markdown(f"**Hours Late:** {row.get('Hours Late', 'N/A')}")
                     st.markdown(f"**Last Reviewed:** {row.get('Last Reviewed', 'N/A')}")
                     st.markdown(f"**Current Status:** {'Accepted' if row.get('Accepted', False) else 'Not Accepted'}")
+            
+            # Add a save button at the bottom to commit all pending changes
+            if st.session_state.pending_late_changes:
+                st.divider()
+                st.write(f"**{len(st.session_state.pending_late_changes)}** phone numbers have pending status changes.")
+                
+                # Display the pending changes
+                pending_changes_text = ""
+                for phone, status in st.session_state.pending_late_changes.items():
+                    pending_changes_text += f"• {phone}: {'Accept' if status else 'Not Accept'}\n"
+                
+                with st.expander("Show pending changes"):
+                    st.text(pending_changes_text)
+                
+                # Add the save button
+                if st.button("Save All Changes", key="save_late_changes"):
+                    try:
+                        # Update the status for all pending changes
+                        updated_df = late_df.clone()
+                        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        
+                        for phone, status in st.session_state.pending_late_changes.items():
+                            # Create a mask for each row to update
+                            mask = pl.col("nums") == phone
+                            
+                            # Update the status and timestamp for matching rows
+                            updated_df = updated_df.with_columns([
+                                pl.when(mask)
+                                  .then(pl.lit("TRUE" if status else "FALSE"))
+                                  .otherwise(pl.col("accepted"))
+                                  .alias("accepted"),
+                                pl.when(mask)
+                                  .then(pl.lit(now))
+                                  .otherwise(pl.col("lastUpdated"))
+                                  .alias("lastUpdated")
+                            ])
+                        
+                        # Update the sheet
+                        if update_sheet_data("late_nums", updated_df):
+                            st.success(f"Updated status for {len(st.session_state.pending_late_changes)} phone numbers")
+                            
+                            # Clear pending changes and cached data
+                            st.session_state.pending_late_changes = {}
+                            st.session_state.cached_late_df = None
+                            
+                            # Add slight delay to avoid immediate refresh
+                            time.sleep(0.5)
+                            st.rerun()
+                    except Exception as e:
+                        st.error(f"Error updating statuses: {str(e)}")
 
     # Add a footer with helpful information
     st.divider()
