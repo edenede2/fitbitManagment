@@ -22,18 +22,18 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-def show_fitbit_management():
-    """Show the Fitbit management page with the current user's details."""
-    # Get current user details from session state
-    user_details = st.session_state.get('user_data', None)
+# def show_fitbit_management():
+#     """Show the Fitbit management page with the current user's details."""
+#     # Get current user details from session state
+#     user_details = st.session_state.get('user_data', None)
     
-    # Check if user is logged in
-    if user_details is None:
-        st.error("You must be logged in to access this feature.")
-        return
+#     # Check if user is logged in
+#     if user_details is None:
+#         st.error("You must be logged in to access this feature.")
+#         return
     
-    # Load the fitbit management datatable with user details
-    load_fitbit_datatable(user_details)
+#     # Load the fitbit management datatable with user details
+#     load_fitbit_datatable(user_details)
 
 def main():
     """Main application function"""

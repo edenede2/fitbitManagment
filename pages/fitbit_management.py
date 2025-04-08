@@ -4,7 +4,7 @@ from entity.Sheet import Spreadsheet, GoogleSheetsAdapter, SheetFactory
 from typing import Dict, List, Any, Optional
 import datetime
 import polars as pl
-def load_fitbit_datatable(uer_email: str, user_role: str, user_project: str) -> None:
+def load_fitbit_datatable(user_email: str, user_role: str, user_project: str) -> None:
     """
     Load and display the Fitbit datatable with role-specific permissions.
     
