@@ -318,6 +318,7 @@ def _display_accept_form(spreadsheet, late_nums_df, suspicious_nums_df):
         
         # Save button
         if st.button("Save Accepted Numbers"):
+            st.json(st.session_state.selected_late_nums)
             with st.spinner("Updating data..."):
                 # Update late_nums sheet
                 if not late_nums_df.empty and st.session_state.selected_late_nums:
