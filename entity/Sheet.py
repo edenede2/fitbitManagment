@@ -209,7 +209,7 @@ class QualtricsAlertConfig(Sheet):
 class LateNums(Sheet):
     """Sheet for storing late numbers"""
     schema: SheetSchema = field(default_factory=lambda: SheetSchema(
-        columns=['nums', 'sentTime', 'hoursLate', 'lastUpdated'],
+        columns=['nums', 'sentTime', 'hoursLate', 'lastUpdated', 'accepted'],
         required_columns=['nums', 'sentTime']
     ))
 
@@ -217,7 +217,7 @@ class LateNums(Sheet):
 class SuspiciousNums(Sheet):
     """Sheet for storing suspicious numbers"""
     schema: SheetSchema = field(default_factory=lambda: SheetSchema(
-        columns=['nums', 'filledTime', 'lastUpdated', 'accept'],
+        columns=['nums', 'filledTime', 'lastUpdated', 'accepted'],
         required_columns=['nums', 'filledTime']
     ))
 
