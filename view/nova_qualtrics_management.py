@@ -338,7 +338,7 @@ def _display_accept_form(spreadsheet, late_nums_df, suspicious_nums_df):
                 st.session_state.selected_suspicious_nums = set()
                 
                 st.success("Numbers accepted successfully!")
-                st.rerun()
+                # st.rerun()
     else:
         st.info("No numbers selected. Select numbers from the Late Numbers or Suspicious Numbers tabs.")
 
