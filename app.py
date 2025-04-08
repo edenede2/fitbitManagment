@@ -44,7 +44,7 @@ def main():
             if st.experimental_user.is_logged_in:
                 user_email = st.experimental_user.email
                 user = UserController().get_user_by_email(user_email)
-                st.write(f"users df: {user}")
+                # st.write(f"users df: {user}")
                 if user is not None:
                     st.session_state.user_role = user.get('role', 'Guest')
                     st.session_state.user_project = user.get('project', 'None')

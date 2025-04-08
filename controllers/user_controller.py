@@ -26,6 +26,7 @@ class UserController:
     def get_user_by_email(self, email: str) -> Optional[Dict]:
         """Get a user by email"""
         users_df = self.get_all_users()
+        st.write(f"users df: {users_df}")
         if users_df.empty:
             return None
             
