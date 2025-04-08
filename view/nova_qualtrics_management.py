@@ -288,7 +288,7 @@ def _check_box_control(num, selected_set, key):
     #         st.session_state.selected_late_nums.remove(num)
 
     
-def _display_late_nums(late_nums_df):
+def _display_late_dnums(late_nums_df):
     """Display late numbers with selection options"""
     st.header("Late Numbers")
     
