@@ -11,6 +11,7 @@ class AuthenticationController:
         """Initialize the authentication controller"""
         self._initialize_session_state()
         self.user_repo = UserRepository.get_instance()
+        self.main_spreadsheet = None
     
     def _initialize_session_state(self):
         """Initialize session state for authentication"""
@@ -36,13 +37,16 @@ class AuthenticationController:
             tuple: (role, project)
         """
         try:
-            # Create Spreadsheet instance
-            spreadsheet_key = st.secrets.get("spreadsheet_key", "")
-            spreadsheet = Spreadsheet(name="Fitbit Database", api_key=spreadsheet_key)
-            GoogleSheetsAdapter.connect(spreadsheet)
+            if not self.main_spreadsheet:
+                # Initialize the main spreadsheet if not already done
+                spreadsheet_key = st.secrets.get("spreadsheet_key", "")
+                self.main_spreadsheet = Spreadsheet(name="Fitbit Database", api_key=spreadsheet_key)
+                GoogleSheetsAdapter.connect(self.main_spreadsheet)
+                
+            
             
             # Get user sheet
-            user_sheet = spreadsheet.get_sheet("user", sheet_type="user")
+            user_sheet = self.main_spreadsheet.get_sheet("user", sheet_type="user")
             user_df = user_sheet.to_dataframe()
             
             # Find this user
