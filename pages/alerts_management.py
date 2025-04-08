@@ -6,21 +6,28 @@ from entity.Sheet import Spreadsheet, GoogleSheetsAdapter, SheetsAPI
 from model.config import get_secrets
 import time
 
-# Page configuration
-# st.set_page_config(
-#     page_title="Alert Management",
-#     page_icon="🔔",
-#     layout="wide"
-# )
-
-# Initialize session state for tracking changes
+# Initialize session state for tracking changes and caching data
 if "accepted_suspicious" not in st.session_state:
     st.session_state.accepted_suspicious = []
 if "accepted_late" not in st.session_state:
     st.session_state.accepted_late = []
+if "cached_data" not in st.session_state:
+    st.session_state.cached_data = {
+        "total_answers": None,
+        "suspicious": None,
+        "late": None,
+        "last_refresh": None
+    }
+if "edited_data" not in st.session_state:
+    st.session_state.edited_data = {
+        "total_answers": None,
+        "suspicious": None,
+        "late": None
+    }
 
 # ---- Functions for loading and updating sheet data ----
 
+@st.cache_data(ttl=300)  # Cache for 5 minutes
 def load_spreadsheet():
     """Load and connect to the Google Spreadsheet"""
     # Get the spreadsheet key from secrets
@@ -35,6 +42,7 @@ def load_spreadsheet():
     
     return spreadsheet
 
+@st.cache_data(ttl=60)  # Cache for 1 minute
 def load_total_answers(spreadsheet:Spreadsheet):
     """Load total answers from spreadsheet"""
     total_answers_sheet = spreadsheet.get_sheet("EMA", "EMA")
@@ -48,12 +56,13 @@ def load_total_answers(spreadsheet:Spreadsheet):
         
     return df, total_answers_sheet
 
+@st.cache_data(ttl=60)  # Cache for 1 minute
 def load_suspicious_numbers(spreadsheet:Spreadsheet):
     """Load suspicious numbers from spreadsheet"""
     suspicious_sheet = spreadsheet.get_sheet("suspicious_nums", "suspicious_nums")
     df = suspicious_sheet.to_dataframe(engine="polars")
     
-    # Add column for verification if not exists - FIXED to use Polars syntax
+    # Add column for verification if not exists
     if 'accepted' not in df.columns:
         df = df.with_columns(pl.lit(False).alias('accepted'))
     else:
@@ -64,13 +73,13 @@ def load_suspicious_numbers(spreadsheet:Spreadsheet):
         
     return df, suspicious_sheet
 
+@st.cache_data(ttl=60)  # Cache for 1 minute
 def load_late_numbers(spreadsheet:Spreadsheet):
     """Load late numbers from spreadsheet"""
     late_sheet = spreadsheet.get_sheet("late_nums", "late_nums")
-    # Convert to polars DataFrame instead of pandas
     df = late_sheet.to_dataframe(engine="polars")
     
-    # Add column for verification if not exists - FIXED to use Polars syntax
+    # Add column for verification if not exists
     if 'accepted' not in df.columns:
         df = df.with_columns(pl.lit(False).alias('accepted'))
     else:
@@ -81,87 +90,57 @@ def load_late_numbers(spreadsheet:Spreadsheet):
         
     return df, late_sheet
 
-def update_suspicious_sheet(spreadsheet, suspicious_sheet, row_index, accept=True):
-    """Update the suspicious_nums sheet with acceptance status"""
-    suspicious_sheet.data[row_index]['accepted'] = accept
-    suspicious_sheet.data[row_index]['lastUpdated'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    # Save changes to Google Sheets
-    GoogleSheetsAdapter.save(spreadsheet, "suspicious_nums")
-    st.success(f"Updated suspicious number: {suspicious_sheet.data[row_index]['nums']}")
-    
-    # Record in session state to maintain UI state
-    st.session_state.accepted_suspicious.append(suspicious_sheet.data[row_index]['nums'])
-    
-    # Return updated dataframe for display
-    return pd.DataFrame(suspicious_sheet.data)
+# Add callbacks for data editor changes
+def on_total_answers_change(edited_df):
+    st.session_state.edited_data["total_answers"] = edited_df
 
-def update_late_sheet(spreadsheet, late_sheet, row_index, accept=True):
-    """Update the late_nums sheet with acceptance status"""
-    late_sheet.data[row_index]['accepted'] = accept
-    late_sheet.data[row_index]['lastUpdated'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    # Save changes to Google Sheets
-    GoogleSheetsAdapter.save(spreadsheet, "late_nums")
-    st.success(f"Updated late number: {late_sheet.data[row_index]['nums']}")
-    
-    # Record in session state to maintain UI state
-    st.session_state.accepted_late.append(late_sheet.data[row_index]['nums'])
-    
-    # Return updated dataframe for display
-    return pd.DataFrame(late_sheet.data)
+def on_suspicious_change(edited_df):
+    st.session_state.edited_data["suspicious"] = edited_df
 
-def format_time_ago(timestamp_str):
-    """Format a timestamp to show how long ago it occurred"""
-    try:
-        if not timestamp_str:
-            return "Unknown"
-            
-        # Try to parse the timestamp with different formats
-        for fmt in ["%Y-%m-%d %H:%M:%S", "%d/%m/%Y %H:%M:%S", "%Y-%m-%dT%H:%M:%S"]:
-            try:
-                timestamp = datetime.datetime.strptime(timestamp_str, fmt)
-                break
-            except ValueError:
-                continue
-        else:
-            return timestamp_str  # Return original if no format works
-            
-        now = datetime.datetime.now()
-        diff = now - timestamp
-        
-        if diff.days > 0:
-            return f"{diff.days} days ago"
-        elif diff.seconds >= 3600:
-            hours = diff.seconds // 3600
-            return f"{hours} hours ago"
-        elif diff.seconds >= 60:
-            minutes = diff.seconds // 60
-            return f"{minutes} minutes ago"
-        else:
-            return f"{diff.seconds} seconds ago"
-    except Exception as e:
-        return f"Error: {str(e)}"
+def on_late_change(edited_df):
+    st.session_state.edited_data["late"] = edited_df
 
 # Create a main function that can be called from app.py
 def show_alerts_management(user_email, user_role, user_project):
     """Main function to display the alerts management page - can be called from app.py"""
-        # Initialize session state
-    if "accepted_suspicious" not in st.session_state:
-        st.session_state.accepted_suspicious = []
-    if "accepted_late" not in st.session_state:
-        st.session_state.accepted_late = []
-        
     # Page configuration
     st.title("📊 Alert Management")
     st.write("Review and manage patient questionnaire alerts.")
 
-    # Load data
-    with st.spinner("Loading data..."):
-        spreadsheet = load_spreadsheet()
-        total_answers_df , total_answers_sheet = load_total_answers(spreadsheet)
-        suspicious_df, suspicious_sheet = load_suspicious_numbers(spreadsheet)
-        late_df, late_sheet = load_late_numbers(spreadsheet)
+    # Create a refresh button in the sidebar
+    with st.sidebar:
+        refresh = st.button("↻ Refresh Data")
+        last_refresh = st.session_state.cached_data["last_refresh"]
+        if last_refresh:
+            st.caption(f"Last refreshed: {last_refresh.strftime('%H:%M:%S')}")
+    
+    # Load data only if needed (first load or explicit refresh)
+    if (st.session_state.cached_data["total_answers"] is None or 
+        st.session_state.cached_data["suspicious"] is None or
+        st.session_state.cached_data["late"] is None or
+        refresh):
+        
+        with st.spinner("Loading data..."):
+            spreadsheet = load_spreadsheet()
+            total_answers_df, total_answers_sheet = load_total_answers(spreadsheet)
+            suspicious_df, suspicious_sheet = load_suspicious_numbers(spreadsheet)
+            late_df, late_sheet = load_late_numbers(spreadsheet)
+            
+            # Update cache
+            st.session_state.cached_data["total_answers"] = (total_answers_df, total_answers_sheet)
+            st.session_state.cached_data["suspicious"] = (suspicious_df, suspicious_sheet)
+            st.session_state.cached_data["late"] = (late_df, late_sheet)
+            st.session_state.cached_data["last_refresh"] = datetime.datetime.now()
+            
+            # Clear edited data on refresh
+            st.session_state.edited_data["total_answers"] = None
+            st.session_state.edited_data["suspicious"] = None
+            st.session_state.edited_data["late"] = None
+    else:
+        # Use cached data
+        total_answers_df, total_answers_sheet = st.session_state.cached_data["total_answers"]
+        suspicious_df, suspicious_sheet = st.session_state.cached_data["suspicious"]
+        late_df, late_sheet = st.session_state.cached_data["late"]
 
     # Create tabs for different alert types
     tab1, tab2, tab3 = st.tabs(["Total Answers", "Suspicious Numbers", "Late Numbers"])
@@ -177,9 +156,11 @@ def show_alerts_management(user_email, user_role, user_project):
         else:
             # Add time ago information if endDate column exists
             if 'endDate' in total_answers_df.columns:
-                total_answers_df = total_answers_df.with_columns(
+                display_df = total_answers_df.with_columns(
                     pl.col('endDate').map_elements(format_time_ago).alias('Time Ago')
                 )
+            else:
+                display_df = total_answers_df
             
             # Filter options
             st.subheader("Filter Options")
@@ -188,28 +169,32 @@ def show_alerts_management(user_email, user_role, user_project):
                                      max_value=datetime.datetime.now())
             
             # Apply filters if date column exists
-            filtered_df = total_answers_df
-            if 'endDate' in total_answers_df.columns and date_filter:
+            if 'endDate' in display_df.columns and date_filter:
                 date_str = date_filter.strftime("%Y-%m-%d")
-                filtered_df = total_answers_df.filter(pl.col('endDate') >= date_str)
+                display_df = display_df.filter(pl.col('endDate') >= date_str)
             
             # Display data with editor
-            st.subheader(f"Total Answers ({filtered_df.height} entries)")
-            # Convert to pandas for data editor
-            pandas_df = filtered_df.to_pandas()
+            st.subheader(f"Total Answers ({display_df.height} entries)")
             
             # Configure the checkbox column for accepted
             column_config = {}
-            if 'accepted' in pandas_df.columns:
+            if 'accepted' in display_df.columns:
                 column_config["accepted"] = st.column_config.CheckboxColumn("Accepted", help="Mark as accepted")
+            
+            # Use session state to maintain editor state between rerenders
+            if st.session_state.edited_data["total_answers"] is None:
+                pandas_df = display_df.to_pandas()
+            else:
+                pandas_df = st.session_state.edited_data["total_answers"]
             
             edited_df = st.data_editor(
                 pandas_df,
                 key="total_answers_editor",
-                column_config=column_config
+                column_config=column_config,
+                on_change=lambda: on_total_answers_change(st.session_state.total_answers_editor)
             )
             
-            # Check if data was edited and save changes
+            # Save changes button
             if st.button("Save Changes to Total Answers", key="save_total_answers"):
                 try:
                     # Convert back to polars
@@ -222,26 +207,38 @@ def show_alerts_management(user_email, user_role, user_project):
                         )
                     
                     # Update the sheet
+                    spreadsheet = load_spreadsheet()  # Get fresh connection
                     spreadsheet.update_sheet("EMA", updated_df)
                     GoogleSheetsAdapter.save(spreadsheet, "EMA")
                     st.success("Total answers data updated successfully!")
+                    
+                    # Refresh cache for this sheet
+                    st.session_state.cached_data["total_answers"] = None
+                    
+                    # Clear edited data after successful save
+                    st.session_state.edited_data["total_answers"] = None
+                    
+                    # Add slight delay to avoid immediate refresh
+                    time.sleep(0.5)
+                    st.rerun()
                 except Exception as e:
                     st.error(f"Error saving changes: {str(e)}")
             
-            # Summary statistics
-            st.subheader("Summary Statistics")
-            
-            # Count answers by date if date column exists
-            if 'endDate' in filtered_df.columns:
-                date_counts = filtered_df.group_by('endDate').agg(pl.count().alias('Count'))
-                st.subheader("Answers by Date")
-                st.bar_chart(date_counts.to_pandas().set_index('endDate'))
-            
-            # Show numerical statistics for any numeric columns
-            numeric_cols = filtered_df.select(pl.col(pl.NUMERIC_DTYPES)).columns
-            if numeric_cols:
-                stats_df = filtered_df.select(numeric_cols).describe()
-                st.write(stats_df)
+            # Summary statistics (only show if not too much data to avoid performance issues)
+            if display_df.height < 1000:  # Only calculate stats for reasonably sized datasets
+                st.subheader("Summary Statistics")
+                
+                # Count answers by date if date column exists
+                if 'endDate' in display_df.columns:
+                    date_counts = display_df.group_by('endDate').agg(pl.count().alias('Count'))
+                    st.subheader("Answers by Date")
+                    st.bar_chart(date_counts.to_pandas().set_index('endDate'))
+                
+                # Show numerical statistics for any numeric columns
+                numeric_cols = display_df.select(pl.col(pl.NUMERIC_DTYPES)).columns
+                if numeric_cols:
+                    stats_df = display_df.select(numeric_cols).describe()
+                    st.write(stats_df)
 
     # ----- Suspicious Numbers Tab -----
     with tab2:
@@ -288,7 +285,10 @@ def show_alerts_management(user_email, user_role, user_project):
                 display_df = display_df.select(available_columns)
             
             # Convert to pandas for data editor
-            pandas_df = display_df.to_pandas()
+            if st.session_state.edited_data["suspicious"] is None:
+                pandas_df = display_df.to_pandas()
+            else:
+                pandas_df = st.session_state.edited_data["suspicious"]
             
             # Configure the Accepted column as a checkbox
             column_config = {
@@ -305,7 +305,8 @@ def show_alerts_management(user_email, user_role, user_project):
                 pandas_df, 
                 key="suspicious_editor",
                 disabled=disabled_cols,
-                column_config=column_config
+                column_config=column_config,
+                on_change=lambda: on_suspicious_change(st.session_state.suspicious_editor)
             )
             
             # Save changes button
@@ -352,12 +353,20 @@ def show_alerts_management(user_email, user_role, user_project):
                     updated_df = updated_df.with_columns(pl.lit(now).alias('lastUpdated'))
                     
                     # Update the sheet
+                    spreadsheet = load_spreadsheet()  # Get fresh connection
                     spreadsheet.update_sheet("suspicious_nums", updated_df)
                     GoogleSheetsAdapter.save(spreadsheet, "suspicious_nums")
                     st.success("Suspicious numbers updated successfully!")
                     
-                    # Reload data
-                    suspicious_df, suspicious_sheet = load_suspicious_numbers(spreadsheet)
+                    # Refresh cache for this sheet
+                    st.session_state.cached_data["suspicious"] = None
+                    
+                    # Clear edited data after successful save
+                    st.session_state.edited_data["suspicious"] = None
+                    
+                    # Add slight delay to avoid immediate refresh
+                    time.sleep(0.5)
+                    st.rerun()
                 except Exception as e:
                     st.error(f"Error saving changes: {str(e)}")
 
@@ -407,7 +416,10 @@ def show_alerts_management(user_email, user_role, user_project):
                 display_df = display_df.select(available_columns)
             
             # Convert to pandas for data editor
-            pandas_df = display_df.to_pandas()
+            if st.session_state.edited_data["late"] is None:
+                pandas_df = display_df.to_pandas()
+            else:
+                pandas_df = st.session_state.edited_data["late"]
             
             # Configure the Accepted column as a checkbox
             column_config = {
@@ -424,7 +436,8 @@ def show_alerts_management(user_email, user_role, user_project):
                 pandas_df, 
                 key="late_editor",
                 disabled=disabled_cols,
-                column_config=column_config
+                column_config=column_config,
+                on_change=lambda: on_late_change(st.session_state.late_editor)
             )
             
             # Save changes button
@@ -434,7 +447,7 @@ def show_alerts_management(user_email, user_role, user_project):
                     reverse_mapping = {
                         'Phone Number': 'nums',
                         'WhatsApp Sent': 'sentTime',
-                        'Hours Late': 'hoursLate',
+                        'Hours Late': 'Hours Late',
                         'Last Reviewed': 'lastUpdated',
                         'Accepted': 'accepted'
                     }
@@ -472,16 +485,22 @@ def show_alerts_management(user_email, user_role, user_project):
                     updated_df = updated_df.with_columns(pl.lit(now).alias('lastUpdated'))
                     
                     # Update the sheet
+                    spreadsheet = load_spreadsheet()  # Get fresh connection
                     spreadsheet.update_sheet("late_nums", updated_df)
                     GoogleSheetsAdapter.save(spreadsheet, "late_nums")
                     st.success("Late numbers updated successfully!")
                     
-                    # Reload data
-                    late_df, late_sheet = load_late_numbers(spreadsheet)
+                    # Refresh cache for this sheet
+                    st.session_state.cached_data["late"] = None
+                    
+                    # Clear edited data after successful save
+                    st.session_state.edited_data["late"] = None
+                    
+                    # Add slight delay to avoid immediate refresh
+                    time.sleep(0.5)
+                    st.rerun()
                 except Exception as e:
                     st.error(f"Error saving changes: {str(e)}")
-                    # Add more detailed error info for debugging
-                    st.error(f"DataFrame columns: {updated_df.columns}")
 
     # Add a footer with helpful information
     st.divider()
@@ -498,7 +517,4 @@ def show_alerts_management(user_email, user_role, user_project):
 # If this script is run directly, call the main function
 def display_alerts_management(user_email, user_role, user_project):
     """Function to display the alerts management page"""
-    
-
-    # Show the page
     show_alerts_management(user_email, user_role, user_project)
