@@ -1,0 +1,24 @@
+# Core dependencies
+streamlit>=1.22.0
+pandas>=1.5.0
+polars
+mitosheet
+
+# Authentication
+google-auth>=2.16.0
+google-auth-oauthlib>=1.0.0
+gspread>=5.7.0
+
+# Data visualization
+plotly>=5.13.0
+matplotlib>=3.7.0
+
+# Database interaction
+sqlalchemy>=2.0.0
+
+# Additional utilities
+requests>=2.28.0
+python-dotenv>=1.0.0
+pyyaml>=6.0
+rich>=10.14.0
+Authlib
