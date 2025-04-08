@@ -37,7 +37,7 @@ def load_spreadsheet():
 
 def load_total_answers(spreadsheet:Spreadsheet):
     """Load total answers from spreadsheet"""
-    total_answers_sheet = spreadsheet.get_sheet("qualtrics_nova", "qualtrics_nova")
+    total_answers_sheet = spreadsheet.get_sheet("EMA", "EMA")
     df = total_answers_sheet.to_dataframe(engine="polars")
     
         
@@ -177,9 +177,22 @@ def show_alerts_management(user_email, user_role, user_project):
                 date_str = date_filter.strftime("%Y-%m-%d")
                 filtered_df = total_answers_df.filter(pl.col('endDate') >= date_str)
             
-            # Display data
+            # Display data with editor
             st.subheader(f"Total Answers ({filtered_df.height} entries)")
-            st.dataframe(filtered_df)
+            # Convert to pandas for data editor
+            edited_df = st.data_editor(filtered_df.to_pandas(), key="total_answers_editor")
+            
+            # Check if data was edited and save changes
+            if st.button("Save Changes to Total Answers", key="save_total_answers"):
+                try:
+                    # Convert back to polars
+                    updated_df = pl.DataFrame(edited_df)
+                    # Update the sheet
+                    spreadsheet.update_sheet("EMA", updated_df)
+                    GoogleSheetsAdapter.save(spreadsheet, "EMA")
+                    st.success("Total answers data updated successfully!")
+                except Exception as e:
+                    st.error(f"Error saving changes: {str(e)}")
             
             # Summary statistics
             st.subheader("Summary Statistics")
@@ -207,7 +220,7 @@ def show_alerts_management(user_email, user_role, user_project):
         else:
             # Add human-readable time ago column for display
             if 'filledTime' in suspicious_df.columns:
-                suspicious_df = suspicious_df.with_column(
+                suspicious_df = suspicious_df.with_columns(
                     pl.col('filledTime').apply(format_time_ago).alias('Time Ago')
                 )
                 
@@ -222,10 +235,10 @@ def show_alerts_management(user_email, user_role, user_project):
                     ~pl.col('accepted').cast(str).str.to_lowercase().is_in(['true', 'yes', '1', 't'])
                 )
             
-            # Display data table
+            # Display data table with editor
             st.subheader(f"Suspicious Numbers ({filtered_df.height} entries)")
             
-            # Create a copy for display with better column names
+            # Create a display copy with better column names
             display_df = filtered_df.clone()
             if 'nums' in display_df.columns:
                 display_df = display_df.rename({
@@ -240,48 +253,41 @@ def show_alerts_management(user_email, user_role, user_project):
                 available_columns = [col for col in column_order if col in display_df.columns]
                 display_df = display_df.select(available_columns)
             
-            st.dataframe(display_df)
+            # Convert to pandas for data editor
+            edited_suspicious_df = st.data_editor(
+                display_df.to_pandas(), 
+                key="suspicious_editor",
+                disabled=["Time Ago"]  # Time Ago is calculated, not directly editable
+            )
             
-            # Process individual entries
-            st.subheader("Review Suspicious Numbers")
-            
-            # Use columns for better layout
-            cols = st.columns([1, 4])
-            with cols[0]:
-                selected_index = st.number_input("Select Row #", 
-                                              min_value=0, 
-                                              max_value=len(filtered_df)-1 if len(filtered_df) > 0 else 0,
-                                              value=0)
-            
-            # Only show accept buttons if there are entries
-            if not filtered_df.is_empty():
-                with cols[1]:
-                    # Get the actual index in the original dataframe
-                    actual_index = filtered_df.row(selected_index) if selected_index < len(filtered_df) else 0
+            # Save changes button
+            if st.button("Save Changes to Suspicious Numbers", key="save_suspicious"):
+                try:
+                    # Need to map edited data back to original column names
+                    reverse_mapping = {
+                        'Phone Number': 'nums',
+                        'Questionnaire Filled': 'filledTime',
+                        'Last Reviewed': 'lastUpdated',
+                        'Accepted': 'accepted'
+                    }
                     
-                    # Display selected entry details
-                    if 'nums' in filtered_df.columns and actual_index < len(filtered_df):
-                        selected_number = filtered_df[actual_index, 'nums']
-                        st.write(f"Selected: **{selected_number}**")
-                        
-                        is_accepted = filtered_df[actual_index, 'accepted']
-                        if str(is_accepted).lower() in ['true', 'yes', '1', 't']:
-                            st.success("This number has already been accepted")
-                        else:
-                            accept_button = st.button("Mark as Accepted", key=f"accept_suspicious_{actual_index}")
-                            
-                            if accept_button:
-                                # Update the sheet
-                                suspicious_df = update_suspicious_sheet(spreadsheet, suspicious_sheet, actual_index)
-                                
-                                # Refresh the filtered df
-                                filtered_df = suspicious_df
-                                if not show_accepted:
-                                    filtered_df = suspicious_df.filter(
-                                        ~pl.col('accepted').cast(str).str.to_lowercase().is_in(['true', 'yes', '1', 't'])
-                                    )
-                                
-                                st.rerun()
+                    # Convert back to polars with original column names
+                    updated_df = pl.DataFrame(edited_suspicious_df)
+                    updated_df = updated_df.rename({v: k for k, v in reverse_mapping.items() if v in updated_df.columns})
+                    
+                    # Update timestamp for modified rows
+                    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    updated_df = updated_df.with_column(pl.lit(now).alias('lastUpdated'))
+                    
+                    # Update the sheet
+                    spreadsheet.update_sheet("suspicious_nums", updated_df)
+                    GoogleSheetsAdapter.save(spreadsheet, "suspicious_nums")
+                    st.success("Suspicious numbers updated successfully!")
+                    
+                    # Reload data
+                    suspicious_df, suspicious_sheet = load_suspicious_numbers(spreadsheet)
+                except Exception as e:
+                    st.error(f"Error saving changes: {str(e)}")
 
     # ----- Late Numbers Tab -----
     with tab3:
@@ -289,12 +295,18 @@ def show_alerts_management(user_email, user_role, user_project):
         st.info("These are patients who were sent a WhatsApp questionnaire but did not answer within the time threshold.")
         
         # Check if there's data
-        if late_df.empty:
+        if isinstance(late_df, pd.DataFrame) and late_df.empty:
             st.warning("No late numbers found.")
         else:
+            # Convert to Polars DataFrame if it's not already
+            if not isinstance(late_df, pl.DataFrame):
+                late_df = pl.DataFrame(late_df)
+                
             # Add human-readable time ago column
             if 'sentTime' in late_df.columns:
-                late_df['Time Ago'] = late_df['sentTime'].apply(format_time_ago)
+                late_df = late_df.with_columns(
+                    pl.col('sentTime').apply(format_time_ago).alias('Time Ago')
+                )
                 
             # Filter options
             st.subheader("Filter Options")
@@ -303,15 +315,17 @@ def show_alerts_management(user_email, user_role, user_project):
             # Apply filters
             filtered_df = late_df
             if not show_accepted:
-                filtered_df = late_df[~late_df['accepted'].astype(str).str.lower().isin(['true', 'yes', '1', 't'])]
+                filtered_df = late_df.filter(
+                    ~pl.col('accepted').cast(str).str.to_lowercase().is_in(['true', 'yes', '1', 't'])
+                )
             
-            # Display data table
-            st.subheader(f"Late Numbers ({len(filtered_df)} entries)")
+            # Display data table with editor
+            st.subheader(f"Late Numbers ({filtered_df.height} entries)")
             
             # Create a copy for display with better column names
-            display_df = filtered_df.copy()
+            display_df = filtered_df.clone()
             if 'nums' in display_df.columns:
-                display_df = display_df.rename(columns={
+                display_df = display_df.rename({
                     'nums': 'Phone Number',
                     'sentTime': 'WhatsApp Sent',
                     'hoursLate': 'Hours Late',
@@ -321,52 +335,45 @@ def show_alerts_management(user_email, user_role, user_project):
             
                 # Reorder columns for better display
                 column_order = ['Phone Number', 'WhatsApp Sent', 'Time Ago', 'Hours Late', 'Last Reviewed', 'Accepted']
-                display_df = display_df[[col for col in column_order if col in display_df.columns]]
+                available_columns = [col for col in column_order if col in display_df.columns]
+                display_df = display_df.select(available_columns)
             
-            st.dataframe(display_df)
+            # Convert to pandas for data editor
+            edited_late_df = st.data_editor(
+                display_df.to_pandas(), 
+                key="late_editor",
+                disabled=["Time Ago"]  # Time Ago is calculated, not directly editable
+            )
             
-            # Process individual entries
-            st.subheader("Review Late Numbers")
-            
-            # Use columns for better layout
-            cols = st.columns([1, 4])
-            with cols[0]:
-                selected_index = st.number_input("Select Row #", 
-                                              min_value=0, 
-                                              max_value=len(filtered_df)-1 if len(filtered_df) > 0 else 0,
-                                              value=0,
-                                              key="late_index")
-            
-            # Only show accept buttons if there are entries
-            if not filtered_df.empty:
-                with cols[1]:
-                    # Get the actual index in the original dataframe
-                    actual_index = filtered_df.index[selected_index] if selected_index < len(filtered_df) else 0
+            # Save changes button
+            if st.button("Save Changes to Late Numbers", key="save_late"):
+                try:
+                    # Need to map edited data back to original column names
+                    reverse_mapping = {
+                        'Phone Number': 'nums',
+                        'WhatsApp Sent': 'sentTime',
+                        'Hours Late': 'hoursLate',
+                        'Last Reviewed': 'lastUpdated',
+                        'Accepted': 'accepted'
+                    }
                     
-                    # Display selected entry details
-                    if 'nums' in filtered_df.columns and actual_index in filtered_df.index:
-                        selected_number = filtered_df.loc[actual_index, 'nums']
-                        st.write(f"Selected: **{selected_number}**")
-                        
-                        is_accepted = filtered_df.loc[actual_index, 'accepted']
-                        if str(is_accepted).lower() in ['true', 'yes', '1', 't']:
-                            st.success("This number has already been accepted")
-                        else:
-                            accept_button = st.button("Mark as Accepted", key=f"accept_late_{actual_index}")
-                            
-                            if accept_button:
-                                # Get the matching index in the original sheet data
-                                sheet_index = late_df.index.get_loc(actual_index)
-                                
-                                # Update the sheet
-                                late_df = update_late_sheet(spreadsheet, late_sheet, sheet_index)
-                                
-                                # Refresh the filtered df
-                                filtered_df = late_df
-                                if not show_accepted:
-                                    filtered_df = late_df[~late_df['accepted'].astype(str).str.lower().isin(['true', 'yes', '1', 't'])]
-                                
-                                st.rerun()
+                    # Convert back to polars with original column names
+                    updated_df = pl.DataFrame(edited_late_df)
+                    updated_df = updated_df.rename({v: k for k, v in reverse_mapping.items() if v in updated_df.columns})
+                    
+                    # Update timestamp for modified rows
+                    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    updated_df = updated_df.with_column(pl.lit(now).alias('lastUpdated'))
+                    
+                    # Update the sheet
+                    spreadsheet.update_sheet("late_nums", updated_df)
+                    GoogleSheetsAdapter.save(spreadsheet, "late_nums")
+                    st.success("Late numbers updated successfully!")
+                    
+                    # Reload data
+                    late_df, late_sheet = load_late_numbers(spreadsheet)
+                except Exception as e:
+                    st.error(f"Error saving changes: {str(e)}")
 
     # Add a footer with helpful information
     st.divider()
