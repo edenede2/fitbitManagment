@@ -48,8 +48,8 @@ def load_suspicious_numbers(spreadsheet:Spreadsheet):
     df = suspicious_sheet.to_dataframe(engine="polars")
     
     # Add column for verification if not exists
-    if 'accept' not in df.columns:
-        df['accept'] = False
+    if 'accepted' not in df.columns:
+        df['accepted'] = False
         
     return df, suspicious_sheet
 
@@ -59,14 +59,14 @@ def load_late_numbers(spreadsheet:Spreadsheet):
     df = pd.DataFrame(late_sheet.data)
     
     # Add column for verification if not exists
-    if 'accept' not in df.columns:
-        df['accept'] = False
+    if 'accepted' not in df.columns:
+        df['accepted'] = False
         
     return df, late_sheet
 
 def update_suspicious_sheet(spreadsheet, suspicious_sheet, row_index, accept=True):
     """Update the suspicious_nums sheet with acceptance status"""
-    suspicious_sheet.data[row_index]['accept'] = accept
+    suspicious_sheet.data[row_index]['accepted'] = accept
     suspicious_sheet.data[row_index]['lastUpdated'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     # Save changes to Google Sheets
@@ -81,7 +81,7 @@ def update_suspicious_sheet(spreadsheet, suspicious_sheet, row_index, accept=Tru
 
 def update_late_sheet(spreadsheet, late_sheet, row_index, accept=True):
     """Update the late_nums sheet with acceptance status"""
-    late_sheet.data[row_index]['accept'] = accept
+    late_sheet.data[row_index]['accepted'] = accept
     late_sheet.data[row_index]['lastUpdated'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     # Save changes to Google Sheets
@@ -187,7 +187,7 @@ def show_alerts_management(user_email, user_role, user_project):
             # Apply filters
             filtered_df = suspicious_df
             if not show_accepted:
-                filtered_df = suspicious_df[~suspicious_df['accept'].astype(str).str.lower().isin(['true', 'yes', '1', 't'])]
+                filtered_df = suspicious_df[~suspicious_df['accepted'].astype(str).str.lower().isin(['true', 'yes', '1', 't'])]
             
             # Display data table
             st.subheader(f"Suspicious Numbers ({len(filtered_df)} entries)")
@@ -199,7 +199,7 @@ def show_alerts_management(user_email, user_role, user_project):
                     'nums': 'Phone Number',
                     'filledTime': 'Questionnaire Filled',
                     'lastUpdated': 'Last Reviewed',
-                    'accept': 'Accepted'
+                    'accepted': 'Accepted'
                 })
             
                 # Reorder columns for better display
@@ -230,7 +230,7 @@ def show_alerts_management(user_email, user_role, user_project):
                         selected_number = filtered_df.loc[actual_index, 'nums']
                         st.write(f"Selected: **{selected_number}**")
                         
-                        is_accepted = filtered_df.loc[actual_index, 'accept']
+                        is_accepted = filtered_df.loc[actual_index, 'accepted']
                         if str(is_accepted).lower() in ['true', 'yes', '1', 't']:
                             st.success("This number has already been accepted")
                         else:
@@ -246,7 +246,7 @@ def show_alerts_management(user_email, user_role, user_project):
                                 # Refresh the filtered df
                                 filtered_df = suspicious_df
                                 if not show_accepted:
-                                    filtered_df = suspicious_df[~suspicious_df['accept'].astype(str).str.lower().isin(['true', 'yes', '1', 't'])]
+                                    filtered_df = suspicious_df[~suspicious_df['accepted'].astype(str).str.lower().isin(['true', 'yes', '1', 't'])]
                                 
                                 st.rerun()
 
@@ -270,7 +270,7 @@ def show_alerts_management(user_email, user_role, user_project):
             # Apply filters
             filtered_df = late_df
             if not show_accepted:
-                filtered_df = late_df[~late_df['accept'].astype(str).str.lower().isin(['true', 'yes', '1', 't'])]
+                filtered_df = late_df[~late_df['accepted'].astype(str).str.lower().isin(['true', 'yes', '1', 't'])]
             
             # Display data table
             st.subheader(f"Late Numbers ({len(filtered_df)} entries)")
@@ -283,7 +283,7 @@ def show_alerts_management(user_email, user_role, user_project):
                     'sentTime': 'WhatsApp Sent',
                     'hoursLate': 'Hours Late',
                     'lastUpdated': 'Last Reviewed',
-                    'accept': 'Accepted'
+                    'accepted': 'Accepted'
                 })
             
                 # Reorder columns for better display
@@ -315,7 +315,7 @@ def show_alerts_management(user_email, user_role, user_project):
                         selected_number = filtered_df.loc[actual_index, 'nums']
                         st.write(f"Selected: **{selected_number}**")
                         
-                        is_accepted = filtered_df.loc[actual_index, 'accept']
+                        is_accepted = filtered_df.loc[actual_index, 'accepted']
                         if str(is_accepted).lower() in ['true', 'yes', '1', 't']:
                             st.success("This number has already been accepted")
                         else:
@@ -331,7 +331,7 @@ def show_alerts_management(user_email, user_role, user_project):
                                 # Refresh the filtered df
                                 filtered_df = late_df
                                 if not show_accepted:
-                                    filtered_df = late_df[~late_df['accept'].astype(str).str.lower().isin(['true', 'yes', '1', 't'])]
+                                    filtered_df = late_df[~late_df['accepted'].astype(str).str.lower().isin(['true', 'yes', '1', 't'])]
                                 
                                 st.rerun()
 
