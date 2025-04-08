@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import datetime
-from entity.Sheet import GoogleSheetsAdapter
+from entity.Sheet import GoogleSheetsAdapter, Spreadsheet
 
 def nova_qualtrics_management(user_email, user_role, user_project, spreadsheet):
     """
@@ -282,7 +282,7 @@ def _display_suspicious_nums(suspicious_nums_sheet):
                 continue
             
             # Check if already accepted
-            is_accepted = str(record.get('accept', '')).upper() == 'TRUE'
+            is_accepted = str(record.get('accepted', '')).upper() == 'TRUE'
             
             col1, col2, col3 = st.columns([0.1, 0.5, 0.4])
             
@@ -354,7 +354,7 @@ def _display_accept_form(spreadsheet, late_nums_sheet, suspicious_nums_sheet):
     else:
         st.info("No numbers selected. Select numbers from the Late Numbers or Suspicious Numbers tabs.")
 
-def _update_accepted_numbers(spreadsheet, sheet, selected_numbers, sheet_name):
+def _update_accepted_numbers(spreadsheet: Spreadsheet, sheet, selected_numbers, sheet_name):
     """Update the 'accept' field for selected numbers in the sheet"""
     # Make a copy of the data to track changes
     updated_data = []
@@ -372,6 +372,7 @@ def _update_accepted_numbers(spreadsheet, sheet, selected_numbers, sheet_name):
         else:
             # Keep the record as is
             updated_data.append(record)
+            GoogleSheetsAdapter().save(updated_data)
     
     # Only update the sheet if changes were made
     if changes_made:
