@@ -43,6 +43,10 @@ def main():
             # Get user info - either from Streamlit auth or session state (for demo)
             if st.experimental_user.is_logged_in:
                 user_email = st.experimental_user.email
+                user = UserController().get_user_by_email(user_email)
+                if user is not None:
+                    st.session_state.user_role = user.get('role', 'Guest')
+                    st.session_state.user_project = user.get('project', 'None')
                 user_role = st.session_state.user_role
                 user_project = st.session_state.user_project
             else:
