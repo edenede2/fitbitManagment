@@ -50,9 +50,9 @@ def analyze_whatsapp_messages():
         bulldog_sheet = whatsapp_spreadsheet.get_sheet("bulldog", sheet_type="bulldog")
         alert_sheet = alert_spreadsheet.get_sheet("qualtrics_nova", sheet_type="qualtrics_nova")
         
-        # Get threshold from qualtrics_alert_config or use default
+        # Get threshold from qualtrics_alerts_config or use default
         hours_threshold = 48  # Default threshold
-        config_sheet = alert_spreadsheet.get_sheet("qualtrics_alert_config", sheet_type="qualtrics_alert_config")
+        config_sheet = alert_spreadsheet.get_sheet("qualtrics_alerts_config", sheet_type="qualtrics_alerts_config")
         config_df = config_sheet.to_dataframe(engine="polars")
         
         if not config_df.is_empty() and 'hoursThr' in config_df.columns:
@@ -93,7 +93,8 @@ def analyze_whatsapp_messages():
             suspicious_nums_data.append({
                 'nums': row['phone'],
                 'filledTime': filled_time,
-                'lastUpdated': now
+                'lastUpdated': now,
+                'accepted': row.get('accepted', 'FALSE')
             })
         
         # Make sure we have the sheets before updating
@@ -577,6 +578,7 @@ def check_qualtrics_alerts(suspicious_numbers, config_data):
     alerts_sent = {}
     
     try:
+        suspicious_numbers = suspicious_numbers.filter(pl.col('accepted') == 'FALSE')
         # Skip if either data frame is empty
         if suspicious_numbers.is_empty() or config_data.is_empty():
             print("No data available for Qualtrics alerts check")
@@ -636,8 +638,8 @@ def check_qualtrics_alerts(suspicious_numbers, config_data):
                 for row in suspicious_numbers.iter_rows(named=True):
                     html += f"""
                     <tr>
-                        <td>{row['phone']}</td>
-                        <td>{row.get('endDate', 'Unknown')}</td>
+                        <td>{row['nums']}</td>
+                        <td>{row.get('filledTime', 'Unknown')}</td>
                     </tr>
                     """
                 
@@ -722,7 +724,7 @@ def hourly_data_collection():
         
         # Step 3: Get alert configurations
         fitbit_config_sheet = spreadsheet.get_sheet("fitbit_alerts_config", sheet_type="fitbit_alerts_config")
-        qualtrics_config_sheet = spreadsheet.get_sheet("qualtrics_alert_config", sheet_type="qualtrics_alert_config")
+        qualtrics_config_sheet = spreadsheet.get_sheet("qualtrics_alerts_config", sheet_type="qualtrics_alerts_config")
         
         # Step 4: Get log data for Fitbit alerts
         log_sheet = spreadsheet.get_sheet("FitbitLog", sheet_type="log")
