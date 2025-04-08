@@ -278,13 +278,14 @@ def _display_ema_data(ema_df):
     else:
         st.info("No EMA data available")
 
-@st.fragment
+# @st.fragment
 def _check_box_control(num, selected_set, key):
-    """Control checkbox selection and deselection"""
-        st.session_state.selected_late_nums.add(num)
-    else:
-        if num in st.session_state.selected_late_nums:
-            st.session_state.selected_late_nums.remove(num)
+    pass
+    # """Control checkbox selection and deselection"""
+    # st.session_state.selected_late_nums.add(num)
+    # else:
+    #     if num in st.session_state.selected_late_nums:
+    #         st.session_state.selected_late_nums.remove(num)
 
     
 def _display_late_nums(late_nums_df):
