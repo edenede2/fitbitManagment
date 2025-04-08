@@ -266,44 +266,65 @@ def _check_box_control(num, selected_set, key):
     pass
 
 def _display_suspicious_nums(suspicious_nums_df):
-    """Display suspicious numbers with selection options"""
+    """Display suspicious numbers with selection options, using a form to avoid immediate reruns."""
     st.header("Suspicious Numbers")
     
-    if suspicious_nums_df is not None and not suspicious_nums_df.empty:
-        st.write("Select numbers to accept:")
-        
-        # Display each number with a selection checkbox:
+    # If the dataframe is empty or None, show a message and return
+    if suspicious_nums_df is None or suspicious_nums_df.empty:
+        st.info("No suspicious numbers available")
+        return
+    
+    st.write("Select numbers to accept, then click 'Submit' at the bottom to finalize your selection.")
+    
+    with st.form("suspicious_nums_form"):
         for i, row in suspicious_nums_df.iterrows():
             num = str(row.get('nums', ''))
-            if not num:  # Skip empty records
-                continue
+            if not num:
+                continue  # Skip empty records
             
-            # Check if already accepted
             is_accepted = str(row.get('accepted', '')).upper() == 'TRUE'
             
-            col1, col2, col3 = st.columns([0.1, 0.5, 0.4])
+            # Create a key for each checkbox
+            checkbox_key = f"suspicious_nums_checkbox_{num}"
             
-            with col1:
-                if is_accepted:
-                    st.write("✅")
-                else:
-                    is_selected = num in st.session_state.selected_suspicious_nums
-                    if st.checkbox(f"Select {num}", value=is_selected, key=f"suspicious_{i}_{num}", label_visibility="collapsed"):
-                        st.session_state.selected_suspicious_nums.add(num)
-                    else:
-                        if num in st.session_state.selected_suspicious_nums:
-                            st.session_state.selected_suspicious_nums.remove(num)
+            # Default value for each checkbox:
+            #   - If it's already accepted in the sheet, or
+            #   - If it's in the user's current session state selection, set True
+            default_value = is_accepted or (num in st.session_state.get("selected_suspicious_nums", []))
             
-            with col2:
-                st.write(f"**{num}**")
-                
-            with col3:
-                filled_time = row.get('filledTime', 'N/A')
-                st.write(f"Filled: {filled_time}")
-                
+            st.checkbox(
+                label=f"Select {num}",
+                value=default_value,
+                key=checkbox_key
+            )
+            
+            # Display your other row info
+            st.write(f"**{num}**")
+            filled_time = row.get('filledTime', 'N/A')
+            st.write(f"Filled: {filled_time}")
             st.divider()
-    else:
-        st.info("No suspicious numbers available")
+        
+        # When the user hits "Submit", we update st.session_state
+        submitted = st.form_submit_button("Submit")
+        if submitted:
+            # Initialize if not present
+            if "selected_suspicious_nums" not in st.session_state:
+                st.session_state.selected_suspicious_nums = set()
+            
+            # Clear current selection, then repopulate based on what's checked
+            st.session_state.selected_suspicious_nums.clear()
+            
+            for _, row in suspicious_nums_df.iterrows():
+                num = str(row.get('nums', ''))
+                if not num:
+                    continue
+                
+                # Retrieve the checkbox value from the new keys
+                checkbox_key = f"suspicious_nums_checkbox_{num}"
+                if st.session_state.get(checkbox_key, False):
+                    st.session_state.selected_suspicious_nums.add(num)
+            
+            st.success("Suspicious numbers selection updated successfully!")
 
 def _display_accept_form(spreadsheet, late_nums_df, suspicious_nums_df):
     """Display form for accepting selected numbers"""
