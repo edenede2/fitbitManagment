@@ -6,14 +6,14 @@ import time
 from controllers.auth_controller import AuthenticationController
 from controllers.user_controller import UserController
 from controllers.project_controller import ProjectController
-from pages.alerts_config import alerts_config_page
+from view.alerts_config import alerts_config_page
 # Import views
 from view.dashboard import display_dashboard
 from view.homepage import display_homepage
 # from view.alertConfig import display_alerts
 
 # Import the fitbit management functionality
-from pages.fitbit_management import load_fitbit_datatable
+from view.fitbit_management import load_fitbit_datatable
 from view.alerts_management import show_alerts_management
 # Set up app configuration
 st.set_page_config(
