@@ -307,10 +307,14 @@ def _display_accept_form(spreadsheet, late_nums_df, suspicious_nums_df):
         st.write(f"You have selected {total_selected} numbers to accept:")
         
         if st.session_state.selected_late_nums:
-            st.write(f"**Late Numbers:** {', '.join(st.session_state.selected_late_nums)}")
+            st.write(f"**Late Numbers:**")
+            for num in st.session_state.selected_late_nums:
+                st.write(f"- {num}")
         
         if st.session_state.selected_suspicious_nums:
-            st.write(f"**Suspicious Numbers:** {', '.join(st.session_state.selected_suspicious_nums)}")
+            st.write(f"**Suspicious Numbers:**")
+            for num in st.session_state.selected_suspicious_nums:
+                st.write(f"- {num}")
         
         # Save button
         if st.button("Save Accepted Numbers"):
