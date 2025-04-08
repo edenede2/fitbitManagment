@@ -1173,7 +1173,7 @@ class AlertAnalyzer:
         # Convert time column to datetime
         try:
             sheet_df = sheet_df.with_columns(
-                pl.col('time').str.strptime(pl.Datetime, format="%d/%m/%Y %H:%M").alias('datetime')
+                pl.col('time').str.strptime(pl.Datetime, format="%d/%m/%Y %H:%M", strict=False).alias('datetime')
             )
         except Exception as e:
             print(f"Error converting time to datetime: {e}")
@@ -1238,8 +1238,8 @@ class AlertAnalyzer:
         
         if recent_messages.height > 0:
             report.append("\nTop 10 recent messages:")
-            for row in recent_messages.select(['name', 'phone', 'time', 'hours_left']).head(10).iter_rows(named=True):
-                report.append(f"- {row['name']} ({row['phone']}): Sent {row['time']}, {row['hours_left']:.1f} hours left")
+            for row in recent_messages.select([ 'phone', 'time', 'hours_left']).head(10).iter_rows(named=True):
+                report.append(f"-({row['phone']}): Sent {row['time']}, {row['hours_left']:.1f} hours left")
         
         report.append("")
         report.append(f"== Suspicious Numbers ==")
