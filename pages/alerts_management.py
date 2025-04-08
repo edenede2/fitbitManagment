@@ -159,14 +159,42 @@ def show_alerts_management(user_email, user_role, user_project):
         if total_answers_df.is_empty():
             st.warning("No total answers found.")
         else:
+            # Add time ago information if endDate column exists
             if 'endDate' in total_answers_df.columns:
-                suspicious_df['Time Ago'] = suspicious_df['endDate'].apply(format_time_ago)
-            st.dataframe(total_answers_df)
-            st.subheader("Summary Statistics")
-            st.write(total_answers_df.describe())
-
-
+                total_answers_df = total_answers_df.with_column(
+                    pl.col('endDate').apply(format_time_ago).alias('Time Ago')
+                )
             
+            # Filter options
+            st.subheader("Filter Options")
+            date_filter = st.date_input("Filter by date (from)", 
+                                     value=datetime.datetime.now() - datetime.timedelta(days=7),
+                                     max_value=datetime.datetime.now())
+            
+            # Apply filters if date column exists
+            filtered_df = total_answers_df
+            if 'endDate' in total_answers_df.columns and date_filter:
+                date_str = date_filter.strftime("%Y-%m-%d")
+                filtered_df = total_answers_df.filter(pl.col('endDate') >= date_str)
+            
+            # Display data
+            st.subheader(f"Total Answers ({filtered_df.height} entries)")
+            st.dataframe(filtered_df)
+            
+            # Summary statistics
+            st.subheader("Summary Statistics")
+            
+            # Count answers by date if date column exists
+            if 'endDate' in filtered_df.columns:
+                date_counts = filtered_df.group_by('endDate').agg(pl.count().alias('Count'))
+                st.subheader("Answers by Date")
+                st.bar_chart(date_counts.to_pandas().set_index('endDate'))
+            
+            # Show numerical statistics for any numeric columns
+            numeric_cols = filtered_df.select(pl.col(pl.NUMERIC_DTYPES)).columns
+            if numeric_cols:
+                stats_df = filtered_df.select(numeric_cols).describe()
+                st.write(stats_df)
 
     # ----- Suspicious Numbers Tab -----
     with tab2:
@@ -174,12 +202,14 @@ def show_alerts_management(user_email, user_role, user_project):
         st.info("These are patients who answered the questionnaire but their phone numbers weren't identified in the Bulldog system.")
         
         # Check if there's data
-        if suspicious_df.empty:
+        if suspicious_df.is_empty():
             st.warning("No suspicious numbers found.")
         else:
             # Add human-readable time ago column for display
             if 'filledTime' in suspicious_df.columns:
-                suspicious_df['Time Ago'] = suspicious_df['filledTime'].apply(format_time_ago)
+                suspicious_df = suspicious_df.with_column(
+                    pl.col('filledTime').apply(format_time_ago).alias('Time Ago')
+                )
                 
             # Filter options
             st.subheader("Filter Options")
@@ -188,15 +218,17 @@ def show_alerts_management(user_email, user_role, user_project):
             # Apply filters
             filtered_df = suspicious_df
             if not show_accepted:
-                filtered_df = suspicious_df[~suspicious_df['accepted'].astype(str).str.lower().isin(['true', 'yes', '1', 't'])]
+                filtered_df = suspicious_df.filter(
+                    ~pl.col('accepted').cast(str).str.to_lowercase().is_in(['true', 'yes', '1', 't'])
+                )
             
             # Display data table
-            st.subheader(f"Suspicious Numbers ({len(filtered_df)} entries)")
+            st.subheader(f"Suspicious Numbers ({filtered_df.height} entries)")
             
             # Create a copy for display with better column names
-            display_df = filtered_df.copy()
+            display_df = filtered_df.clone()
             if 'nums' in display_df.columns:
-                display_df = display_df.rename(columns={
+                display_df = display_df.rename({
                     'nums': 'Phone Number',
                     'filledTime': 'Questionnaire Filled',
                     'lastUpdated': 'Last Reviewed',
@@ -205,7 +237,8 @@ def show_alerts_management(user_email, user_role, user_project):
             
                 # Reorder columns for better display
                 column_order = ['Phone Number', 'Questionnaire Filled', 'Time Ago', 'Last Reviewed', 'Accepted']
-                display_df = display_df[[col for col in column_order if col in display_df.columns]]
+                available_columns = [col for col in column_order if col in display_df.columns]
+                display_df = display_df.select(available_columns)
             
             st.dataframe(display_df)
             
@@ -221,33 +254,32 @@ def show_alerts_management(user_email, user_role, user_project):
                                               value=0)
             
             # Only show accept buttons if there are entries
-            if not filtered_df.empty:
+            if not filtered_df.is_empty():
                 with cols[1]:
                     # Get the actual index in the original dataframe
-                    actual_index = filtered_df.index[selected_index] if selected_index < len(filtered_df) else 0
+                    actual_index = filtered_df.row(selected_index) if selected_index < len(filtered_df) else 0
                     
                     # Display selected entry details
-                    if 'nums' in filtered_df.columns and actual_index in filtered_df.index:
-                        selected_number = filtered_df.loc[actual_index, 'nums']
+                    if 'nums' in filtered_df.columns and actual_index < len(filtered_df):
+                        selected_number = filtered_df[actual_index, 'nums']
                         st.write(f"Selected: **{selected_number}**")
                         
-                        is_accepted = filtered_df.loc[actual_index, 'accepted']
+                        is_accepted = filtered_df[actual_index, 'accepted']
                         if str(is_accepted).lower() in ['true', 'yes', '1', 't']:
                             st.success("This number has already been accepted")
                         else:
                             accept_button = st.button("Mark as Accepted", key=f"accept_suspicious_{actual_index}")
                             
                             if accept_button:
-                                # Get the matching index in the original sheet data
-                                sheet_index = suspicious_df.index.get_loc(actual_index)
-                                
                                 # Update the sheet
-                                suspicious_df = update_suspicious_sheet(spreadsheet, suspicious_sheet, sheet_index)
+                                suspicious_df = update_suspicious_sheet(spreadsheet, suspicious_sheet, actual_index)
                                 
                                 # Refresh the filtered df
                                 filtered_df = suspicious_df
                                 if not show_accepted:
-                                    filtered_df = suspicious_df[~suspicious_df['accepted'].astype(str).str.lower().isin(['true', 'yes', '1', 't'])]
+                                    filtered_df = suspicious_df.filter(
+                                        ~pl.col('accepted').cast(str).str.to_lowercase().is_in(['true', 'yes', '1', 't'])
+                                    )
                                 
                                 st.rerun()
 
