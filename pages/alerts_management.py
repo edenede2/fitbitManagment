@@ -11,13 +11,22 @@ if "accepted_suspicious" not in st.session_state:
     st.session_state.accepted_suspicious = []
 if "accepted_late" not in st.session_state:
     st.session_state.accepted_late = []
-if "cached_data" not in st.session_state:
-    st.session_state.cached_data = {
-        "total_answers": None,
-        "suspicious": None,
-        "late": None,
-        "last_refresh": None
-    }
+
+# Setup separate cache entries for dataframes and sheets to avoid unpacking issues
+if "cached_total_answers_df" not in st.session_state:
+    st.session_state.cached_total_answers_df = None
+if "cached_total_answers_sheet" not in st.session_state:
+    st.session_state.cached_total_answers_sheet = None
+if "cached_suspicious_df" not in st.session_state:
+    st.session_state.cached_suspicious_df = None
+if "cached_suspicious_sheet" not in st.session_state:
+    st.session_state.cached_suspicious_sheet = None
+if "cached_late_df" not in st.session_state:
+    st.session_state.cached_late_df = None
+if "cached_late_sheet" not in st.session_state:
+    st.session_state.cached_late_sheet = None
+if "last_refresh" not in st.session_state:
+    st.session_state.last_refresh = None
 if "edited_data" not in st.session_state:
     st.session_state.edited_data = {
         "total_answers": None,
@@ -90,6 +99,38 @@ def load_late_numbers(spreadsheet:Spreadsheet):
         
     return df, late_sheet
 
+def format_time_ago(timestamp_str):
+    """Format a timestamp to show how long ago it occurred"""
+    try:
+        if not timestamp_str:
+            return "Unknown"
+            
+        # Try to parse the timestamp with different formats
+        for fmt in ["%Y-%m-%d %H:%M:%S", "%d/%m/%Y %H:%M:%S", "%Y-%m-%dT%H:%M:%S"]:
+            try:
+                timestamp = datetime.datetime.strptime(timestamp_str, fmt)
+                break
+            except ValueError:
+                continue
+        else:
+            return timestamp_str  # Return original if no format works
+            
+        now = datetime.datetime.now()
+        diff = now - timestamp
+        
+        if diff.days > 0:
+            return f"{diff.days} days ago"
+        elif diff.seconds >= 3600:
+            hours = diff.seconds // 3600
+            return f"{hours} hours ago"
+        elif diff.seconds >= 60:
+            minutes = diff.seconds // 60
+            return f"{minutes} minutes ago"
+        else:
+            return f"{diff.seconds} seconds ago"
+    except Exception as e:
+        return f"Error: {str(e)}"
+
 # Add callbacks for data editor changes
 def on_total_answers_change(edited_df):
     st.session_state.edited_data["total_answers"] = edited_df
@@ -110,14 +151,13 @@ def show_alerts_management(user_email, user_role, user_project):
     # Create a refresh button in the sidebar
     with st.sidebar:
         refresh = st.button("↻ Refresh Data")
-        last_refresh = st.session_state.cached_data["last_refresh"]
-        if last_refresh:
-            st.caption(f"Last refreshed: {last_refresh.strftime('%H:%M:%S')}")
+        if st.session_state.last_refresh:
+            st.caption(f"Last refreshed: {st.session_state.last_refresh.strftime('%H:%M:%S')}")
     
     # Load data only if needed (first load or explicit refresh)
-    if (st.session_state.cached_data["total_answers"] is None or 
-        st.session_state.cached_data["suspicious"] is None or
-        st.session_state.cached_data["late"] is None or
+    if (st.session_state.cached_total_answers_df is None or 
+        st.session_state.cached_suspicious_df is None or
+        st.session_state.cached_late_df is None or
         refresh):
         
         with st.spinner("Loading data..."):
@@ -126,21 +166,27 @@ def show_alerts_management(user_email, user_role, user_project):
             suspicious_df, suspicious_sheet = load_suspicious_numbers(spreadsheet)
             late_df, late_sheet = load_late_numbers(spreadsheet)
             
-            # Update cache
-            st.session_state.cached_data["total_answers"] = (total_answers_df, total_answers_sheet)
-            st.session_state.cached_data["suspicious"] = (suspicious_df, suspicious_sheet)
-            st.session_state.cached_data["late"] = (late_df, late_sheet)
-            st.session_state.cached_data["last_refresh"] = datetime.datetime.now()
+            # Update cache - store each item separately
+            st.session_state.cached_total_answers_df = total_answers_df
+            st.session_state.cached_total_answers_sheet = total_answers_sheet
+            st.session_state.cached_suspicious_df = suspicious_df
+            st.session_state.cached_suspicious_sheet = suspicious_sheet
+            st.session_state.cached_late_df = late_df
+            st.session_state.cached_late_sheet = late_sheet
+            st.session_state.last_refresh = datetime.datetime.now()
             
             # Clear edited data on refresh
             st.session_state.edited_data["total_answers"] = None
             st.session_state.edited_data["suspicious"] = None
             st.session_state.edited_data["late"] = None
     else:
-        # Use cached data
-        total_answers_df, total_answers_sheet = st.session_state.cached_data["total_answers"]
-        suspicious_df, suspicious_sheet = st.session_state.cached_data["suspicious"]
-        late_df, late_sheet = st.session_state.cached_data["late"]
+        # Use cached data - no need to unpack
+        total_answers_df = st.session_state.cached_total_answers_df
+        total_answers_sheet = st.session_state.cached_total_answers_sheet
+        suspicious_df = st.session_state.cached_suspicious_df
+        suspicious_sheet = st.session_state.cached_suspicious_sheet
+        late_df = st.session_state.cached_late_df
+        late_sheet = st.session_state.cached_late_sheet
 
     # Create tabs for different alert types
     tab1, tab2, tab3 = st.tabs(["Total Answers", "Suspicious Numbers", "Late Numbers"])
@@ -213,7 +259,8 @@ def show_alerts_management(user_email, user_role, user_project):
                     st.success("Total answers data updated successfully!")
                     
                     # Refresh cache for this sheet
-                    st.session_state.cached_data["total_answers"] = None
+                    st.session_state.cached_total_answers_df = None
+                    st.session_state.cached_total_answers_sheet = None
                     
                     # Clear edited data after successful save
                     st.session_state.edited_data["total_answers"] = None
@@ -359,7 +406,8 @@ def show_alerts_management(user_email, user_role, user_project):
                     st.success("Suspicious numbers updated successfully!")
                     
                     # Refresh cache for this sheet
-                    st.session_state.cached_data["suspicious"] = None
+                    st.session_state.cached_suspicious_df = None
+                    st.session_state.cached_suspicious_sheet = None
                     
                     # Clear edited data after successful save
                     st.session_state.edited_data["suspicious"] = None
@@ -491,7 +539,8 @@ def show_alerts_management(user_email, user_role, user_project):
                     st.success("Late numbers updated successfully!")
                     
                     # Refresh cache for this sheet
-                    st.session_state.cached_data["late"] = None
+                    st.session_state.cached_late_df = None
+                    st.session_state.cached_late_sheet = None
                     
                     # Clear edited data after successful save
                     st.session_state.edited_data["late"] = None
