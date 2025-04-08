@@ -733,8 +733,3 @@ def show_alerts_management(user_email, user_role, user_project, spreadsheet: Spr
 
     Mark items as "Accepted" once you've reviewed them to stop receiving email alerts about them.
     """)
-
-# If this script is run directly, call the main function
-def display_alerts_management(user_email, user_role, user_project, spreadsheet):
-    """Function to display the alerts management page"""
-    show_alerts_management(user_email, user_role, user_project, spreadsheet)
