@@ -12,19 +12,13 @@ if "accepted_suspicious" not in st.session_state:
 if "accepted_late" not in st.session_state:
     st.session_state.accepted_late = []
 
-# Setup separate cache entries for dataframes and sheets to avoid unpacking issues
+# Setup separate cache entries for dataframes to avoid unpacking issues
 if "cached_total_answers_df" not in st.session_state:
     st.session_state.cached_total_answers_df = None
-if "cached_total_answers_sheet" not in st.session_state:
-    st.session_state.cached_total_answers_sheet = None
 if "cached_suspicious_df" not in st.session_state:
     st.session_state.cached_suspicious_df = None
-if "cached_suspicious_sheet" not in st.session_state:
-    st.session_state.cached_suspicious_sheet = None
 if "cached_late_df" not in st.session_state:
     st.session_state.cached_late_df = None
-if "cached_late_sheet" not in st.session_state:
-    st.session_state.cached_late_sheet = None
 if "last_refresh" not in st.session_state:
     st.session_state.last_refresh = None
 if "edited_data" not in st.session_state:
@@ -33,12 +27,17 @@ if "edited_data" not in st.session_state:
         "suspicious": None,
         "late": None
     }
+# Add session state for filter preferences
+if "show_accepted_suspicious" not in st.session_state:
+    st.session_state.show_accepted_suspicious = False
+if "show_accepted_late" not in st.session_state:
+    st.session_state.show_accepted_late = False
 
 # ---- Functions for loading and updating sheet data ----
 
-# @st.cache_data(ttl=300)  # Cache for 5 minutes
-def load_spreadsheet():
-    """Load and connect to the Google Spreadsheet"""
+# Create a simple connection to the spreadsheet - don't cache the object
+def get_spreadsheet_connection():
+    """Create and connect to Google Spreadsheet"""
     # Get the spreadsheet key from secrets
     spreadsheet_key = get_secrets().get("spreadsheet_key", "")
     
@@ -51,53 +50,107 @@ def load_spreadsheet():
     
     return spreadsheet
 
-# @st.cache_data(ttl=60)  # Cache for 1 minute
-def load_total_answers(spreadsheet:Spreadsheet):
-    """Load total answers from spreadsheet"""
-    total_answers_sheet = spreadsheet.get_sheet("EMA", "EMA")
-    df = total_answers_sheet.to_dataframe(engine="polars")
-    
-    # Convert accepted column to boolean if it exists
-    if 'accepted' in df.columns:
-        df = df.with_columns(
-            pl.col('accepted').cast(str).str.to_lowercase().is_in(['true', 'yes', '1', 't']).alias('accepted')
-        )
+# Cache the raw data instead of the spreadsheet object
+@st.cache_data(ttl=300)  # Cache for 5 minutes
+def get_sheet_data(sheet_name):
+    """Get raw data from a specific sheet and cache it"""
+    try:
+        # Get fresh connection
+        spreadsheet = get_spreadsheet_connection()
         
-    return df, total_answers_sheet
+        # Get sheet data
+        sheet = spreadsheet.get_sheet(sheet_name, sheet_name)
+        
+        # Get the raw data as a list of lists or dict
+        raw_data = sheet.to_dataframe(engine="polars").to_dict(as_series=False)
+        
+        return raw_data
+    except Exception as e:
+        st.error(f"Error getting data from sheet {sheet_name}: {str(e)}")
+        return {}
 
-# @st.cache_data(ttl=60)  # Cache for 1 minute
-def load_suspicious_numbers(spreadsheet:Spreadsheet):
-    """Load suspicious numbers from spreadsheet"""
-    suspicious_sheet = spreadsheet.get_sheet("suspicious_nums", "suspicious_nums")
-    df = suspicious_sheet.to_dataframe(engine="polars")
+# Use the cached raw data to create dataframes
+def load_total_answers():
+    """Load total answers from cached sheet data"""
+    # Get cached data
+    raw_data = get_sheet_data("EMA")
     
-    # Add column for verification if not exists
-    if 'accepted' not in df.columns:
-        df = df.with_columns(pl.lit(False).alias('accepted'))
-    else:
-        # Convert existing accepted values to boolean
-        df = df.with_columns(
-            pl.col('accepted').cast(str).str.to_lowercase().is_in(['true', 'yes', '1', 't']).alias('accepted')
-        )
+    # Convert to polars dataframe
+    if raw_data:
+        df = pl.DataFrame(raw_data)
         
-    return df, suspicious_sheet
+        # Convert accepted column to boolean if it exists
+        if 'accepted' in df.columns:
+            df = df.with_columns(
+                pl.col('accepted').cast(str).str.to_lowercase().is_in(['true', 'yes', '1', 't']).alias('accepted')
+            )
+            
+        return df
+    
+    return pl.DataFrame()
 
-# @st.cache_data(ttl=60)  # Cache for 1 minute
-def load_late_numbers(spreadsheet:Spreadsheet):
-    """Load late numbers from spreadsheet"""
-    late_sheet = spreadsheet.get_sheet("late_nums", "late_nums")
-    df = late_sheet.to_dataframe(engine="polars")
+def load_suspicious_numbers():
+    """Load suspicious numbers from cached sheet data"""
+    # Get cached data
+    raw_data = get_sheet_data("suspicious_nums")
     
-    # Add column for verification if not exists
-    if 'accepted' not in df.columns:
-        df = df.with_columns(pl.lit(False).alias('accepted'))
-    else:
-        # Convert existing accepted values to boolean
-        df = df.with_columns(
-            pl.col('accepted').cast(str).str.to_lowercase().is_in(['true', 'yes', '1', 't']).alias('accepted')
-        )
+    # Convert to polars dataframe
+    if raw_data:
+        df = pl.DataFrame(raw_data)
         
-    return df, late_sheet
+        # Add column for verification if not exists
+        if 'accepted' not in df.columns:
+            df = df.with_columns(pl.lit(False).alias('accepted'))
+        else:
+            # Convert existing accepted values to boolean
+            df = df.with_columns(
+                pl.col('accepted').cast(str).str.to_lowercase().is_in(['true', 'yes', '1', 't']).alias('accepted')
+            )
+            
+        return df
+    
+    return pl.DataFrame()
+
+def load_late_numbers():
+    """Load late numbers from cached sheet data"""
+    # Get cached data
+    raw_data = get_sheet_data("late_nums")
+    
+    # Convert to polars dataframe
+    if raw_data:
+        df = pl.DataFrame(raw_data)
+        
+        # Add column for verification if not exists
+        if 'accepted' not in df.columns:
+            df = df.with_columns(pl.lit(False).alias('accepted'))
+        else:
+            # Convert existing accepted values to boolean
+            df = df.with_columns(
+                pl.col('accepted').cast(str).str.to_lowercase().is_in(['true', 'yes', '1', 't']).alias('accepted')
+            )
+            
+        return df
+    
+    return pl.DataFrame()
+
+# Function to update a specific sheet - this will be done sparingly
+def update_sheet_data(sheet_name, df):
+    """Update a specific sheet with new data"""
+    try:
+        # Get fresh connection
+        spreadsheet = get_spreadsheet_connection()
+        
+        # Update the sheet
+        spreadsheet.update_sheet(sheet_name, df)
+        GoogleSheetsAdapter.save(spreadsheet, sheet_name)
+        
+        # Clear the cache for this sheet to force a refresh next time
+        get_sheet_data.clear()
+        
+        return True
+    except Exception as e:
+        st.error(f"Error updating sheet {sheet_name}: {str(e)}")
+        return False
 
 def format_time_ago(timestamp_str):
     """Format a timestamp to show how long ago it occurred"""
@@ -141,6 +194,13 @@ def on_suspicious_change(edited_df):
 def on_late_change(edited_df):
     st.session_state.edited_data["late"] = edited_df
 
+# Toggle handlers for show_accepted filters
+def toggle_show_accepted_suspicious():
+    st.session_state.show_accepted_suspicious = not st.session_state.show_accepted_suspicious
+
+def toggle_show_accepted_late():
+    st.session_state.show_accepted_late = not st.session_state.show_accepted_late
+
 # Create a main function that can be called from app.py
 def show_alerts_management(user_email, user_role, user_project, spreadsheet: Spreadsheet) -> None:
     """Main function to display the alerts management page - can be called from app.py"""
@@ -161,18 +221,19 @@ def show_alerts_management(user_email, user_role, user_project, spreadsheet: Spr
         refresh):
         
         with st.spinner("Loading data..."):
-            spreadsheet = load_spreadsheet()
-            total_answers_df, total_answers_sheet = load_total_answers(spreadsheet)
-            suspicious_df, suspicious_sheet = load_suspicious_numbers(spreadsheet)
-            late_df, late_sheet = load_late_numbers(spreadsheet)
+            # Clear the cache to force a refresh
+            if refresh:
+                get_sheet_data.clear()
             
-            # Update cache - store each item separately
+            # Load data from cached raw data
+            total_answers_df = load_total_answers()
+            suspicious_df = load_suspicious_numbers()
+            late_df = load_late_numbers()
+            
+            # Update session state caches
             st.session_state.cached_total_answers_df = total_answers_df
-            st.session_state.cached_total_answers_sheet = total_answers_sheet
             st.session_state.cached_suspicious_df = suspicious_df
-            st.session_state.cached_suspicious_sheet = suspicious_sheet
             st.session_state.cached_late_df = late_df
-            st.session_state.cached_late_sheet = late_sheet
             st.session_state.last_refresh = datetime.datetime.now()
             
             # Clear edited data on refresh
@@ -180,13 +241,10 @@ def show_alerts_management(user_email, user_role, user_project, spreadsheet: Spr
             st.session_state.edited_data["suspicious"] = None
             st.session_state.edited_data["late"] = None
     else:
-        # Use cached data - no need to unpack
+        # Use cached data 
         total_answers_df = st.session_state.cached_total_answers_df
-        total_answers_sheet = st.session_state.cached_total_answers_sheet
         suspicious_df = st.session_state.cached_suspicious_df
-        suspicious_sheet = st.session_state.cached_suspicious_sheet
         late_df = st.session_state.cached_late_df
-        late_sheet = st.session_state.cached_late_sheet
 
     # Create tabs for different alert types
     tab1, tab2, tab3 = st.tabs(["Total Answers", "Suspicious Numbers", "Late Numbers"])
@@ -214,7 +272,7 @@ def show_alerts_management(user_email, user_role, user_project, spreadsheet: Spr
                                      value=datetime.datetime.now() - datetime.timedelta(days=7),
                                      max_value=datetime.datetime.now())
             
-            # Apply filters if date column exists
+            # Apply filters if date column exists - this is done in-memory, no API calls
             if 'endDate' in display_df.columns and date_filter:
                 date_str = date_filter.strftime("%Y-%m-%d")
                 display_df = display_df.filter(pl.col('endDate') >= date_str)
@@ -252,22 +310,19 @@ def show_alerts_management(user_email, user_role, user_project, spreadsheet: Spr
                             pl.when(pl.col('accepted')).then(pl.lit("TRUE")).otherwise(pl.lit("FALSE")).alias('accepted')
                         )
                     
-                    # Update the sheet
-                    spreadsheet = load_spreadsheet()  # Get fresh connection
-                    spreadsheet.update_sheet("EMA", updated_df)
-                    GoogleSheetsAdapter.save(spreadsheet, "EMA")
-                    st.success("Total answers data updated successfully!")
-                    
-                    # Refresh cache for this sheet
-                    st.session_state.cached_total_answers_df = None
-                    st.session_state.cached_total_answers_sheet = None
-                    
-                    # Clear edited data after successful save
-                    st.session_state.edited_data["total_answers"] = None
-                    
-                    # Add slight delay to avoid immediate refresh
-                    time.sleep(0.5)
-                    st.rerun()
+                    # Update the sheet using our helper function
+                    if update_sheet_data("EMA", updated_df):
+                        st.success("Total answers data updated successfully!")
+                        
+                        # Clear cached data for this sheet
+                        st.session_state.cached_total_answers_df = None
+                        
+                        # Clear edited data after successful save
+                        st.session_state.edited_data["total_answers"] = None
+                        
+                        # Add slight delay to avoid immediate refresh
+                        time.sleep(0.5)
+                        st.rerun()
                 except Exception as e:
                     st.error(f"Error saving changes: {str(e)}")
             
@@ -302,11 +357,14 @@ def show_alerts_management(user_email, user_role, user_project, spreadsheet: Spr
                     pl.col('filledTime').map_elements(format_time_ago).alias('Time Ago')
                 )
                 
-            # Filter options
+            # Filter options - use session state to persist filter choice
             st.subheader("Filter Options")
-            show_accepted = st.checkbox("Show Accepted Numbers", value=False, key="show_accepted_suspicious")
+            show_accepted = st.checkbox("Show Accepted Numbers", 
+                                      value=st.session_state.show_accepted_suspicious, 
+                                      key="suspicious_filter",
+                                      on_change=toggle_show_accepted_suspicious)
             
-            # Apply filters
+            # Apply filters - done in memory, no API calls
             filtered_df = suspicious_df
             if not show_accepted:
                 filtered_df = suspicious_df.filter(
@@ -369,11 +427,8 @@ def show_alerts_management(user_email, user_role, user_project, spreadsheet: Spr
                         
                         if submit_button:
                             try:
-                                # Find the row in the original dataframe
-                                original_idx = filtered_df[filtered_df["nums"] == selected_phone].row(0)
-                                
                                 # Update the status
-                                updated_df = filtered_df.clone()
+                                updated_df = suspicious_df.clone()  # Use full dataset, not filtered
                                 # Create a mask for the row we want to update
                                 mask = pl.col("nums") == selected_phone
                                 
@@ -390,19 +445,16 @@ def show_alerts_management(user_email, user_role, user_project, spreadsheet: Spr
                                       .alias("lastUpdated")
                                 ])
                                 
-                                # Update the sheet
-                                spreadsheet = load_spreadsheet()  # Get fresh connection
-                                spreadsheet.update_sheet("suspicious_nums", updated_df)
-                                GoogleSheetsAdapter.save(spreadsheet, "suspicious_nums")
-                                st.success(f"Updated status for {selected_phone} to {'Accepted' if new_status else 'Not Accepted'}")
-                                
-                                # Refresh cache for this sheet
-                                st.session_state.cached_suspicious_df = None
-                                st.session_state.cached_suspicious_sheet = None
-                                
-                                # Add slight delay to avoid immediate refresh
-                                time.sleep(0.5)
-                                st.rerun()
+                                # Update the sheet using our helper function
+                                if update_sheet_data("suspicious_nums", updated_df):
+                                    st.success(f"Updated status for {selected_phone} to {'Accepted' if new_status else 'Not Accepted'}")
+                                    
+                                    # Clear cached data for this sheet
+                                    st.session_state.cached_suspicious_df = None
+                                    
+                                    # Add slight delay to avoid immediate refresh
+                                    time.sleep(0.5)
+                                    st.rerun()
                             except Exception as e:
                                 st.error(f"Error updating status: {str(e)}")
             
@@ -433,19 +485,19 @@ def show_alerts_management(user_email, user_role, user_project, spreadsheet: Spr
                     pl.col('sentTime').map_elements(format_time_ago).alias('Time Ago')
                 )
                 
-            # Filter options
+            # Filter options - use session state to persist filter choice
             st.subheader("Filter Options")
-            show_accepted = st.checkbox("Show Accepted Numbers", value=False, key="show_accepted_late")
+            show_accepted = st.checkbox("Show Accepted Numbers", 
+                                      value=st.session_state.show_accepted_late, 
+                                      key="late_filter",
+                                      on_change=toggle_show_accepted_late)
             
-            # Apply filters
+            # Apply filters - done in memory, no API calls
             filtered_df = late_df
             if not show_accepted:
                 filtered_df = late_df.filter(
                     ~pl.col('accepted').cast(str).str.to_lowercase().is_in(['true', 'yes', '1', 't'])
                 )
-            
-            # Display data table with editor
-            st.subheader(f"Late Numbers ({filtered_df.height} entries)")
             
             # Create a copy for display with better column names
             display_df = filtered_df.clone()
@@ -462,94 +514,91 @@ def show_alerts_management(user_email, user_role, user_project, spreadsheet: Spr
                 column_order = ['Phone Number', 'WhatsApp Sent', 'Time Ago', 'Hours Late', 'Last Reviewed', 'Accepted']
                 available_columns = [col for col in column_order if col in display_df.columns]
                 display_df = display_df.select(available_columns)
+                
+            # Display data table with better column names
+            st.subheader(f"Late Numbers ({filtered_df.height} entries)")
             
             # Convert to pandas for data editor
-            if st.session_state.edited_data["late"] is None:
-                pandas_df = display_df.to_pandas()
-            else:
-                pandas_df = st.session_state.edited_data["late"]
+            pandas_df = display_df.to_pandas()
             
-            # Configure the Accepted column as a checkbox
-            column_config = {
-                "Accepted": st.column_config.CheckboxColumn(
-                    "Accepted", 
-                    help="Mark number as accepted"
-                )
-            }
+            # Show dataframe
+            st.dataframe(pandas_df, use_container_width=True)
             
-            # Disable Time Ago column since it's calculated
-            disabled_cols = ["Time Ago"]
+            # Add a selection mechanism for editing - similar to suspicious tab
+            st.subheader("Mark Numbers as Accepted")
             
-            edited_late_df = st.data_editor(
-                pandas_df, 
-                key="late_editor",
-                disabled=disabled_cols,
-                column_config=column_config,
-                on_change=lambda: on_late_change(st.session_state.late_editor)
-            )
+            # Create two columns for layout
+            col1, col2 = st.columns([1, 3])
             
-            # Save changes button
-            if st.button("Save Changes to Late Numbers", key="save_late"):
-                try:
-                    # Need to map edited data back to original column names
-                    reverse_mapping = {
-                        'Phone Number': 'nums',
-                        'WhatsApp Sent': 'sentTime',
-                        'Hours Late': 'Hours Late',
-                        'Last Reviewed': 'lastUpdated',
-                        'Accepted': 'accepted'
-                    }
+            # Let user select which number to update
+            with col1:
+                if 'Phone Number' in pandas_df.columns:
+                    phone_numbers = pandas_df['Phone Number'].tolist()
+                    selected_phone = st.selectbox(
+                        "Select Phone Number", 
+                        options=phone_numbers,
+                        key="late_phone_select"
+                    )
                     
-                    # Convert back to polars
-                    updated_df = pl.DataFrame(edited_late_df)
+                    # Get the row index from the display dataframe
+                    selected_idx = pandas_df[pandas_df['Phone Number'] == selected_phone].index[0]
                     
-                    # First drop any columns that will be renamed to avoid duplicates
-                    for display_name, original_name in reverse_mapping.items():
-                        # First check if the display name exists in the dataframe
-                        if display_name in updated_df.columns:
-                            # Then check if the original name also exists (which would cause a duplicate)
-                            if original_name in updated_df.columns:
-                                # Drop the original name column to avoid duplicates after rename
-                                updated_df = updated_df.drop(original_name)
+                    # Get current acceptance status
+                    current_status = pandas_df.loc[selected_idx, 'Accepted']
                     
-                    # Now do the renaming
-                    for display_name, original_name in reverse_mapping.items():
-                        if display_name in updated_df.columns:
-                            updated_df = updated_df.rename({display_name: original_name})
+                    # Display form to update status
+                    with st.form(key="late_update_form"):
+                        new_status = st.checkbox("Mark as Accepted", 
+                                               value=current_status,
+                                               key=f"late_accept_{selected_idx}")
+                        
+                        submit_button = st.form_submit_button("Update Status")
+                        
+                        if submit_button:
+                            try:
+                                # Update the status
+                                updated_df = late_df.clone()  # Use full dataset, not filtered
+                                # Create a mask for the row we want to update
+                                mask = pl.col("nums") == selected_phone
+                                
+                                # Update the accepted status and timestamp
+                                now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                updated_df = updated_df.with_columns([
+                                    pl.when(mask)
+                                      .then(pl.lit("TRUE" if new_status else "FALSE"))
+                                      .otherwise(pl.col("accepted"))
+                                      .alias("accepted"),
+                                    pl.when(mask)
+                                      .then(pl.lit(now))
+                                      .otherwise(pl.col("lastUpdated"))
+                                      .alias("lastUpdated")
+                                ])
+                                
+                                # Update the sheet using our helper function
+                                if update_sheet_data("late_nums", updated_df):
+                                    st.success(f"Updated status for {selected_phone} to {'Accepted' if new_status else 'Not Accepted'}")
+                                    
+                                    # Clear cached data for this sheet
+                                    st.session_state.cached_late_df = None
+                                    
+                                    # Add slight delay to avoid immediate refresh
+                                    time.sleep(0.5)
+                                    st.rerun()
+                            except Exception as e:
+                                st.error(f"Error updating status: {str(e)}")
+            
+            # Show details about the selected number
+            with col2:
+                if 'Phone Number' in pandas_df.columns and selected_phone:
+                    # Get details for the selected phone
+                    row = pandas_df[pandas_df['Phone Number'] == selected_phone].iloc[0]
                     
-                    # Remove any columns not in the original schema
-                    original_columns = late_df.columns
-                    columns_to_keep = [col for col in updated_df.columns if col in original_columns]
-                    updated_df = updated_df.select(columns_to_keep)
-                    
-                    # Convert boolean accepted column back to TRUE/FALSE strings for Google Sheets
-                    if 'accepted' in updated_df.columns:
-                        updated_df = updated_df.with_columns(
-                            pl.when(pl.col('accepted')).then(pl.lit("TRUE")).otherwise(pl.lit("FALSE")).alias('accepted')
-                        )
-                    
-                    # Update timestamp for modified rows
-                    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    updated_df = updated_df.with_columns(pl.lit(now).alias('lastUpdated'))
-                    
-                    # Update the sheet
-                    spreadsheet = load_spreadsheet()  # Get fresh connection
-                    spreadsheet.update_sheet("late_nums", updated_df)
-                    GoogleSheetsAdapter.save(spreadsheet, "late_nums")
-                    st.success("Late numbers updated successfully!")
-                    
-                    # Refresh cache for this sheet
-                    st.session_state.cached_late_df = None
-                    st.session_state.cached_late_sheet = None
-                    
-                    # Clear edited data after successful save
-                    st.session_state.edited_data["late"] = None
-                    
-                    # Add slight delay to avoid immediate refresh
-                    time.sleep(0.5)
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error saving changes: {str(e)}")
+                    st.markdown(f"### Details for {selected_phone}")
+                    st.markdown(f"**WhatsApp Sent:** {row.get('WhatsApp Sent', 'N/A')}")
+                    st.markdown(f"**Time Ago:** {row.get('Time Ago', 'N/A')}")
+                    st.markdown(f"**Hours Late:** {row.get('Hours Late', 'N/A')}")
+                    st.markdown(f"**Last Reviewed:** {row.get('Last Reviewed', 'N/A')}")
+                    st.markdown(f"**Current Status:** {'Accepted' if row.get('Accepted', False) else 'Not Accepted'}")
 
     # Add a footer with helpful information
     st.divider()
