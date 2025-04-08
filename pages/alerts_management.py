@@ -163,7 +163,7 @@ def show_alerts_management(user_email, user_role, user_project):
             # Add time ago information if endDate column exists
             if 'endDate' in total_answers_df.columns:
                 total_answers_df = total_answers_df.with_columns(
-                    pl.col('endDate').apply(format_time_ago).alias('Time Ago')
+                    pl.col('endDate').map_elements(format_time_ago).alias('Time Ago')
                 )
             
             # Filter options
@@ -222,7 +222,7 @@ def show_alerts_management(user_email, user_role, user_project):
             # Add human-readable time ago column for display
             if 'filledTime' in suspicious_df.columns:
                 suspicious_df = suspicious_df.with_columns(
-                    pl.col('filledTime').apply(format_time_ago).alias('Time Ago')
+                    pl.col('filledTime').map_elements(format_time_ago).alias('Time Ago')
                 )
                 
             # Filter options
@@ -302,7 +302,7 @@ def show_alerts_management(user_email, user_role, user_project):
             # Add human-readable time ago column
             if 'sentTime' in late_df.columns:
                 late_df = late_df.with_columns(
-                    pl.col('sentTime').apply(format_time_ago).alias('Time Ago')
+                    pl.col('sentTime').map_elements(format_time_ago).alias('Time Ago')
                 )
                 
             # Filter options
