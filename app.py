@@ -14,7 +14,7 @@ from view.homepage import display_homepage
 
 # Import the fitbit management functionality
 from pages.fitbit_management import load_fitbit_datatable
-from pages.alerts_management import show_alerts_management
+from view.alerts_management import show_alerts_management
 # Set up app configuration
 st.set_page_config(
     page_title="Fitbit Management System",
