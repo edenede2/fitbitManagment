@@ -216,7 +216,7 @@ class LateNums(Sheet):
 class SuspiciousNums(Sheet):
     """Sheet for storing suspicious numbers"""
     schema: SheetSchema = field(default_factory=lambda: SheetSchema(
-        columns=['nums', 'filledTime', 'lastUpdated'],
+        columns=['nums', 'filledTime', 'lastUpdated', 'accept'],
         required_columns=['nums', 'filledTime']
     ))
 

@@ -93,7 +93,8 @@ def analyze_whatsapp_messages():
             suspicious_nums_data.append({
                 'nums': row['phone'],
                 'filledTime': filled_time,
-                'lastUpdated': now
+                'lastUpdated': now,
+                'accepted': row.get('accepted', 'FALSE')
             })
         
         # Make sure we have the sheets before updating
@@ -577,6 +578,7 @@ def check_qualtrics_alerts(suspicious_numbers, config_data):
     alerts_sent = {}
     
     try:
+        suspicious_numbers = suspicious_numbers.filter(pl.col('accepted') == 'FALSE')
         # Skip if either data frame is empty
         if suspicious_numbers.is_empty() or config_data.is_empty():
             print("No data available for Qualtrics alerts check")
