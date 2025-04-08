@@ -140,8 +140,12 @@ class AuthenticationController:
             if key in st.session_state:
                 del st.session_state[key]
         
-        # If using Streamlit authentication, logout from there too
-        if st.experimental_user.is_logged_in:
-            st.experimental_user.logout()
+        # Use st.logout() directly as mentioned by user
+        try:
+            st.logout()
+        except Exception as e:
+            # Fallback in case the function isn't available in this Streamlit version
+            st.warning("Could not perform automatic logout. Please refresh the page.")
+            st.info("To completely log out, please use the logout option in the upper right menu.")
         
         st.rerun()
