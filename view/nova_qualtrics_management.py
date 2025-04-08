@@ -221,7 +221,7 @@ def _display_late_nums(late_nums_df):
         
         # Display each number with a selection checkbox
         for i, row in late_nums_df.iterrows():
-            num = row.get('nums', '')
+            num = str(row.get('nums', ''))
             if not num:  # Skip empty records
                 continue
             
@@ -265,7 +265,7 @@ def _display_suspicious_nums(suspicious_nums_df):
         
         # Display each number with a selection checkbox
         for i, row in suspicious_nums_df.iterrows():
-            num = row.get('nums', '')
+            num = str(row.get('nums', ''))
             if not num:  # Skip empty records
                 continue
             
@@ -307,10 +307,10 @@ def _display_accept_form(spreadsheet, late_nums_df, suspicious_nums_df):
         st.write(f"You have selected {total_selected} numbers to accept:")
         
         if st.session_state.selected_late_nums:
-            st.write(f"**Late Numbers:** {', '.join(str(st.session_state.selected_late_nums))}")
+            st.write(f"**Late Numbers:** {', '.join(st.session_state.selected_late_nums)}")
         
         if st.session_state.selected_suspicious_nums:
-            st.write(f"**Suspicious Numbers:** {', '.join(str(st.session_state.selected_suspicious_nums))}")
+            st.write(f"**Suspicious Numbers:** {', '.join(st.session_state.selected_suspicious_nums)}")
         
         # Save button
         if st.button("Save Accepted Numbers"):
