@@ -36,7 +36,7 @@ if "edited_data" not in st.session_state:
 
 # ---- Functions for loading and updating sheet data ----
 
-@st.cache_data(ttl=300)  # Cache for 5 minutes
+# @st.cache_data(ttl=300)  # Cache for 5 minutes
 def load_spreadsheet():
     """Load and connect to the Google Spreadsheet"""
     # Get the spreadsheet key from secrets
@@ -51,7 +51,7 @@ def load_spreadsheet():
     
     return spreadsheet
 
-@st.cache_data(ttl=60)  # Cache for 1 minute
+# @st.cache_data(ttl=60)  # Cache for 1 minute
 def load_total_answers(spreadsheet:Spreadsheet):
     """Load total answers from spreadsheet"""
     total_answers_sheet = spreadsheet.get_sheet("EMA", "EMA")
@@ -65,7 +65,7 @@ def load_total_answers(spreadsheet:Spreadsheet):
         
     return df, total_answers_sheet
 
-@st.cache_data(ttl=60)  # Cache for 1 minute
+# @st.cache_data(ttl=60)  # Cache for 1 minute
 def load_suspicious_numbers(spreadsheet:Spreadsheet):
     """Load suspicious numbers from spreadsheet"""
     suspicious_sheet = spreadsheet.get_sheet("suspicious_nums", "suspicious_nums")
