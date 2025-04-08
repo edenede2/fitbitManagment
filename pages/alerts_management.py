@@ -319,9 +319,27 @@ def show_alerts_management(user_email, user_role, user_project):
                         'Accepted': 'accepted'
                     }
                     
-                    # Convert back to polars with original column names
+                    # Convert back to polars
                     updated_df = pl.DataFrame(edited_suspicious_df)
-                    updated_df = updated_df.rename({v: k for k, v in reverse_mapping.items() if v in updated_df.columns})
+                    
+                    # First drop any columns that will be renamed to avoid duplicates
+                    for display_name, original_name in reverse_mapping.items():
+                        # First check if the display name exists in the dataframe
+                        if display_name in updated_df.columns:
+                            # Then check if the original name also exists (which would cause a duplicate)
+                            if original_name in updated_df.columns:
+                                # Drop the original name column to avoid duplicates after rename
+                                updated_df = updated_df.drop(original_name)
+                    
+                    # Now do the renaming
+                    for display_name, original_name in reverse_mapping.items():
+                        if display_name in updated_df.columns:
+                            updated_df = updated_df.rename({display_name: original_name})
+                    
+                    # Remove any columns not in the original schema
+                    original_columns = suspicious_df.columns
+                    columns_to_keep = [col for col in updated_df.columns if col in original_columns]
+                    updated_df = updated_df.select(columns_to_keep)
                     
                     # Convert boolean accepted column back to TRUE/FALSE strings for Google Sheets
                     if 'accepted' in updated_df.columns:
@@ -421,9 +439,27 @@ def show_alerts_management(user_email, user_role, user_project):
                         'Accepted': 'accepted'
                     }
                     
-                    # Convert back to polars with original column names
+                    # Convert back to polars
                     updated_df = pl.DataFrame(edited_late_df)
-                    updated_df = updated_df.rename({v: k for k, v in reverse_mapping.items() if v in updated_df.columns})
+                    
+                    # First drop any columns that will be renamed to avoid duplicates
+                    for display_name, original_name in reverse_mapping.items():
+                        # First check if the display name exists in the dataframe
+                        if display_name in updated_df.columns:
+                            # Then check if the original name also exists (which would cause a duplicate)
+                            if original_name in updated_df.columns:
+                                # Drop the original name column to avoid duplicates after rename
+                                updated_df = updated_df.drop(original_name)
+                    
+                    # Now do the renaming
+                    for display_name, original_name in reverse_mapping.items():
+                        if display_name in updated_df.columns:
+                            updated_df = updated_df.rename({display_name: original_name})
+                    
+                    # Remove any columns not in the original schema
+                    original_columns = late_df.columns
+                    columns_to_keep = [col for col in updated_df.columns if col in original_columns]
+                    updated_df = updated_df.select(columns_to_keep)
                     
                     # Convert boolean accepted column back to TRUE/FALSE strings for Google Sheets
                     if 'accepted' in updated_df.columns:
@@ -444,6 +480,8 @@ def show_alerts_management(user_email, user_role, user_project):
                     late_df, late_sheet = load_late_numbers(spreadsheet)
                 except Exception as e:
                     st.error(f"Error saving changes: {str(e)}")
+                    # Add more detailed error info for debugging
+                    st.error(f"DataFrame columns: {updated_df.columns}")
 
     # Add a footer with helpful information
     st.divider()
