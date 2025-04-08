@@ -313,10 +313,10 @@ def show_alerts_management(user_email, user_role, user_project):
                     ~pl.col('accepted').cast(str).str.to_lowercase().is_in(['true', 'yes', '1', 't'])
                 )
             
-            # Display data table with editor
+            # Display data table with better column names
             st.subheader(f"Suspicious Numbers ({filtered_df.height} entries)")
             
-            # Create a copy for display with better column names
+            # Create a display version with better column names
             display_df = filtered_df.clone()
             if 'nums' in display_df.columns:
                 display_df = display_df.rename({
@@ -331,92 +331,92 @@ def show_alerts_management(user_email, user_role, user_project):
                 available_columns = [col for col in column_order if col in display_df.columns]
                 display_df = display_df.select(available_columns)
             
-            # Convert to pandas for data editor
-            if st.session_state.edited_data["suspicious"] is None:
-                pandas_df = display_df.to_pandas()
-            else:
-                pandas_df = st.session_state.edited_data["suspicious"]
+            # Convert to pandas for display
+            pandas_df = display_df.to_pandas()
             
-            # Configure the Accepted column as a checkbox
-            column_config = {
-                "Accepted": st.column_config.CheckboxColumn(
-                    "Accepted", 
-                    help="Mark number as accepted"
-                )
-            }
+            # Show dataframe
+            st.dataframe(pandas_df, use_container_width=True)
             
-            # Disable Time Ago column since it's calculated
-            disabled_cols = ["Time Ago"]
+            # Add a selection mechanism for editing
+            st.subheader("Mark Numbers as Accepted")
             
-            edited_suspicious_df = st.data_editor(
-                pandas_df, 
-                key="suspicious_editor",
-                disabled=disabled_cols,
-                column_config=column_config,
-                on_change=lambda: on_suspicious_change(st.session_state.suspicious_editor)
-            )
+            # Create two columns for layout
+            col1, col2 = st.columns([1, 3])
             
-            # Save changes button
-            if st.button("Save Changes to Suspicious Numbers", key="save_suspicious"):
-                try:
-                    # Need to map edited data back to original column names
-                    reverse_mapping = {
-                        'Phone Number': 'nums',
-                        'Questionnaire Filled': 'filledTime',
-                        'Last Reviewed': 'lastUpdated',
-                        'Accepted': 'accepted'
-                    }
+            # Let user select which number to update
+            with col1:
+                if 'Phone Number' in pandas_df.columns:
+                    phone_numbers = pandas_df['Phone Number'].tolist()
+                    selected_phone = st.selectbox(
+                        "Select Phone Number", 
+                        options=phone_numbers,
+                        key="suspicious_phone_select"
+                    )
                     
-                    # Convert back to polars
-                    updated_df = pl.DataFrame(edited_suspicious_df)
+                    # Get the row index from the display dataframe
+                    selected_idx = pandas_df[pandas_df['Phone Number'] == selected_phone].index[0]
                     
-                    # First drop any columns that will be renamed to avoid duplicates
-                    for display_name, original_name in reverse_mapping.items():
-                        # First check if the display name exists in the dataframe
-                        if display_name in updated_df.columns:
-                            # Then check if the original name also exists (which would cause a duplicate)
-                            if original_name in updated_df.columns:
-                                # Drop the original name column to avoid duplicates after rename
-                                updated_df = updated_df.drop(original_name)
+                    # Get current acceptance status
+                    current_status = pandas_df.loc[selected_idx, 'Accepted']
                     
-                    # Now do the renaming
-                    for display_name, original_name in reverse_mapping.items():
-                        if display_name in updated_df.columns:
-                            updated_df = updated_df.rename({display_name: original_name})
+                    # Display form to update status
+                    with st.form(key="suspicious_update_form"):
+                        new_status = st.checkbox("Mark as Accepted", 
+                                               value=current_status,
+                                               key=f"suspicious_accept_{selected_idx}")
+                        
+                        submit_button = st.form_submit_button("Update Status")
+                        
+                        if submit_button:
+                            try:
+                                # Find the row in the original dataframe
+                                original_idx = filtered_df[filtered_df["nums"] == selected_phone].row(0)
+                                
+                                # Update the status
+                                updated_df = filtered_df.clone()
+                                # Create a mask for the row we want to update
+                                mask = pl.col("nums") == selected_phone
+                                
+                                # Update the accepted status and timestamp
+                                now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                updated_df = updated_df.with_columns([
+                                    pl.when(mask)
+                                      .then(pl.lit("TRUE" if new_status else "FALSE"))
+                                      .otherwise(pl.col("accepted"))
+                                      .alias("accepted"),
+                                    pl.when(mask)
+                                      .then(pl.lit(now))
+                                      .otherwise(pl.col("lastUpdated"))
+                                      .alias("lastUpdated")
+                                ])
+                                
+                                # Update the sheet
+                                spreadsheet = load_spreadsheet()  # Get fresh connection
+                                spreadsheet.update_sheet("suspicious_nums", updated_df)
+                                GoogleSheetsAdapter.save(spreadsheet, "suspicious_nums")
+                                st.success(f"Updated status for {selected_phone} to {'Accepted' if new_status else 'Not Accepted'}")
+                                
+                                # Refresh cache for this sheet
+                                st.session_state.cached_suspicious_df = None
+                                st.session_state.cached_suspicious_sheet = None
+                                
+                                # Add slight delay to avoid immediate refresh
+                                time.sleep(0.5)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error updating status: {str(e)}")
+            
+            # Show details about the selected number
+            with col2:
+                if 'Phone Number' in pandas_df.columns and selected_phone:
+                    # Get details for the selected phone
+                    row = pandas_df[pandas_df['Phone Number'] == selected_phone].iloc[0]
                     
-                    # Remove any columns not in the original schema
-                    original_columns = suspicious_df.columns
-                    columns_to_keep = [col for col in updated_df.columns if col in original_columns]
-                    updated_df = updated_df.select(columns_to_keep)
-                    
-                    # Convert boolean accepted column back to TRUE/FALSE strings for Google Sheets
-                    if 'accepted' in updated_df.columns:
-                        updated_df = updated_df.with_columns(
-                            pl.when(pl.col('accepted')).then(pl.lit("TRUE")).otherwise(pl.lit("FALSE")).alias('accepted')
-                        )
-                    
-                    # Update timestamp for modified rows
-                    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    updated_df = updated_df.with_columns(pl.lit(now).alias('lastUpdated'))
-                    
-                    # Update the sheet
-                    spreadsheet = load_spreadsheet()  # Get fresh connection
-                    spreadsheet.update_sheet("suspicious_nums", updated_df)
-                    GoogleSheetsAdapter.save(spreadsheet, "suspicious_nums")
-                    st.success("Suspicious numbers updated successfully!")
-                    
-                    # Refresh cache for this sheet
-                    st.session_state.cached_suspicious_df = None
-                    st.session_state.cached_suspicious_sheet = None
-                    
-                    # Clear edited data after successful save
-                    st.session_state.edited_data["suspicious"] = None
-                    
-                    # Add slight delay to avoid immediate refresh
-                    time.sleep(0.5)
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error saving changes: {str(e)}")
+                    st.markdown(f"### Details for {selected_phone}")
+                    st.markdown(f"**Questionnaire Filled:** {row.get('Questionnaire Filled', 'N/A')}")
+                    st.markdown(f"**Time Ago:** {row.get('Time Ago', 'N/A')}")
+                    st.markdown(f"**Last Reviewed:** {row.get('Last Reviewed', 'N/A')}")
+                    st.markdown(f"**Current Status:** {'Accepted' if row.get('Accepted', False) else 'Not Accepted'}")
 
     # ----- Late Numbers Tab -----
     with tab3:
