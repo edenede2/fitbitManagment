@@ -129,6 +129,12 @@ def format_time_ago(timestamp_str):
 # Create a main function that can be called from app.py
 def show_alerts_management(user_email, user_role, user_project):
     """Main function to display the alerts management page - can be called from app.py"""
+        # Initialize session state
+    if "accepted_suspicious" not in st.session_state:
+        st.session_state.accepted_suspicious = []
+    if "accepted_late" not in st.session_state:
+        st.session_state.accepted_late = []
+        
     # Page configuration
     st.title("📊 Alert Management")
     st.write("Review and manage patient questionnaire alerts.")
@@ -344,18 +350,7 @@ def show_alerts_management(user_email, user_role, user_project):
 # If this script is run directly, call the main function
 def display_alerts_management(user_email, user_role, user_project):
     """Function to display the alerts management page"""
-    # Fix page config placement for proper standalone operation
-    st.set_page_config(
-        page_title="Alert Management",
-        page_icon="🔔",
-        layout="wide"
-    )
     
-    # Initialize session state
-    if "accepted_suspicious" not in st.session_state:
-        st.session_state.accepted_suspicious = []
-    if "accepted_late" not in st.session_state:
-        st.session_state.accepted_late = []
-        
+
     # Show the page
     show_alerts_management(user_email, user_role, user_project)
