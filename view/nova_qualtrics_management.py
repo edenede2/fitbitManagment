@@ -81,23 +81,14 @@ def _display_late_nums(late_nums_df):
     
     st.write("Select numbers to accept, then click 'Submit' at the bottom to finalize your selection.")
     
-    # Create a form so that we only update session state upon submission
     with st.form("late_nums_form"):
-        
-        # For each row in the late_nums_df, create a checkbox
         for i, row in late_nums_df.iterrows():
             num = str(row.get('nums', ''))
             if not num:
-                continue  # Skip empty records
+                continue
             
             is_accepted = str(row.get('accepted', '')).upper() == 'TRUE'
-            
-            # Create a key for each checkbox
             checkbox_key = f"late_nums_checkbox_{num}"
-            
-            # Default value for each checkbox:
-            #   - If it's already accepted in the sheet, or
-            #   - If it's in the user's current session state selection, set True
             default_value = is_accepted or (num in st.session_state.get("selected_late_nums", []))
             
             st.checkbox(
@@ -106,7 +97,6 @@ def _display_late_nums(late_nums_df):
                 key=checkbox_key
             )
             
-            # Display your other row info
             st.write(f"**{num}**")
             sent_time = row.get('sentTime', 'N/A')
             st.write(f"Sent: {sent_time}")
@@ -114,22 +104,16 @@ def _display_late_nums(late_nums_df):
             st.write(f"{hours_late} hours late")
             st.divider()
         
-        # When the user hits "Submit", we update st.session_state
         submitted = st.form_submit_button("Submit")
         if submitted:
-            # Initialize if not present
             if "selected_late_nums" not in st.session_state:
                 st.session_state.selected_late_nums = set()
             
-            # Clear current selection, then repopulate based on what's checked
             st.session_state.selected_late_nums.clear()
-            
-            for i, row in late_nums_df.iterrows():
+            for _, row in late_nums_df.iterrows():
                 num = str(row.get('nums', ''))
                 if not num:
                     continue
-                
-                # Retrieve the checkbox value from the new keys
                 checkbox_key = f"late_nums_checkbox_{num}"
                 if st.session_state.get(checkbox_key, False):
                     st.session_state.selected_late_nums.add(num)
@@ -278,59 +262,8 @@ def _display_ema_data(ema_df):
     else:
         st.info("No EMA data available")
 
-# @st.fragment
 def _check_box_control(num, selected_set, key):
     pass
-    # """Control checkbox selection and deselection"""
-    # st.session_state.selected_late_nums.add(num)
-    # else:
-    #     if num in st.session_state.selected_late_nums:
-    #         st.session_state.selected_late_nums.remove(num)
-
-    
-def _display_late_dnums(late_nums_df):
-    """Display late numbers with selection options"""
-    st.header("Late Numbers")
-    
-    if late_nums_df is not None and not late_nums_df.empty:
-        st.write("Select numbers to accept:")
-        
-        # Display each number with a selection checkbox
-        for i, row in late_nums_df.iterrows():
-            num = str(row.get('nums', ''))
-            if not num:  # Skip empty records
-                continue
-            
-            # Check if already accepted
-            is_accepted = str(row.get('accepted', '')).upper() == 'TRUE'
-            
-            col1, col2, col3, col4 = st.columns([0.1, 0.4, 0.3, 0.2])
-            
-            with col1:
-                if is_accepted:
-                    st.write("✅")
-                else:
-                    is_selected = num in st.session_state.selected_late_nums
-                    if st.checkbox(f"Select {num}", value=is_selected, key=f"late_{i}_{num}", label_visibility="collapsed", on_change=_check_box_control, args=(num)):
-                        st.session_state.selected_late_nums.add(num)
-                    else:
-                        if num in st.session_state.selected_late_nums:
-                            st.session_state.selected_late_nums.remove(num)
-            
-            with col2:
-                st.write(f"**{num}**")
-                
-            with col3:
-                sent_time = row.get('sentTime', 'N/A')
-                st.write(f"Sent: {sent_time}")
-                
-            with col4:
-                hours_late = row.get('hoursLate', 'N/A')
-                st.write(f"{hours_late} hours late")
-                
-            st.divider()
-    else:
-        st.info("No late numbers available")
 
 def _display_suspicious_nums(suspicious_nums_df):
     """Display suspicious numbers with selection options"""
@@ -339,7 +272,7 @@ def _display_suspicious_nums(suspicious_nums_df):
     if suspicious_nums_df is not None and not suspicious_nums_df.empty:
         st.write("Select numbers to accept:")
         
-        # Display each number with a selection checkbox
+        # Display each number with a selection checkbox:
         for i, row in suspicious_nums_df.iterrows():
             num = str(row.get('nums', ''))
             if not num:  # Skip empty records
@@ -433,7 +366,7 @@ def _update_accepted_numbers(spreadsheet: Spreadsheet, df, selected_numbers, she
     
     # Update 'accepted' field for selected numbers
     for idx, row in updated_df.iterrows():
-        num = row.get('nums', '')
+        num = str(row.get('nums', ''))
         if num in selected_numbers and str(row.get('accepted', '')).upper() != 'TRUE':
             updated_df.at[idx, 'accepted'] = 'TRUE'
             changes_made = True
@@ -445,4 +378,13 @@ def _update_accepted_numbers(spreadsheet: Spreadsheet, df, selected_numbers, she
         
         # Update the sheet with new data
         spreadsheet.update_sheet(sheet_name, updated_data)
-        GoogleSheetsAdapter.save(spreadsheet, sheet_name)
+        
+        # Debug information
+        st.write(f"Updated {len(selected_numbers)} numbers in {sheet_name}")
+        
+        # Use the GoogleSheetsAdapter to explicitly save changes to Google Sheets
+        adapter = GoogleSheetsAdapter()
+        adapter.save(updated_data, sheet_name)
+        
+        return True
+    return False
