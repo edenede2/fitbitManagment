@@ -68,6 +68,74 @@ def _check_access(user_role, user_project):
     
     return False
 
+
+
+def _display_late_nums(late_nums_df):
+    """Display late numbers with selection options, using a form to avoid immediate reruns."""
+    st.header("Late Numbers")
+    
+    # If the dataframe is empty or None, show a message and return
+    if late_nums_df is None or late_nums_df.empty:
+        st.info("No late numbers available")
+        return
+    
+    st.write("Select numbers to accept, then click 'Submit' at the bottom to finalize your selection.")
+    
+    # Create a form so that we only update session state upon submission
+    with st.form("late_nums_form"):
+        
+        # For each row in the late_nums_df, create a checkbox
+        for i, row in late_nums_df.iterrows():
+            num = str(row.get('nums', ''))
+            if not num:
+                continue  # Skip empty records
+            
+            is_accepted = str(row.get('accepted', '')).upper() == 'TRUE'
+            
+            # Create a key for each checkbox
+            checkbox_key = f"late_nums_checkbox_{num}"
+            
+            # Default value for each checkbox:
+            #   - If it's already accepted in the sheet, or
+            #   - If it's in the user's current session state selection, set True
+            default_value = is_accepted or (num in st.session_state.get("selected_late_nums", []))
+            
+            st.checkbox(
+                label=f"Select {num}",
+                value=default_value,
+                key=checkbox_key
+            )
+            
+            # Display your other row info
+            st.write(f"**{num}**")
+            sent_time = row.get('sentTime', 'N/A')
+            st.write(f"Sent: {sent_time}")
+            hours_late = row.get('hoursLate', 'N/A')
+            st.write(f"{hours_late} hours late")
+            st.divider()
+        
+        # When the user hits "Submit", we update st.session_state
+        submitted = st.form_submit_button("Submit")
+        if submitted:
+            # Initialize if not present
+            if "selected_late_nums" not in st.session_state:
+                st.session_state.selected_late_nums = set()
+            
+            # Clear current selection, then repopulate based on what's checked
+            st.session_state.selected_late_nums.clear()
+            
+            for i, row in late_nums_df.iterrows():
+                num = str(row.get('nums', ''))
+                if not num:
+                    continue
+                
+                # Retrieve the checkbox value from the new keys
+                checkbox_key = f"late_nums_checkbox_{num}"
+                if st.session_state.get(checkbox_key, False):
+                    st.session_state.selected_late_nums.add(num)
+            
+            st.success("Late numbers selection updated successfully!")
+
 def _get_sheet(spreadsheet, sheet_name, sheet_type):
     """Get a sheet from the spreadsheet"""
     try:
@@ -212,28 +280,16 @@ def _display_ema_data(ema_df):
     else:
         st.info("No EMA data available")
 
-def _check_box_control(num, selected_set_name):
-    """
-    Control checkbox selection and deselection without page reload
-    
-    Args:
-        num (str): The number to add or remove
-        selected_set_name (str): Name of the session state set ('selected_late_nums' or 'selected_suspicious_nums')
-    """
-    # Get current checkbox value from session state using the key format
-    checkbox_key = f"{selected_set_name}_{num}"
-    is_checked = st.session_state.get(checkbox_key, False)
-    
-    # Update the appropriate set based on checkbox state
-    if is_checked:
-        # Add the number to the selected set
-        st.session_state[selected_set_name].add(num)
-    else:
-        # Remove the number from the selected set if present
-        if num in st.session_state[selected_set_name]:
-            st.session_state[selected_set_name].remove(num)
+# @st.fragment
+# def _check_box_control(num, selected_set, key):
+#     """Control checkbox selection and deselection"""
+#         st.session_state.selected_late_nums.add(num)
+#     else:
+#         if num in st.session_state.selected_late_nums:
+#             st.session_state.selected_late_nums.remove(num)
 
-def _display_late_nums(late_nums_df):
+    
+def _display_latde_nums(late_nums_df):
     """Display late numbers with selection options"""
     st.header("Late Numbers")
     
@@ -255,22 +311,12 @@ def _display_late_nums(late_nums_df):
                 if is_accepted:
                     st.write("✅")
                 else:
-                    # Create a unique key for this checkbox
-                    checkbox_key = f"selected_late_nums_{num}"
-                    
-                    # Initialize checkbox state in session state if not already present
-                    if checkbox_key not in st.session_state:
-                        st.session_state[checkbox_key] = num in st.session_state.selected_late_nums
-                    
-                    # Display checkbox with on_change callback
-                    st.checkbox(
-                        f"Select {num}", 
-                        value=st.session_state[checkbox_key],
-                        key=checkbox_key,
-                        label_visibility="collapsed",
-                        on_change=_check_box_control,
-                        args=(num, "selected_late_nums")
-                    )
+                    is_selected = num in st.session_state.selected_late_nums
+                    if st.checkbox(f"Select {num}", value=is_selected, key=f"late_{i}_{num}", label_visibility="collapsed", on_change=_check_box_control, args=(num)):
+                        st.session_state.selected_late_nums.add(num)
+                    else:
+                        if num in st.session_state.selected_late_nums:
+                            st.session_state.selected_late_nums.remove(num)
             
             with col2:
                 st.write(f"**{num}**")
@@ -309,22 +355,12 @@ def _display_suspicious_nums(suspicious_nums_df):
                 if is_accepted:
                     st.write("✅")
                 else:
-                    # Create a unique key for this checkbox
-                    checkbox_key = f"selected_suspicious_nums_{num}"
-                    
-                    # Initialize checkbox state in session state if not already present
-                    if checkbox_key not in st.session_state:
-                        st.session_state[checkbox_key] = num in st.session_state.selected_suspicious_nums
-                    
-                    # Display checkbox with on_change callback
-                    st.checkbox(
-                        f"Select {num}", 
-                        value=st.session_state[checkbox_key],
-                        key=checkbox_key,
-                        label_visibility="collapsed",
-                        on_change=_check_box_control,
-                        args=(num, "selected_suspicious_nums")
-                    )
+                    is_selected = num in st.session_state.selected_suspicious_nums
+                    if st.checkbox(f"Select {num}", value=is_selected, key=f"suspicious_{i}_{num}", label_visibility="collapsed"):
+                        st.session_state.selected_suspicious_nums.add(num)
+                    else:
+                        if num in st.session_state.selected_suspicious_nums:
+                            st.session_state.selected_suspicious_nums.remove(num)
             
             with col2:
                 st.write(f"**{num}**")
