@@ -66,7 +66,9 @@ def main():
             selected_page = st.sidebar.radio("Navigation", menu_options)
             
             # Add Fitbit Device Management button for Admin and Manager roles
-            if 'user_data' in st.session_state and st.session_state['user_data'].get('role', '').lower() in ['admin', 'manager']:
+            if ('user_data' in st.session_state and 
+                st.session_state['user_data'] is not None and 
+                st.session_state['user_data'].get('role', '').lower() in ['admin', 'manager']):
                 if st.sidebar.button("Fitbit Device Management"):
                     st.session_state['current_page'] = 'fitbit_management'
 
