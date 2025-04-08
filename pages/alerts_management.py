@@ -142,7 +142,7 @@ def on_late_change(edited_df):
     st.session_state.edited_data["late"] = edited_df
 
 # Create a main function that can be called from app.py
-def show_alerts_management(user_email, user_role, user_project):
+def show_alerts_management(user_email, user_role, user_project, spreadsheet: Spreadsheet) -> None:
     """Main function to display the alerts management page - can be called from app.py"""
     # Page configuration
     st.title("📊 Alert Management")
@@ -564,6 +564,6 @@ def show_alerts_management(user_email, user_role, user_project):
     """)
 
 # If this script is run directly, call the main function
-def display_alerts_management(user_email, user_role, user_project):
+def display_alerts_management(user_email, user_role, user_project, spreadsheet):
     """Function to display the alerts management page"""
-    show_alerts_management(user_email, user_role, user_project)
+    show_alerts_management(user_email, user_role, user_project, spreadsheet)

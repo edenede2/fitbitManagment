@@ -42,6 +42,8 @@ def main():
     
     # Handle authentication in sidebar
     auth_controller.render_auth_ui()
+
+    spreadsheet = auth_controller.get_spreadsheet()
     
     # Check if user is logged in (either through Streamlit auth or demo mode)
     is_logged_in = st.experimental_user.is_logged_in or st.session_state.get('user_role') is not None
@@ -79,15 +81,15 @@ def main():
 
         # Display the selected page
         if selected_page == "Fitbit Managment":
-            load_fitbit_datatable(user_email, user_role, user_project)
+            load_fitbit_datatable(user_email, user_role, user_project, spreadsheet)
         elif selected_page == "Home":
-            display_homepage(user_email, user_role, user_project)
+            display_homepage(user_email, user_role, user_project, spreadsheet)
         elif selected_page == "Dashboard":
-            display_dashboard(user_email, user_role, user_project)
+            display_dashboard(user_email, user_role, user_project, spreadsheet)
         elif selected_page == "Alerts Configuration":
-            alerts_config_page(user_email)
+            alerts_config_page(user_email, spreadsheet)
         elif selected_page == "NOVA Qualtrics Managment":
-            show_alerts_management(user_email, user_role, user_project)
+            show_alerts_management(user_email, user_role, user_project, spreadsheet)
         elif selected_page == "Reports":
             st.title("Reports")
             st.info("Reports functionality will be implemented here")

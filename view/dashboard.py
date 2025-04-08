@@ -172,7 +172,7 @@ def get_available_watches(user_email, user_role, user_project):
         except:
             return pd.DataFrame()
 
-def display_dashboard(user_email, user_role, user_project):
+def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> None:
     """
     Display the Fitbit dashboard for the logged-in user.
     
@@ -542,9 +542,9 @@ def display_dashboard(user_email, user_role, user_project):
                                 if watch_chat_key not in st.session_state:
                                     # Try to fetch existing messages for this watch
                                     try:
-                                        sp = Spreadsheet(name="FitbitData",
-                                                        api_key=get_secrets().get('spreadsheet_key'))
-                                        GoogleSheetsAdapter.connect(sp)
+                                        # sp = Spreadsheet(name="FitbitData",
+                                        #                 api_key=get_secrets().get('spreadsheet_key'))
+                                        # GoogleSheetsAdapter.connect(sp)
                                         student_sheet = sp.get_sheet("chats", sheet_type="chats")
                                         student_df = student_sheet.to_dataframe(engine='polars')
                                         

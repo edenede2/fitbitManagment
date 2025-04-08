@@ -4,15 +4,15 @@ from entity.Sheet import Spreadsheet, GoogleSheetsAdapter, SheetFactory
 from typing import Dict, List, Any, Optional
 import datetime
 import polars as pl
-def load_fitbit_datatable(user_email: str, user_role: str, user_project: str) -> None:
+def load_fitbit_datatable(user_email: str, user_role: str, user_project: str, spreadsheet: Spreadsheet) -> None:
     """
     Load and display the Fitbit datatable with role-specific permissions.
     
     Args:
-        user_details: Dictionary containing user information including:
-                     - name: User's name
-                     - role: User's role (admin, manager)
-                     - projects: List of projects the user manages
+        user_email: User's email
+        user_role: User's role (admin, manager)
+        user_project: User's project
+        spreadsheet: Spreadsheet object for data access
     """
     st.title("Fitbit Devices Management")
     
@@ -22,15 +22,15 @@ def load_fitbit_datatable(user_email: str, user_role: str, user_project: str) ->
     try:
         with st.spinner("Loading data..."):
             # Get secrets for the spreadsheet key
-            secrets = st.secrets
-            spreadsheet_key = secrets.get("spreadsheet_key", "")
+            # secrets = st.secrets
+            # spreadsheet_key = secrets.get("spreadsheet_key", "")
             
-            # Create and connect spreadsheet
-            spreadsheet = Spreadsheet(
-                name="Fitbit Database",
-                api_key=spreadsheet_key
-            )
-            GoogleSheetsAdapter.connect(spreadsheet)
+            # # Create and connect spreadsheet
+            # spreadsheet = Spreadsheet(
+            #     name="Fitbit Database",
+            #     api_key=spreadsheet_key
+            # )
+            # GoogleSheetsAdapter.connect(spreadsheet)
             
             # Load fitbit and user sheets
             fitbit_sheet = spreadsheet.get_sheet("fitbit", "fitbit")

@@ -7,7 +7,7 @@ from entity.Sheet import Spreadsheet, GoogleSheetsAdapter
 from Decorators.congrates import congrats, welcome_returning_user
 from model.config import get_secrets
 
-def display_homepage(user_email, user_role, user_project):
+def display_homepage(user_email, user_role, user_project, spreadsheet: Spreadsheet) -> None:
     """
     Display the homepage with personalized content based on user's role and project
     """
@@ -17,11 +17,11 @@ def display_homepage(user_email, user_role, user_project):
     
     try:
         # Try to get user details from spreadsheet
-        spreadsheet = Spreadsheet(
-            'usersPassRoles',
-            get_secrets().get('spreadsheet_key'),
-        )            
-        GoogleSheetsAdapter.connect(spreadsheet)
+        # spreadsheet = Spreadsheet(
+        #     'usersPassRoles',
+        #     get_secrets().get('spreadsheet_key'),
+        # )            
+        # GoogleSheetsAdapter.connect(spreadsheet)
         users_sheet = spreadsheet.get_sheet("user", "user")
         user_entry = next((u for u in users_sheet.data if u.get('email') == user_email), None)
         
@@ -69,12 +69,12 @@ def display_homepage(user_email, user_role, user_project):
     with col3:
         # Get watch count from entity layer
         try:
-            spreadsheet = Spreadsheet(
-                'usersPassRoles',
-                get_secrets().get('spreadsheet_key')
-            )
+            # spreadsheet = Spreadsheet(
+            #     'usersPassRoles',
+            #     get_secrets().get('spreadsheet_key')
+            # )
 
-            GoogleSheetsAdapter.connect(spreadsheet)
+            # GoogleSheetsAdapter.connect(spreadsheet)
             fitbits_sheet = spreadsheet.get_sheet("fitbit", "fitbit")
 
 
@@ -166,11 +166,11 @@ def display_homepage(user_email, user_role, user_project):
         # Just some simple examples
         if user_role == "Admin":
             # Check all watches health across projects
-            spreadsheet = spreadsheet = Spreadsheet(
-            'usersPassRoles',
-            get_secrets().get('spreadsheet_key'),
-        )
-            GoogleSheetsAdapter.connect(spreadsheet)
+        #     spreadsheet = spreadsheet = Spreadsheet(
+        #     'usersPassRoles',
+        #     get_secrets().get('spreadsheet_key'),
+        # )
+        #     GoogleSheetsAdapter.connect(spreadsheet)
             fitbits_sheet = spreadsheet.get_sheet("fitbit", "fitbit")
             logs_sheet = spreadsheet.get_sheet("FitbitLog", "log")
             
@@ -220,11 +220,11 @@ def display_homepage(user_email, user_role, user_project):
                     
         elif user_role == "Manager":
             # Check watch health for this project
-            spreadsheet = Spreadsheet(
-            'usersPassRoles',
-            get_secrets().get('spreadsheet_key'),
-        )
-            GoogleSheetsAdapter.connect(spreadsheet)
+        #     spreadsheet = Spreadsheet(
+        #     'usersPassRoles',
+        #     get_secrets().get('spreadsheet_key'),
+        # )
+        #     GoogleSheetsAdapter.connect(spreadsheet)
             fitbits_sheet = spreadsheet.get_sheet("fitbit", "fitbit")
             logs_sheet = spreadsheet.get_sheet("FitbitLog", "log")
             
@@ -273,11 +273,11 @@ def display_homepage(user_email, user_role, user_project):
                     
         elif user_role == "Student":
             # Get student's watches
-            spreadsheet = Spreadsheet(
-            'usersPassRoles',
-            get_secrets().get('spreadsheet_key'),
-        )
-            GoogleSheetsAdapter.connect(spreadsheet)
+        #     spreadsheet = Spreadsheet(
+        #     'usersPassRoles',
+        #     get_secrets().get('spreadsheet_key'),
+        # )
+        #     GoogleSheetsAdapter.connect(spreadsheet)
             fitbits_sheet = spreadsheet.get_sheet("fitbit", "fitbit")
             logs_sheet = spreadsheet.get_sheet("FitbitLog", "log")
             

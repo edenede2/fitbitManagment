@@ -26,6 +26,15 @@ class AuthenticationController:
         if "user_project" not in st.session_state:
             st.session_state.user_project = None
     
+
+    def get_spreadsheet(self) -> Optional[Spreadsheet]:
+        """Get the main spreadsheet instance"""
+        if not self.main_spreadsheet:
+            spreadsheet_key = st.secrets.get("spreadsheet_key", "")
+            self.main_spreadsheet = Spreadsheet(name="Fitbit Database", api_key=spreadsheet_key)
+            GoogleSheetsAdapter.connect(self.main_spreadsheet)
+        return self.main_spreadsheet
+
     def get_user_details(self, user_email: str) -> tuple:
         """
         Get user role and project from the spreadsheet.
