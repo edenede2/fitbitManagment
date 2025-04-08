@@ -136,7 +136,7 @@ def show_alerts_management(user_email, user_role, user_project):
     # Load data
     with st.spinner("Loading data..."):
         spreadsheet = load_spreadsheet()
-        total_answers_sheet = spreadsheet.get_sheet("total_answers", "total_answers")
+        total_answers_df , total_answers_sheet = load_total_answers(spreadsheet)
         suspicious_df, suspicious_sheet = load_suspicious_numbers(spreadsheet)
         late_df, late_sheet = load_late_numbers(spreadsheet)
 
@@ -148,7 +148,18 @@ def show_alerts_management(user_email, user_role, user_project):
         st.header("Total Answers")
         st.info("This is the total number of patients who answered the questionnaire.")
         
+        # Check if there's data
+        if total_answers_df.is_empty():
+            st.warning("No total answers found.")
+        else:
+            if 'endDate' in total_answers_df.columns:
+                suspicious_df['Time Ago'] = suspicious_df['endDate'].apply(format_time_ago)
+            st.dataframe(total_answers_df)
+            st.subheader("Summary Statistics")
+            st.write(total_answers_df.describe())
 
+
+            
 
     # ----- Suspicious Numbers Tab -----
     with tab2:
