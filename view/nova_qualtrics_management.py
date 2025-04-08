@@ -212,6 +212,17 @@ def _display_ema_data(ema_df):
     else:
         st.info("No EMA data available")
 
+@st.fragment
+def _check_box_control(num, key):
+    """Control checkbox selection and deselection"""
+    is_selected = num in st.session_state.selected_late_nums
+    if st.checkbox(f"Select {num}", value=is_selected, key=key, label_visibility="collapsed"):
+        st.session_state.selected_late_nums.add(num)
+    else:
+        if num in st.session_state.selected_late_nums:
+            st.session_state.selected_late_nums.remove(num)
+
+    
 def _display_late_nums(late_nums_df):
     """Display late numbers with selection options"""
     st.header("Late Numbers")
@@ -234,12 +245,7 @@ def _display_late_nums(late_nums_df):
                 if is_accepted:
                     st.write("✅")
                 else:
-                    is_selected = num in st.session_state.selected_late_nums
-                    if st.checkbox(f"Select {num}", value=is_selected, key=f"late_{i}_{num}", label_visibility="collapsed"):
-                        st.session_state.selected_late_nums.add(num)
-                    else:
-                        if num in st.session_state.selected_late_nums:
-                            st.session_state.selected_late_nums.remove(num)
+                    _check_box_control(num, f"late_{i}_{num}")
             
             with col2:
                 st.write(f"**{num}**")
@@ -278,13 +284,7 @@ def _display_suspicious_nums(suspicious_nums_df):
                 if is_accepted:
                     st.write("✅")
                 else:
-                    is_selected = num in st.session_state.selected_suspicious_nums
-                    if st.checkbox(f"Select {num}", value=is_selected, key=f"suspicious_{i}_{num}", label_visibility="collapsed"):
-                        st.session_state.selected_suspicious_nums.add(num)
-                    else:
-                        if num in st.session_state.selected_suspicious_nums:
-                            st.session_state.selected_suspicious_nums.remove(num)
-            
+                    _check_box_control(num, f"suspicious_{i}_{num}")
             with col2:
                 st.write(f"**{num}**")
                 
