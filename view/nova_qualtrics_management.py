@@ -33,30 +33,30 @@ def nova_qualtrics_management(user_email, user_role, user_project, spreadsheet):
     
     # Load sheets data
     with st.spinner("Loading data..."):
-        ema_sheet = _get_sheet(spreadsheet, "EMA", "EMA")
-        late_nums_sheet = _get_sheet(spreadsheet, "late_nums", "late_nums")
-        suspicious_nums_sheet = _get_sheet(spreadsheet, "suspicious_nums", "suspicious_nums")
+        ema_df = _get_sheet(spreadsheet, "EMA", "EMA").to_dataframe()
+        late_nums_df = _get_sheet(spreadsheet, "late_nums", "late_nums").to_dataframe()
+        suspicious_nums_df = _get_sheet(spreadsheet, "suspicious_nums", "suspicious_nums").to_dataframe()
     
     # Display summary statistics
-    _display_summary_statistics(ema_sheet, late_nums_sheet, suspicious_nums_sheet)
+    _display_summary_statistics(ema_df, late_nums_df, suspicious_nums_df)
     
     # Create tabs for different data views
     tabs = st.tabs(["EMA Responses", "Late Numbers", "Suspicious Numbers"])
     
     # EMA Tab
     with tabs[0]:
-        _display_ema_data(ema_sheet)
+        _display_ema_data(ema_df)
     
     # Late Numbers Tab
     with tabs[1]:
-        _display_late_nums(late_nums_sheet)
+        _display_late_nums(late_nums_df)
     
     # Suspicious Numbers Tab
     with tabs[2]:
-        _display_suspicious_nums(suspicious_nums_sheet)
+        _display_suspicious_nums(suspicious_nums_df)
     
     # Display form for accepting numbers
-    _display_accept_form(spreadsheet, late_nums_sheet, suspicious_nums_sheet)
+    _display_accept_form(spreadsheet, late_nums_df, suspicious_nums_df)
 
 def _check_access(user_role, user_project):
     """Check if user has access to this page"""
@@ -77,7 +77,7 @@ def _get_sheet(spreadsheet, sheet_name, sheet_type):
         st.error(f"Error loading {sheet_name} sheet: {e}")
         return None
 
-def _display_summary_statistics(ema_sheet, late_nums_sheet, suspicious_nums_sheet):
+def _display_summary_statistics(ema_df, late_nums_df, suspicious_nums_df):
     """Display summary statistics for the data"""
     st.subheader("Summary Statistics")
     
@@ -86,16 +86,13 @@ def _display_summary_statistics(ema_sheet, late_nums_sheet, suspicious_nums_shee
     # EMA Statistics
     with col1:
         st.write("**EMA Responses**")
-        if ema_sheet and hasattr(ema_sheet, 'data') and ema_sheet.data:
-            data = ema_sheet.data
-            total_records = len(data)
+        if ema_df is not None and not ema_df.empty:
+            total_records = len(ema_df)
             
             # Get status counts if available
             status_counts = {}
-            if data and 'status' in data[0]:
-                for record in data:
-                    status = record.get('status', 'Unknown')
-                    status_counts[status] = status_counts.get(status, 0) + 1
+            if 'status' in ema_df.columns:
+                status_counts = ema_df['status'].value_counts().to_dict()
             
             # Display metrics
             st.metric("Total Records", total_records)
@@ -110,28 +107,21 @@ def _display_summary_statistics(ema_sheet, late_nums_sheet, suspicious_nums_shee
     # Late Numbers Statistics
     with col2:
         st.write("**Late Numbers**")
-        if late_nums_sheet and hasattr(late_nums_sheet, 'data') and late_nums_sheet.data:
-            data = late_nums_sheet.data
-            total_records = len(data)
+        if late_nums_df is not None and not late_nums_df.empty:
+            total_records = len(late_nums_df)
             
             # Calculate average hours late if available
             avg_hours_late = 0
-            if data and 'hoursLate' in data[0]:
-                total_hours = 0
-                count = 0
-                for record in data:
-                    try:
-                        hours = float(record.get('hoursLate', 0))
-                        total_hours += hours
-                        count += 1
-                    except:
-                        pass
-                
-                if count > 0:
-                    avg_hours_late = total_hours / count
+            if 'hoursLate' in late_nums_df.columns:
+                try:
+                    avg_hours_late = late_nums_df['hoursLate'].astype(float).mean()
+                except:
+                    pass
             
             # Count accepted numbers
-            accepted_count = sum(1 for record in data if str(record.get('accept', '')).upper() == 'TRUE')
+            accepted_count = 0
+            if 'accept' in late_nums_df.columns:
+                accepted_count = late_nums_df['accept'].str.upper().eq('TRUE').sum()
             
             # Display metrics
             st.metric("Total Late Numbers", total_records)
@@ -144,12 +134,13 @@ def _display_summary_statistics(ema_sheet, late_nums_sheet, suspicious_nums_shee
     # Suspicious Numbers Statistics
     with col3:
         st.write("**Suspicious Numbers**")
-        if suspicious_nums_sheet and hasattr(suspicious_nums_sheet, 'data') and suspicious_nums_sheet.data:
-            data = suspicious_nums_sheet.data
-            total_records = len(data)
+        if suspicious_nums_df is not None and not suspicious_nums_df.empty:
+            total_records = len(suspicious_nums_df)
             
             # Count accepted numbers
-            accepted_count = sum(1 for record in data if str(record.get('accept', '')).upper() == 'TRUE')
+            accepted_count = 0
+            if 'accept' in suspicious_nums_df.columns:
+                accepted_count = suspicious_nums_df['accept'].str.upper().eq('TRUE').sum()
             
             # Display metrics
             st.metric("Total Suspicious", total_records)
@@ -158,25 +149,22 @@ def _display_summary_statistics(ema_sheet, late_nums_sheet, suspicious_nums_shee
         else:
             st.write("No data available")
 
-def _display_ema_data(ema_sheet):
+def _display_ema_data(ema_df):
     """Display EMA data with filters"""
     st.header("EMA Responses")
     
-    if ema_sheet and hasattr(ema_sheet, 'data') and ema_sheet.data:
-        # Convert to dataframe for display
-        df = pd.DataFrame(ema_sheet.data)
-        
+    if ema_df is not None and not ema_df.empty:
         # Filters
         with st.expander("Filters", expanded=False):
             # Filter by date if date columns exist
-            date_cols = [col for col in df.columns if 'date' in col.lower()]
+            date_cols = [col for col in ema_df.columns if 'endDate' in col.lower()]
             if date_cols:
                 filter_date_col = st.selectbox("Filter by date", date_cols)
                 if filter_date_col:
                     try:
                         # Try to get min and max dates
-                        min_date = pd.to_datetime(df[filter_date_col].min())
-                        max_date = pd.to_datetime(df[filter_date_col].max())
+                        min_date = pd.to_datetime(ema_df[filter_date_col]).min()
+                        max_date = pd.to_datetime(ema_df[filter_date_col]).max()
                         
                         # Date range slider
                         date_range = st.date_input(
@@ -188,33 +176,33 @@ def _display_ema_data(ema_sheet):
                         
                         if len(date_range) == 2:
                             start_date, end_date = date_range
-                            mask = (pd.to_datetime(df[filter_date_col]) >= pd.to_datetime(start_date)) & \
-                                   (pd.to_datetime(df[filter_date_col]) <= pd.to_datetime(end_date))
-                            df = df[mask]
+                            mask = (pd.to_datetime(ema_df[filter_date_col]) >= pd.to_datetime(start_date)) & \
+                                   (pd.to_datetime(ema_df[filter_date_col]) <= pd.to_datetime(end_date))
+                            ema_df = ema_df[mask]
                     except:
                         st.warning(f"Could not parse dates in column {filter_date_col}")
             
             # Filter by status if status column exists
-            if 'status' in df.columns:
-                statuses = df['status'].unique().tolist()
+            if 'status' in ema_df.columns:
+                statuses = ema_df['status'].unique().tolist()
                 selected_statuses = st.multiselect("Filter by status", statuses, default=statuses)
                 if selected_statuses:
-                    df = df[df['status'].isin(selected_statuses)]
+                    ema_df = ema_df[ema_df['status'].isin(selected_statuses)]
             
             # Search by phone number
-            num_cols = [col for col in df.columns if 'num' in col.lower()]
+            num_cols = [col for col in ema_df.columns if 'num' in col.lower()]
             if num_cols:
                 search_col = num_cols[0]
                 search_text = st.text_input("Search by number")
                 if search_text:
-                    df = df[df[search_col].astype(str).str.contains(search_text)]
+                    ema_df = ema_df[ema_df[search_col].astype(str).str.contains(search_text)]
         
         # Display data
-        st.dataframe(df, use_container_width=True)
+        st.dataframe(ema_df, use_container_width=True)
         
         # Export option
         if st.button("Export to CSV"):
-            csv = df.to_csv(index=False).encode('utf-8')
+            csv = ema_df.to_csv(index=False).encode('utf-8')
             st.download_button(
                 "Download CSV",
                 data=csv,
@@ -224,21 +212,21 @@ def _display_ema_data(ema_sheet):
     else:
         st.info("No EMA data available")
 
-def _display_late_nums(late_nums_sheet):
+def _display_late_nums(late_nums_df):
     """Display late numbers with selection options"""
     st.header("Late Numbers")
     
-    if late_nums_sheet and hasattr(late_nums_sheet, 'data') and late_nums_sheet.data:
+    if late_nums_df is not None and not late_nums_df.empty:
         st.write("Select numbers to accept:")
         
         # Display each number with a selection checkbox
-        for i, record in enumerate(late_nums_sheet.data):
-            num = record.get('nums', '')
+        for i, row in late_nums_df.iterrows():
+            num = row.get('nums', '')
             if not num:  # Skip empty records
                 continue
             
             # Check if already accepted
-            is_accepted = str(record.get('accept', '')).upper() == 'TRUE'
+            is_accepted = str(row.get('accepted', '')).upper() == 'TRUE'
             
             col1, col2, col3, col4 = st.columns([0.1, 0.4, 0.3, 0.2])
             
@@ -257,32 +245,32 @@ def _display_late_nums(late_nums_sheet):
                 st.write(f"**{num}**")
                 
             with col3:
-                sent_time = record.get('sentTime', 'N/A')
+                sent_time = row.get('sentTime', 'N/A')
                 st.write(f"Sent: {sent_time}")
                 
             with col4:
-                hours_late = record.get('hoursLate', 'N/A')
+                hours_late = row.get('hoursLate', 'N/A')
                 st.write(f"{hours_late} hours late")
                 
             st.divider()
     else:
         st.info("No late numbers available")
 
-def _display_suspicious_nums(suspicious_nums_sheet):
+def _display_suspicious_nums(suspicious_nums_df):
     """Display suspicious numbers with selection options"""
     st.header("Suspicious Numbers")
     
-    if suspicious_nums_sheet and hasattr(suspicious_nums_sheet, 'data') and suspicious_nums_sheet.data:
+    if suspicious_nums_df is not None and not suspicious_nums_df.empty:
         st.write("Select numbers to accept:")
         
         # Display each number with a selection checkbox
-        for i, record in enumerate(suspicious_nums_sheet.data):
-            num = record.get('nums', '')
+        for i, row in suspicious_nums_df.iterrows():
+            num = row.get('nums', '')
             if not num:  # Skip empty records
                 continue
             
             # Check if already accepted
-            is_accepted = str(record.get('accept', '')).upper() == 'TRUE'
+            is_accepted = str(row.get('accepted', '')).upper() == 'TRUE'
             
             col1, col2, col3 = st.columns([0.1, 0.5, 0.4])
             
@@ -301,14 +289,14 @@ def _display_suspicious_nums(suspicious_nums_sheet):
                 st.write(f"**{num}**")
                 
             with col3:
-                filled_time = record.get('filledTime', 'N/A')
+                filled_time = row.get('filledTime', 'N/A')
                 st.write(f"Filled: {filled_time}")
                 
             st.divider()
     else:
         st.info("No suspicious numbers available")
 
-def _display_accept_form(spreadsheet, late_nums_sheet, suspicious_nums_sheet):
+def _display_accept_form(spreadsheet, late_nums_df, suspicious_nums_df):
     """Display form for accepting selected numbers"""
     st.subheader("Accept Selected Numbers")
     
@@ -328,19 +316,19 @@ def _display_accept_form(spreadsheet, late_nums_sheet, suspicious_nums_sheet):
         if st.button("Save Accepted Numbers"):
             with st.spinner("Updating data..."):
                 # Update late_nums sheet
-                if late_nums_sheet and st.session_state.selected_late_nums:
+                if not late_nums_df.empty and st.session_state.selected_late_nums:
                     _update_accepted_numbers(
                         spreadsheet, 
-                        late_nums_sheet, 
+                        late_nums_df, 
                         st.session_state.selected_late_nums,
                         "late_nums"
                     )
                 
                 # Update suspicious_nums sheet
-                if suspicious_nums_sheet and st.session_state.selected_suspicious_nums:
+                if not suspicious_nums_df.empty and st.session_state.selected_suspicious_nums:
                     _update_accepted_numbers(
                         spreadsheet, 
-                        suspicious_nums_sheet, 
+                        suspicious_nums_df, 
                         st.session_state.selected_suspicious_nums,
                         "suspicious_nums"
                     )
@@ -354,26 +342,27 @@ def _display_accept_form(spreadsheet, late_nums_sheet, suspicious_nums_sheet):
     else:
         st.info("No numbers selected. Select numbers from the Late Numbers or Suspicious Numbers tabs.")
 
-def _update_accepted_numbers(spreadsheet: Spreadsheet, sheet, selected_numbers, sheet_name):
-    """Update the 'accept' field for selected numbers in the sheet"""
-    # Make a copy of the data to track changes
-    updated_data = []
+def _update_accepted_numbers(spreadsheet: Spreadsheet, df, selected_numbers, sheet_name):
+    """Update the 'accept' field for selected numbers in the DataFrame and save to sheet"""
+    if df is None or df.empty:
+        return
+
+    # Create a copy to avoid modifying the original dataframe
+    updated_df = df.copy()
     changes_made = False
     
-    # Go through each record, mark selected numbers as accepted
-    for record in sheet.data:
-        num = record.get('nums', '')
-        if num in selected_numbers and str(record.get('accept', '')).upper() != 'TRUE':
-            # Create a copy of the record to modify
-            updated_record = record.copy()
-            updated_record['accept'] = 'TRUE'
-            updated_data.append(updated_record)
+    # Update 'accept' field for selected numbers
+    for idx, row in updated_df.iterrows():
+        num = row.get('nums', '')
+        if num in selected_numbers and str(row.get('accepted', '')).upper() != 'TRUE':
+            updated_df.at[idx, 'accepted'] = 'TRUE'
             changes_made = True
-        else:
-            # Keep the record as is
-            updated_data.append(record)
     
     # Only update the sheet if changes were made
     if changes_made:
+        # Convert DataFrame to list of dictionaries for Sheet API
+        updated_data = updated_df.to_dict('records')
+        
         # Update the sheet with new data
         spreadsheet.update_sheet(sheet_name, updated_data)
+        GoogleSheetsAdapter.save(spreadsheet, sheet_name)
