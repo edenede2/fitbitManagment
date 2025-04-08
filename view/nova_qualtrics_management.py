@@ -188,10 +188,9 @@ def _display_summary_statistics(ema_df, late_nums_df, suspicious_nums_df):
             
             # Count accepted numbers
             accepted_count = 0
-            if 'accept' in late_nums_df.columns:
-                accepted_count = late_nums_df['accept'].str.upper().eq('TRUE').sum()
+            if 'accepted' in late_nums_df.columns:
+                accepted_count = late_nums_df['accepted'].str.upper().eq('TRUE').sum()
             
-            # Display metrics
             st.metric("Total Late Numbers", total_records)
             st.metric("Accepted Numbers", accepted_count)
             if avg_hours_late > 0:
@@ -207,10 +206,9 @@ def _display_summary_statistics(ema_df, late_nums_df, suspicious_nums_df):
             
             # Count accepted numbers
             accepted_count = 0
-            if 'accept' in suspicious_nums_df.columns:
-                accepted_count = suspicious_nums_df['accept'].str.upper().eq('TRUE').sum()
+            if 'accepted' in suspicious_nums_df.columns:
+                accepted_count = suspicious_nums_df['accepted'].str.upper().eq('TRUE').sum()
             
-            # Display metrics
             st.metric("Total Suspicious", total_records)
             st.metric("Accepted Numbers", accepted_count)
             st.metric("Pending Numbers", total_records - accepted_count)
@@ -280,16 +278,16 @@ def _display_ema_data(ema_df):
     else:
         st.info("No EMA data available")
 
-# @st.fragment
-# def _check_box_control(num, selected_set, key):
-#     """Control checkbox selection and deselection"""
-#         st.session_state.selected_late_nums.add(num)
-#     else:
-#         if num in st.session_state.selected_late_nums:
-#             st.session_state.selected_late_nums.remove(num)
+@st.fragment
+def _check_box_control(num, selected_set, key):
+    """Control checkbox selection and deselection"""
+        st.session_state.selected_late_nums.add(num)
+    else:
+        if num in st.session_state.selected_late_nums:
+            st.session_state.selected_late_nums.remove(num)
 
     
-def _display_latde_nums(late_nums_df):
+def _display_late_nums(late_nums_df):
     """Display late numbers with selection options"""
     st.header("Late Numbers")
     
@@ -424,7 +422,7 @@ def _display_accept_form(spreadsheet, late_nums_df, suspicious_nums_df):
         st.info("No numbers selected. Select numbers from the Late Numbers or Suspicious Numbers tabs.")
 
 def _update_accepted_numbers(spreadsheet: Spreadsheet, df, selected_numbers, sheet_name):
-    """Update the 'accept' field for selected numbers in the DataFrame and save to sheet"""
+    """Update the 'accepted' field for selected numbers in the DataFrame and save to sheet"""
     if df is None or df.empty:
         return
 
@@ -432,7 +430,7 @@ def _update_accepted_numbers(spreadsheet: Spreadsheet, df, selected_numbers, she
     updated_df = df.copy()
     changes_made = False
     
-    # Update 'accept' field for selected numbers
+    # Update 'accepted' field for selected numbers
     for idx, row in updated_df.iterrows():
         num = row.get('nums', '')
         if num in selected_numbers and str(row.get('accepted', '')).upper() != 'TRUE':
