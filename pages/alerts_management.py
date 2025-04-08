@@ -40,6 +40,11 @@ def load_total_answers(spreadsheet:Spreadsheet):
     total_answers_sheet = spreadsheet.get_sheet("EMA", "EMA")
     df = total_answers_sheet.to_dataframe(engine="polars")
     
+    # Convert accepted column to boolean if it exists
+    if 'accepted' in df.columns:
+        df = df.with_columns(
+            pl.col('accepted').cast(str).str.to_lowercase().is_in(['true', 'yes', '1', 't']).alias('accepted')
+        )
         
     return df, total_answers_sheet
 
@@ -51,6 +56,11 @@ def load_suspicious_numbers(spreadsheet:Spreadsheet):
     # Add column for verification if not exists - FIXED to use Polars syntax
     if 'accepted' not in df.columns:
         df = df.with_columns(pl.lit(False).alias('accepted'))
+    else:
+        # Convert existing accepted values to boolean
+        df = df.with_columns(
+            pl.col('accepted').cast(str).str.to_lowercase().is_in(['true', 'yes', '1', 't']).alias('accepted')
+        )
         
     return df, suspicious_sheet
 
@@ -63,6 +73,11 @@ def load_late_numbers(spreadsheet:Spreadsheet):
     # Add column for verification if not exists - FIXED to use Polars syntax
     if 'accepted' not in df.columns:
         df = df.with_columns(pl.lit(False).alias('accepted'))
+    else:
+        # Convert existing accepted values to boolean
+        df = df.with_columns(
+            pl.col('accepted').cast(str).str.to_lowercase().is_in(['true', 'yes', '1', 't']).alias('accepted')
+        )
         
     return df, late_sheet
 
@@ -181,14 +196,15 @@ def show_alerts_management(user_email, user_role, user_project):
             # Display data with editor
             st.subheader(f"Total Answers ({filtered_df.height} entries)")
             # Convert to pandas for data editor
+            pandas_df = filtered_df.to_pandas()
             
-            # Check if Accepted column exists and configure it as a checkbox
+            # Configure the checkbox column for accepted
             column_config = {}
-            if 'accepted' in filtered_df.columns:
+            if 'accepted' in pandas_df.columns:
                 column_config["accepted"] = st.column_config.CheckboxColumn("Accepted", help="Mark as accepted")
             
             edited_df = st.data_editor(
-                filtered_df.to_pandas(),
+                pandas_df,
                 key="total_answers_editor",
                 column_config=column_config
             )
@@ -198,6 +214,13 @@ def show_alerts_management(user_email, user_role, user_project):
                 try:
                     # Convert back to polars
                     updated_df = pl.DataFrame(edited_df)
+                    
+                    # Convert boolean accepted column back to TRUE/FALSE strings for Google Sheets
+                    if 'accepted' in updated_df.columns:
+                        updated_df = updated_df.with_columns(
+                            pl.when(pl.col('accepted')).then(pl.lit("TRUE")).otherwise(pl.lit("FALSE")).alias('accepted')
+                        )
+                    
                     # Update the sheet
                     spreadsheet.update_sheet("EMA", updated_df)
                     GoogleSheetsAdapter.save(spreadsheet, "EMA")
@@ -265,16 +288,24 @@ def show_alerts_management(user_email, user_role, user_project):
                 display_df = display_df.select(available_columns)
             
             # Convert to pandas for data editor
+            pandas_df = display_df.to_pandas()
+            
+            # Configure the Accepted column as a checkbox
+            column_config = {
+                "Accepted": st.column_config.CheckboxColumn(
+                    "Accepted", 
+                    help="Mark number as accepted"
+                )
+            }
+            
+            # Disable Time Ago column since it's calculated
+            disabled_cols = ["Time Ago"]
+            
             edited_suspicious_df = st.data_editor(
-                display_df.to_pandas(), 
+                pandas_df, 
                 key="suspicious_editor",
-                disabled=["Time Ago"],  # Time Ago is calculated, not directly editable
-                column_config={
-                    "Accepted": st.column_config.CheckboxColumn(
-                        "Accepted", 
-                        help="Mark number as accepted"
-                    )
-                }
+                disabled=disabled_cols,
+                column_config=column_config
             )
             
             # Save changes button
@@ -291,6 +322,12 @@ def show_alerts_management(user_email, user_role, user_project):
                     # Convert back to polars with original column names
                     updated_df = pl.DataFrame(edited_suspicious_df)
                     updated_df = updated_df.rename({v: k for k, v in reverse_mapping.items() if v in updated_df.columns})
+                    
+                    # Convert boolean accepted column back to TRUE/FALSE strings for Google Sheets
+                    if 'accepted' in updated_df.columns:
+                        updated_df = updated_df.with_columns(
+                            pl.when(pl.col('accepted')).then(pl.lit("TRUE")).otherwise(pl.lit("FALSE")).alias('accepted')
+                        )
                     
                     # Update timestamp for modified rows
                     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -352,16 +389,24 @@ def show_alerts_management(user_email, user_role, user_project):
                 display_df = display_df.select(available_columns)
             
             # Convert to pandas for data editor
+            pandas_df = display_df.to_pandas()
+            
+            # Configure the Accepted column as a checkbox
+            column_config = {
+                "Accepted": st.column_config.CheckboxColumn(
+                    "Accepted", 
+                    help="Mark number as accepted"
+                )
+            }
+            
+            # Disable Time Ago column since it's calculated
+            disabled_cols = ["Time Ago"]
+            
             edited_late_df = st.data_editor(
-                display_df.to_pandas(), 
+                pandas_df, 
                 key="late_editor",
-                disabled=["Time Ago"],  # Time Ago is calculated, not directly editable
-                column_config={
-                    "Accepted": st.column_config.CheckboxColumn(
-                        "Accepted", 
-                        help="Mark number as accepted"
-                    )
-                }
+                disabled=disabled_cols,
+                column_config=column_config
             )
             
             # Save changes button
@@ -379,6 +424,12 @@ def show_alerts_management(user_email, user_role, user_project):
                     # Convert back to polars with original column names
                     updated_df = pl.DataFrame(edited_late_df)
                     updated_df = updated_df.rename({v: k for k, v in reverse_mapping.items() if v in updated_df.columns})
+                    
+                    # Convert boolean accepted column back to TRUE/FALSE strings for Google Sheets
+                    if 'accepted' in updated_df.columns:
+                        updated_df = updated_df.with_columns(
+                            pl.when(pl.col('accepted')).then(pl.lit("TRUE")).otherwise(pl.lit("FALSE")).alias('accepted')
+                        )
                     
                     # Update timestamp for modified rows
                     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
