@@ -194,16 +194,32 @@ def on_suspicious_change(edited_df):
 def on_late_change(edited_df):
     st.session_state.edited_data["late"] = edited_df
 
-# Toggle handlers for show_accepted filters
+# Toggle handlers for show_accepted filters with safety checks
 def toggle_show_accepted_suspicious():
-    st.session_state.show_accepted_suspicious = not st.session_state.show_accepted_suspicious
+    """Toggle the show_accepted_suspicious session state with safety check"""
+    if "show_accepted_suspicious" in st.session_state:
+        st.session_state.show_accepted_suspicious = not st.session_state.show_accepted_suspicious
+    else:
+        # Initialize it if it doesn't exist yet
+        st.session_state.show_accepted_suspicious = True
 
 def toggle_show_accepted_late():
-    st.session_state.show_accepted_late = not st.session_state.show_accepted_late
+    """Toggle the show_accepted_late session state with safety check"""
+    if "show_accepted_late" in st.session_state:
+        st.session_state.show_accepted_late = not st.session_state.show_accepted_late
+    else:
+        # Initialize it if it doesn't exist yet
+        st.session_state.show_accepted_late = True
 
 # Create a main function that can be called from app.py
 def show_alerts_management(user_email, user_role, user_project, spreadsheet: Spreadsheet) -> None:
     """Main function to display the alerts management page - can be called from app.py"""
+    # Ensure session state variables are initialized at the beginning of this function
+    if "show_accepted_suspicious" not in st.session_state:
+        st.session_state.show_accepted_suspicious = False
+    if "show_accepted_late" not in st.session_state:
+        st.session_state.show_accepted_late = False
+    
     # Page configuration
     st.title("📊 Alert Management")
     st.write("Review and manage patient questionnaire alerts.")
@@ -261,7 +277,7 @@ def show_alerts_management(user_email, user_role, user_project, spreadsheet: Spr
             # Add time ago information if endDate column exists
             if 'endDate' in total_answers_df.columns:
                 display_df = total_answers_df.with_columns(
-                    pl.col('endDate').map_elements(format_time_ago).alias('Time Ago')
+                    pl.col('endDate').map_elements(format_time_ago, return_dtype=pl.Utf8).alias('Time Ago')
                 )
             else:
                 display_df = total_answers_df
@@ -354,11 +370,12 @@ def show_alerts_management(user_email, user_role, user_project, spreadsheet: Spr
             # Add human-readable time ago column for display
             if 'filledTime' in suspicious_df.columns:
                 suspicious_df = suspicious_df.with_columns(
-                    pl.col('filledTime').map_elements(format_time_ago).alias('Time Ago')
+                    pl.col('filledTime').map_elements(format_time_ago, return_dtype=pl.Utf8).alias('Time Ago')
                 )
                 
             # Filter options - use session state to persist filter choice
             st.subheader("Filter Options")
+            # Make sure we're using the session state value directly, not through a variable
             show_accepted = st.checkbox("Show Accepted Numbers", 
                                       value=st.session_state.show_accepted_suspicious, 
                                       key="suspicious_filter",
@@ -482,11 +499,12 @@ def show_alerts_management(user_email, user_role, user_project, spreadsheet: Spr
             # Add human-readable time ago column
             if 'sentTime' in late_df.columns:
                 late_df = late_df.with_columns(
-                    pl.col('sentTime').map_elements(format_time_ago).alias('Time Ago')
+                    pl.col('sentTime').map_elements(format_time_ago, return_dtype=pl.Utf8).alias('Time Ago')
                 )
                 
             # Filter options - use session state to persist filter choice
             st.subheader("Filter Options")
+            # Make sure we're using the session state value directly, not through a variable
             show_accepted = st.checkbox("Show Accepted Numbers", 
                                       value=st.session_state.show_accepted_late, 
                                       key="late_filter",
