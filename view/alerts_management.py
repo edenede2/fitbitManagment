@@ -82,7 +82,7 @@ def load_suspicious_numbers(spreadsheet:Spreadsheet):
         
     return df, suspicious_sheet
 
-@st.cache_data(ttl=60)  # Cache for 1 minute
+# @st.cache_data(ttl=60)  # Cache for 1 minute
 def load_late_numbers(spreadsheet:Spreadsheet):
     """Load late numbers from spreadsheet"""
     late_sheet = spreadsheet.get_sheet("late_nums", "late_nums")
