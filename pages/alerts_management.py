@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import polars as pl
 import datetime
 from entity.Sheet import Spreadsheet, GoogleSheetsAdapter, SheetsAPI
 from model.config import get_secrets
