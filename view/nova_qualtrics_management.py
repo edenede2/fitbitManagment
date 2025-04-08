@@ -247,7 +247,7 @@ def _display_late_nums(late_nums_sheet):
                     st.write("✅")
                 else:
                     is_selected = num in st.session_state.selected_late_nums
-                    if st.checkbox("", value=is_selected, key=f"late_{i}_{num}"):
+                    if st.checkbox(f"Select {num}", value=is_selected, key=f"late_{i}_{num}", label_visibility="collapsed"):
                         st.session_state.selected_late_nums.add(num)
                     else:
                         if num in st.session_state.selected_late_nums:
@@ -282,7 +282,7 @@ def _display_suspicious_nums(suspicious_nums_sheet):
                 continue
             
             # Check if already accepted
-            is_accepted = str(record.get('accepted', '')).upper() == 'TRUE'
+            is_accepted = str(record.get('accept', '')).upper() == 'TRUE'
             
             col1, col2, col3 = st.columns([0.1, 0.5, 0.4])
             
@@ -291,7 +291,7 @@ def _display_suspicious_nums(suspicious_nums_sheet):
                     st.write("✅")
                 else:
                     is_selected = num in st.session_state.selected_suspicious_nums
-                    if st.checkbox("", value=is_selected, key=f"suspicious_{i}_{num}"):
+                    if st.checkbox(f"Select {num}", value=is_selected, key=f"suspicious_{i}_{num}", label_visibility="collapsed"):
                         st.session_state.selected_suspicious_nums.add(num)
                     else:
                         if num in st.session_state.selected_suspicious_nums:
@@ -372,7 +372,6 @@ def _update_accepted_numbers(spreadsheet: Spreadsheet, sheet, selected_numbers, 
         else:
             # Keep the record as is
             updated_data.append(record)
-            GoogleSheetsAdapter().save(updated_data)
     
     # Only update the sheet if changes were made
     if changes_made:
