@@ -6,11 +6,11 @@ from model.config import get_secrets
 import time
 
 # Page configuration
-st.set_page_config(
-    page_title="Alert Management",
-    page_icon="🔔",
-    layout="wide"
-)
+# st.set_page_config(
+#     page_title="Alert Management",
+#     page_icon="🔔",
+#     layout="wide"
+# )
 
 # Initialize session state for tracking changes
 if "accepted_suspicious" not in st.session_state:
