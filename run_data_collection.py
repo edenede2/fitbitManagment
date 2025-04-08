@@ -48,7 +48,7 @@ def analyze_whatsapp_messages():
         
         # Get required sheets
         bulldog_sheet = whatsapp_spreadsheet.get_sheet("bulldog", sheet_type="bulldog")
-        alert_sheet = alert_spreadsheet.get_sheet("qualtrics_nova", sheet_type="qualtrics_nova")
+        alert_sheet = alert_spreadsheet.get_sheet("EMA", sheet_type="EMA")
         
         # Get threshold from qualtrics_alerts_config or use default
         hours_threshold = 48  # Default threshold
@@ -82,7 +82,8 @@ def analyze_whatsapp_messages():
                 'nums': row['phone'],
                 'sentTime': row['time'],
                 'hoursLate': f"{row['hours_left']:.2f}",
-                'lastUpdated': now
+                'lastUpdated': now,
+                'accepted': 'FALSE'
             })
         
         # Format suspicious numbers for the SuspiciousNums sheet
