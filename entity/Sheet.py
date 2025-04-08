@@ -465,7 +465,7 @@ class GoogleSheetsAdapter:
         return spreadsheet
     
     @staticmethod
-    @sheets_cache(timeout=300)  # Cache for 5 minutes
+    # @sheets_cache(timeout=300)  # Cache for 5 minutes
     def get_worksheet_data(worksheet_id):
         """Get worksheet data by ID"""
         # Implementation for fetching worksheet data
