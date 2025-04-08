@@ -67,7 +67,7 @@ def main():
         elif user_role == "Guest":
             menu_options = ["Home", "About"]
 
-        if user_project == 'nova' and user_role in ['manager', 'Admin']:
+        if (user_project == 'nova' and user_role in ['manager']) or (user_role == 'Admin'):
             menu_options = ["Home", "Dashboard", "Fitbit Managment", "Alerts Configuration", "NOVA Qualtrics Managment" "Settings", "About"]
 
         selected_page = st.sidebar.radio("Navigation", menu_options)
