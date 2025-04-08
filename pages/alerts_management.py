@@ -48,20 +48,21 @@ def load_suspicious_numbers(spreadsheet:Spreadsheet):
     suspicious_sheet = spreadsheet.get_sheet("suspicious_nums", "suspicious_nums")
     df = suspicious_sheet.to_dataframe(engine="polars")
     
-    # Add column for verification if not exists
+    # Add column for verification if not exists - FIXED to use Polars syntax
     if 'accepted' not in df.columns:
-        df['accepted'] = False
+        df = df.with_column(pl.lit(False).alias('accepted'))
         
     return df, suspicious_sheet
 
 def load_late_numbers(spreadsheet:Spreadsheet):
     """Load late numbers from spreadsheet"""
     late_sheet = spreadsheet.get_sheet("late_nums", "late_nums")
-    df = pd.DataFrame(late_sheet.data)
+    # Convert to polars DataFrame instead of pandas
+    df = late_sheet.to_dataframe(engine="polars")
     
-    # Add column for verification if not exists
+    # Add column for verification if not exists - FIXED to use Polars syntax
     if 'accepted' not in df.columns:
-        df['accepted'] = False
+        df = df.with_column(pl.lit(False).alias('accepted'))
         
     return df, late_sheet
 
@@ -220,7 +221,7 @@ def show_alerts_management(user_email, user_role, user_project):
         else:
             # Add human-readable time ago column for display
             if 'filledTime' in suspicious_df.columns:
-                suspicious_df = suspicious_df.with_columns(
+                suspicious_df = suspicious_df.with_column(
                     pl.col('filledTime').apply(format_time_ago).alias('Time Ago')
                 )
                 
@@ -238,7 +239,7 @@ def show_alerts_management(user_email, user_role, user_project):
             # Display data table with editor
             st.subheader(f"Suspicious Numbers ({filtered_df.height} entries)")
             
-            # Create a display copy with better column names
+            # Create a copy for display with better column names
             display_df = filtered_df.clone()
             if 'nums' in display_df.columns:
                 display_df = display_df.rename({
@@ -295,16 +296,12 @@ def show_alerts_management(user_email, user_role, user_project):
         st.info("These are patients who were sent a WhatsApp questionnaire but did not answer within the time threshold.")
         
         # Check if there's data
-        if isinstance(late_df, pd.DataFrame) and late_df.empty:
+        if late_df.is_empty():
             st.warning("No late numbers found.")
         else:
-            # Convert to Polars DataFrame if it's not already
-            if not isinstance(late_df, pl.DataFrame):
-                late_df = pl.DataFrame(late_df)
-                
             # Add human-readable time ago column
             if 'sentTime' in late_df.columns:
-                late_df = late_df.with_columns(
+                late_df = late_df.with_column(
                     pl.col('sentTime').apply(format_time_ago).alias('Time Ago')
                 )
                 
