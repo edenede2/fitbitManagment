@@ -3,6 +3,7 @@ from typing import Dict, Optional
 import json
 from entity.User import User, UserFactory, UserRepository, UserRole
 from entity.Sheet import Spreadsheet, GoogleSheetsAdapter
+from utils.sheets_cache import sheets_cache
 
 class AuthenticationController:
     """Controller for handling authentication-related operations"""
@@ -27,6 +28,7 @@ class AuthenticationController:
             st.session_state.user_project = None
     
 
+    @sheets_cache(timeout=180)  # Cache for 3 minutes
     def get_spreadsheet(self) -> Optional[Spreadsheet]:
         """Get the main spreadsheet instance"""
         if not self.main_spreadsheet:

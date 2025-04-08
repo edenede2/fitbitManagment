@@ -12,6 +12,7 @@ import uuid
 import streamlit as st
 from entity.Watch import Watch, WatchFactory  # Remove FitbitAPI as it doesn't exist
 import traceback  # Add import for traceback
+from utils.sheets_cache import sheets_cache  # Import sheets_cache
 
 # Import needed functions from model
 try:
@@ -355,6 +356,7 @@ class GoogleSheetsAdapter:
     """Adapter for connecting entity layer Spreadsheet with Google Sheets API"""
     
     @staticmethod
+    @sheets_cache(timeout=300)  # Cache for 5 minutes
     def connect(spreadsheet: Spreadsheet) -> Spreadsheet:
         """Connect the entity Spreadsheet with the actual Google Sheets API"""
         # Get API instance
@@ -461,6 +463,13 @@ class GoogleSheetsAdapter:
         spreadsheet._gspread_connection = google_spreadsheet
         
         return spreadsheet
+    
+    @staticmethod
+    @sheets_cache(timeout=300)  # Cache for 5 minutes
+    def get_worksheet_data(worksheet_id):
+        """Get worksheet data by ID"""
+        # Implementation for fetching worksheet data
+        pass
     
     @staticmethod
     def save(spreadsheet: Spreadsheet, sheet_name: str = None):
