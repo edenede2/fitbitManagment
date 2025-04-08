@@ -13,7 +13,7 @@ from view.homepage import display_homepage
 
 # Import the fitbit management functionality
 from pages.fitbit_management import load_fitbit_datatable
-
+from pages.alerts_management import show_alerts_management
 # Set up app configuration
 st.set_page_config(
     page_title="Fitbit Management System",
@@ -22,18 +22,18 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-def show_fitbit_management():
-    """Show the Fitbit management page with the current user's details."""
-    # Get current user details from session state
-    user_details = st.session_state.get('user_data', None)
+# def show_fitbit_management():
+#     """Show the Fitbit management page with the current user's details."""
+#     # Get current user details from session state
+#     user_details = st.session_state.get('user_data', None)
     
-    # Check if user is logged in
-    if user_details is None:
-        st.error("You must be logged in to access this feature.")
-        return
+#     # Check if user is logged in
+#     if user_details is None:
+#         st.error("You must be logged in to access this feature.")
+#         return
     
-    # Load the fitbit management datatable with user details
-    load_fitbit_datatable(user_details)
+#     # Load the fitbit management datatable with user details
+#     load_fitbit_datatable(user_details)
 
 def main():
     """Main application function"""
@@ -67,6 +67,9 @@ def main():
         elif user_role == "Guest":
             menu_options = ["Home", "About"]
 
+        if (user_project == 'nova' and user_role in ['manager']) or (user_role == 'Admin'):
+            menu_options = ["Home", "Dashboard", "Fitbit Managment", "Alerts Configuration", "NOVA Qualtrics Managment", "Settings", "About"]
+
         selected_page = st.sidebar.radio("Navigation", menu_options)
         
         # Add Fitbit Device Management button for Admin and Manager roles
@@ -83,6 +86,8 @@ def main():
             display_dashboard(user_email, user_role, user_project)
         elif selected_page == "Alerts Configuration":
             alerts_config_page(user_email)
+        elif selected_page == "NOVA Qualtrics Managment":
+            show_alerts_management(user_email, user_role, user_project)
         elif selected_page == "Reports":
             st.title("Reports")
             st.info("Reports functionality will be implemented here")

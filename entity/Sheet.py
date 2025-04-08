@@ -112,7 +112,7 @@ class SheetFactory:
             'fitbit': FitbitSheet,
             'log': LogSheet,
             'bulldog': BulldogSheet,
-            'qualtrics_nova': QualtricsNovaSheet,
+            'EMA': QualtricsNovaSheet,
             'fitbit_alerts_config': FitbitAlertsConfig,
             'qualtrics_alerts_config': QualtricsAlertConfig,
             'late_nums': LateNums,
@@ -370,9 +370,9 @@ class GoogleSheetsAdapter:
                 sheet_name = 'bulldog'
             # White list of sheet names
             sheets_names = [
-                "user", "project", "fitbit", "log", "bulldog", "qualtrics_nova", "FitbitLog",
+                "user", "project", "fitbit", "log", "bulldog", "EMA", "FitbitLog",
                 "fitbit_alerts_config", "qualtrics_alerts_config", "late_nums", "suspicious_nums",
-                "qualtrics_nova", "student_fitbit", "chats"
+                "EMA", "student_fitbit", "chats"
             ]
             if sheet_name not in sheets_names:
                 continue
@@ -434,7 +434,7 @@ class GoogleSheetsAdapter:
             elif sheet_name == 'bulldog':
                 sheet_type = 'bulldog'
             elif 'qualtrics' in sheet_name.lower():
-                sheet_type = 'qualtrics_nova'
+                sheet_type = 'EMA'
             elif 'fitbitlog' in sheet_name.lower():
                 sheet_type = 'log'
             elif 'fitbit_alerts_config' in sheet_name.lower():
@@ -447,8 +447,10 @@ class GoogleSheetsAdapter:
                 sheet_type = 'suspicious_nums'
             elif 'student_fitbit' in sheet_name.lower():
                 sheet_type = 'student_fitbit'
+            elif 'EMA' in sheet_name.lower():
+                sheet_type = 'EMA'
             elif 'qualtrics_nova' in sheet_name.lower():
-                sheet_type = 'qualtrics_nova'
+                sheet_type = 'EMA'
             
             # Create and populate the sheet
             sheet = SheetFactory.create_sheet(sheet_type, sheet_name)
