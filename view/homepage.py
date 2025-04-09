@@ -102,6 +102,10 @@ def format_time_ago(timestamp):
     
     seconds = delta.total_seconds()
     
+    # Handle future dates
+    if seconds < 0:
+        return f"Future: {timestamp.strftime('%Y-%m-%d %H:%M')}"
+    
     if seconds < 60:
         return f"{int(seconds)}s ago"
     elif seconds < 3600:
@@ -130,6 +134,10 @@ def format_time_ago_concise(timestamp):
     
     seconds = delta.total_seconds()
     
+    # Handle future dates
+    if seconds < 0:
+        return f"Future"
+    
     if seconds < 60:
         return f"{int(seconds)}s"
     elif seconds < 3600:
@@ -156,6 +164,10 @@ def time_status_indicator(timestamp):
     now = pd.Timestamp.now()
     delta = now - timestamp
     hours = delta.total_seconds() / 3600
+    
+    # Handle future dates
+    if hours < 0:
+        return "⏳"  # Hourglass for future time
     
     if hours <= 3:
         return "✅"
@@ -352,9 +364,10 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
                     axis=1
                 )
             
+            # Format sleep duration to hours with 2 decimal places
             if 'lastSleepEndDateTime' in display_df.columns and 'lastSleepDur' in display_df.columns:
                 display_df['Sleep'] = display_df.apply(
-                    lambda row: f"{time_status_indicator(row['lastSleepEndDateTime'])} {row.get('lastSleepDur', 'N/A')} min", 
+                    lambda row: f"{time_status_indicator(row['lastSleepEndDateTime'])} {convert_min_to_hours(row.get('lastSleepDur', 'N/A'))}", 
                     axis=1
                 )
             
@@ -519,3 +532,19 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
             st.error(f"Error displaying Fitbit log data: {e}")
             # Add debugging info if needed
             st.exception(e)
+
+def convert_min_to_hours(minutes_value):
+    """Convert minutes to hours with 2 decimal places"""
+    try:
+        # Handle non-numeric values
+        if minutes_value == 'N/A' or minutes_value is None or pd.isna(minutes_value):
+            return 'N/A'
+        
+        # Convert to float and divide by 60
+        minutes = float(minutes_value)
+        hours = minutes / 60.0
+        
+        # Format with 2 decimal places
+        return f"{hours:.2f} h"
+    except (ValueError, TypeError):
+        return f"{minutes_value}"
