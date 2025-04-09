@@ -385,7 +385,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
             # Add is_active column using polars expressions
             fitbit_log_df = fitbit_log_df.with_columns([
                 (pl.col("project") + "-" + pl.col("watchName"))
-                .map_dict(active_mapping, default=True)
+                .map_elements(lambda key: active_mapping.get(key, True))
                 .alias("is_active")
             ])
 
