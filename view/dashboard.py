@@ -211,6 +211,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
     if selected_watch:
         watch_details = cached_get_watch_details(selected_watch)
         st.write(f"Selected Watch: {selected_watch}")
+        st.write(f"Project: {watch_details}")
         is_active = watch_details.get('isActive', False)
         active_status = "🟢 Active" if is_active else "🔴 Inactive"
         st.info(f"Watch Status: {active_status}")
