@@ -162,15 +162,9 @@ def time_status_indicator(timestamp):
             return "❓"
     
     now = pd.Timestamp.now().to_datetime64()
-
     timestamp = pd.to_datetime(timestamp).to_datetime64()
-
     delta = now - timestamp
-    # delta = now - timestamp
-    hours = delta / 3600
-    st.write(f"Debug - Time difference in hours: {hours}")
-    st.write(f"Debug - Current time: {now}")
-    st.write(f"Debug - Timestamp: {timestamp}")
+    hours = delta.total_seconds() / 3600
     # Handle future dates
     if hours < 0:
         return "⏳"  # Hourglass for future time
