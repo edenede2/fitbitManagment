@@ -669,8 +669,12 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                         # Clean and convert battery values
                         # Handle both string and numeric types for battery values
                         battery_df = watch_history.with_columns(
-                            pl.when(pl.col('lastBattaryVal').dtype == pl.Utf8)
-                            .then(pl.col('lastBattaryVal').str.replace('%', '').cast(pl.Float64, strict=False))
+                            pl.when(pl.col('lastBattaryVal').is_string())
+                            .then(
+                                pl.col('lastBattaryVal')
+                                .str.replace('%', '')
+                                .cast(pl.Float64, strict=False)
+                            )
                             .otherwise(pl.col('lastBattaryVal').cast(pl.Float64, strict=False))
                             .alias('battery_num')
                         ).select(['lastCheck', 'battery_num']).drop_nulls()
