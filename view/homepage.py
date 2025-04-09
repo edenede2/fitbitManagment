@@ -557,7 +557,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                 ])
             
             # Define columns for display
-            display_columns = ['watchName', 'project', 'Battery Level', 'Last Sync', 'Heart Rate', 'Sleep', 'Steps']
+            display_columns = ['watchName', 'is_active', 'project', 'Battery Level', 'Last Sync', 'Heart Rate', 'Sleep', 'Steps']
             display_columns = [col for col in display_columns if col in display_df.columns]
             
             # Use column config to define column formats
