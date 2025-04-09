@@ -207,6 +207,29 @@ def load_fitbit_sheet_data(spreadsheet):
         st.error(f"Error loading Fitbit sheet data: {e}")
         return {}
 
+def preprocess_dataframe_for_display(df):
+    """Clean dataframe to make it Arrow-compatible for display"""
+    processed_df = df.copy()
+    
+    # Identify columns that should be numeric
+    potential_numeric_cols = [
+        'lastBattaryVal', 'lastHRVal', 'lastStepsVal', 'lastSleepDur',
+        'CurrentFailedSync', 'TotalFailedSync', 'CurrentFailedHR', 'TotalFailedHR',
+        'CurrentFailedSleep', 'TotalFailedSleep', 'CurrentFailedSteps', 'TotalFailedSteps'
+    ]
+    
+    # Process each column that exists in the dataframe
+    for col in [c for c in potential_numeric_cols if c in processed_df.columns]:
+        # Convert empty strings to None first
+        processed_df[col] = processed_df[col].replace('', None)
+        # Then convert column to appropriate type
+        try:
+            processed_df[col] = pd.to_numeric(processed_df[col], errors='coerce')
+        except:
+            pass  # Keep as is if conversion fails
+    
+    return processed_df
+
 def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
     """Display the Fitbit Log table with data from the FitbitLog sheet"""
     st.subheader("Fitbit Watch Status")
@@ -483,15 +506,22 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
                 # Format datetime columns for display
                 for col in ['lastCheck', 'lastSynced']:
                     if col in detail_df.columns:
-                        if pd.api.types.is_datetime64_any_dtype(detail_df[col]):
-                            detail_df[col] = detail_df[col].dt.strftime('%Y-%m-%dT%H:%M:%S.%f')
+                        detail_df[col] = detail_df[col].dt.strftime('%Y-%m-%d %H:%M')
+                
+                # Clean dataframe for Arrow compatibility
+                detail_df = preprocess_dataframe_for_display(detail_df)
                 
                 # Display as dataframe with student assignment highlighting
                 st.dataframe(detail_df, use_container_width=True)
                 
                 # Show complete raw data from the sheet
                 st.subheader("Complete Raw Data")
-                st.dataframe(raw_df, use_container_width=True)
+                
+                # Clean raw dataframe for Arrow compatibility
+                clean_raw_df = preprocess_dataframe_for_display(raw_df)
+                
+                # Display the processed raw data
+                st.dataframe(clean_raw_df, use_container_width=True)
                 
                 # Add download button for the raw data
                 csv = raw_df.to_csv(index=False).encode('utf-8')
