@@ -203,7 +203,7 @@ def time_status_indicator(timestamp):
     except Exception:
         return "❓"  # Return question mark for any conversion failures
 
-def load_fitbit_sheet_data(spreadsheet):
+def load_fitbit_sheet_data(spreadsheet:Spreadsheet) -> Dict[str, Any]:
     """Load data from the Fitbit sheet to identify watch assignments"""
     try:
         # Get the fitbit sheet
@@ -268,7 +268,7 @@ def preprocess_dataframe_for_display(df):
     
     return processed_df
 
-def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
+def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: Spreadsheet) -> None:
     """Display the Fitbit Log table with data from the FitbitLog sheet"""
     st.subheader("Fitbit Watch Status")
     
@@ -280,15 +280,16 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
             # Get watch assignment info
             watch_mapping = load_fitbit_sheet_data(spreadsheet)
             
-            if not fitbit_log_sheet.data:
+            fitbit_log_df = fitbit_log_sheet.to_dataframe(engine="polars")
+            if not fitbit_log_df.is_empty():
                 st.warning("No Fitbit log data available.")
                 return
             
             # Convert to DataFrame
-            df = fitbit_log_sheet.to_dataframe()
+            # df = fitbit_log_sheet.to_dataframe()
             
             # Store original raw data before processing for display in expander
-            raw_df = df.copy()
+            raw_df = fitbit_log_df.clone()
             
             # Add debugging info for lastSynced column
             # st.write("Debug - Original date formats in lastSynced column:")
@@ -308,106 +309,136 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
                             'lastSleepStartDateTime', 'lastSleepEndDateTime', 'lastSteps']
             
             for col in datetime_cols:
-                if col in df.columns:
+                if col in fitbit_log_df.columns:
                     # First try the primary format which we know is correct
                     try:
                         with warnings.catch_warnings():
                             warnings.simplefilter("ignore")
-                            df[col] = pd.to_datetime(df[col], format=primary_format, errors='coerce')
+                            # df[col] = pd.to_datetime(df[col], format=primary_format, errors='coerce')
+                            fitbit_log_df = fitbit_log_df.with_columns(
+                                pl.col(col).cast(pl.DateTime, strict=False)
+                            )
                     except Exception:
                         pass
                     
                     # If we still have NaN values, try the fallback formats
-                    if df[col].isna().any():
-                        for fmt in fallback_formats:
-                            try:
-                                # Create a temporary series for the NaN values
-                                mask = df[col].isna()
-                                if mask.any():
-                                    temp = pd.to_datetime(df.loc[mask, col], format=fmt, errors='coerce')
-                                    # Update only the rows that were successfully parsed
-                                    df.loc[mask & ~temp.isna(), col] = temp.dropna()
-                            except Exception:
-                                continue
+                    # if df[col].isna().any():
+                    # if fitbit_log_df[col].isna().any():
+                    #     for fmt in fallback_formats:
+                    #         try:
+                    #             # Create a temporary series for the NaN values
+                    #             mask = df[col].isna()
+                    #             if mask.any():
+                    #                 temp = pd.to_datetime(df.loc[mask, col], format=fmt, errors='coerce')
+                    #                 # Update only the rows that were successfully parsed
+                    #                 df.loc[mask & ~temp.isna(), col] = temp.dropna()
+                    #         except Exception:
+                    #             continue
                     
                     # As a last resort, try the flexible parser for any remaining NaNs
-                    if df[col].isna().any():
-                        try:
-                            mask = df[col].isna()
-                            with warnings.catch_warnings():
-                                warnings.simplefilter("ignore")
-                                temp = pd.to_datetime(df.loc[mask, col], errors='coerce')
-                                df.loc[mask & ~temp.isna(), col] = temp.dropna()
-                        except Exception as e:
-                            st.warning(f"Error parsing remaining {col} values: {str(e)}")
+                    # if df[col].isna().any():
+                    #     try:
+                    #         mask = df[col].isna()
+                    #         with warnings.catch_warnings():
+                    #             warnings.simplefilter("ignore")
+                    #             temp = pd.to_datetime(df.loc[mask, col], errors='coerce')
+                    #             df.loc[mask & ~temp.isna(), col] = temp.dropna()
+                    #     except Exception as e:
+                    #         st.warning(f"Error parsing remaining {col} values: {str(e)}")
             
             # After parsing, check if lastSynced column has valid dates
-            if 'lastSynced' in df.columns:
-                valid_dates = df['lastSynced'].notna().sum()
-                total_rows = len(df)
-                # st.write(f"Successfully parsed {valid_dates} out of {total_rows} dates in lastSynced column")
+            # if 'lastSynced' in fitbit_log_df.columns:
+            #     valid_dates = df['lastSynced'].notna().sum()
+            #     valid_dates = fitbit_log_df
+            #     total_rows = len(df)
+            #     # st.write(f"Successfully parsed {valid_dates} out of {total_rows} dates in lastSynced column")
                 
-                # If we have very few valid dates, try the original string values for display
-                if valid_dates < total_rows * 0.5:  # If less than 50% parsed successfully
-                    st.warning("Poor date parsing rate. Using original string values for lastSynced.")
-                    df['lastSynced'] = raw_df['lastSynced']  # Restore original values
+            #     # If we have very few valid dates, try the original string values for display
+            #     if valid_dates < total_rows * 0.5:  # If less than 50% parsed successfully
+            #         st.warning("Poor date parsing rate. Using original string values for lastSynced.")
+            #         df['lastSynced'] = raw_df['lastSynced']  # Restore original values
             
             # Sort by lastCheck (most recent first)
-            if 'lastCheck' in df.columns:
-                df = df.sort_values('lastCheck', ascending=False)
+            if 'lastCheck' in fitbit_log_df.columns:
+                # df = df.sort_values('lastCheck', ascending=False)
+                fitbit_log_df = fitbit_log_df.sort_values('lastCheck', ascending=False)
             
             # Add student assignment and watch status information
-            df['assigned_student'] = df.apply(
-                lambda row: watch_mapping.get(f"{row.get('project')}-{row.get('watchName')}", {}).get('student', ''),
-                axis=1
+            # Create a mapping dictionary for assigned students
+            student_mapping = {key: value.get('student', '') for key, value in watch_mapping.items()}
+
+            # Add assigned_student column using polars expressions
+            fitbit_log_df = fitbit_log_df.with_columns([
+                (pl.col("project") + "-" + pl.col("watchName"))
+                .map_dict(student_mapping, default='')
+                .alias("assigned_student")
+            ])
+            fitbit_log_df = fitbit_log_df.with_columns(
+                pl.col('assigned_student').cast(pl.Utf8)
             )
+
+
             
-            df['is_active'] = df.apply(
-                lambda row: watch_mapping.get(f"{row.get('project')}-{row.get('watchName')}", {}).get('active', True),
-                axis=1
+            # Create a mapping dictionary for active status
+            active_mapping = {key: value.get('active', True) for key, value in watch_mapping.items()}
+
+            # Add is_active column using polars expressions
+            fitbit_log_df = fitbit_log_df.with_columns([
+                (pl.col("project") + "-" + pl.col("watchName"))
+                .map_dict(active_mapping, default=True)
+                .alias("is_active")
+            ])
+
+            # Ensure the column is of boolean type
+            fitbit_log_df = fitbit_log_df.with_columns(
+                pl.col("is_active").cast(pl.Boolean)
             )
             
             # Filter based on user role and project
             if user_role.lower() == "admin":
                 # Admin sees everything
-                filtered_df = df
+                filtered_df = fitbit_log_df
             elif user_role.lower() == "manager":
                 # Manager sees watches from their project
-                filtered_df = df[df['project'] == user_project]
+                filtered_df = fitbit_log_df.filter(pl.col('project') == user_project)
             else:
                 # Student sees watches from their project, highlighting their own
-                filtered_df = df[df['project'] == user_project]
+                filtered_df = fitbit_log_df.filter(pl.col('project') == user_project)
             
             # Allow filtering by project for Admin
             if user_role.lower() == "admin":
-                projects = sorted(df['project'].unique())
+                projects = sorted(fitbit_log_df['project'].unique())
                 selected_projects = st.multiselect("Filter by Project:", projects, default=projects)
                 if selected_projects:
-                    filtered_df = filtered_df[filtered_df['project'].isin(selected_projects)]
+                    filtered_df = filtered_df.filter(pl.col('project').is_in(selected_projects))
             
             # Get the latest record for each watch
-            latest_df = filtered_df.sort_values('lastCheck', ascending=False).drop_duplicates('watchName')
+            latest_df = filtered_df.sort("lastCheck", descending=True).unique(subset=["watchName"], keep="first")
             
             # Display summary metrics
             col1, col2, col3, col4 = st.columns(4)
             with col1:
                 st.metric("Total Watches", len(latest_df))
             with col2:
-                st.metric("Active Watches", len(latest_df[latest_df['is_active'] == True]))
+                st.metric("Active Watches", len(latest_df.filter(pl.col('is_active') == True)))
             with col3:
-                low_battery = len(latest_df[latest_df['lastBattaryVal'].astype(str).str.replace('%', '').astype(float, errors='ignore') < 20])
+                low_battery = len(latest_df.filter(
+                    pl.col('lastBattaryVal').cast(pl.Utf8).str.replace('%', '').cast(pl.Float64, strict=False) < 20
+                ))
                 st.metric("Low Battery", f"{low_battery}")
             with col4:
                 # Count watches not synced in last 24 hours
-                not_synced = latest_df[pd.to_datetime(latest_df['lastSynced'], errors='coerce') < (pd.Timestamp.now() - pd.Timedelta(hours=24))].shape[0]
+                not_synced = latest_df.filter(
+                    pl.col('lastSynced').cast(pl.Datetime, strict=False) < (pl.now() - timedelta(hours=24))
+                ).height
                 st.metric("Not Synced (24h)", f"{not_synced}")
             
             # For students, show their assigned watch first
             if user_role.lower() == "student":
-                my_watches = latest_df[latest_df['assigned_student'] == user_email]
-                if not my_watches.empty:
+                my_watches = latest_df.filter(pl.col('assigned_student') == user_email)
+                if not my_watches.is_empty():
                     st.subheader("My Assigned Watch")
-                    for _, row in my_watches.iterrows():
+                    for _, row in my_watches.iter_rows():
                         col1, col2 = st.columns([1, 3])
                         with col1:
                             st.markdown(f"### {row['watchName']}")
@@ -438,14 +469,15 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
             st.subheader("All Watches Overview")
             
             # Create a copy of the dataframe for display
-            display_df = latest_df.copy()
+            display_df = latest_df.clone()
             
             # Format columns for display with concise time
             if 'lastSynced' in display_df.columns:
-                display_df['Last Sync'] = display_df.apply(
-                    lambda row: f"{time_status_indicator(row['lastSynced'])} {format_time_ago_concise(row['lastSynced'])}", 
-                    axis=1
-                )
+                display_df = display_df.with_columns([
+                    pl.col('lastSynced').map_elements(
+                        lambda x: f"{time_status_indicator(x)} {format_time_ago_concise(x)}"
+                    ).alias('Last Sync')
+                ])
             
             def safe_int_convert(val):
                 """Safely convert a value to int with error handling"""
@@ -458,52 +490,70 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
 
             # Fix heart rate display by properly handling NaN values and empty strings
             if 'lastHR' in display_df.columns and 'lastHRVal' in display_df.columns:
-                display_df['Heart Rate'] = display_df.apply(
-                    lambda row: f"{time_status_indicator(row['lastHR'])} " + 
-                               (f"{safe_int_convert(row.get('lastHRVal'))} bpm" 
-                                if not pd.isna(row.get('lastHRVal')) and row.get('lastHRVal') != '' 
-                                else "N/A"), 
-                    axis=1
-                )
+                display_df = display_df.with_columns([
+                    pl.struct(['lastHR', 'lastHRVal'])
+                    .map_elements(lambda row: (
+                        f"{time_status_indicator(row['lastHR'])} " + 
+                        (f"{safe_int_convert(row['lastHRVal'])} bpm" 
+                         if row['lastHRVal'] is not None and row['lastHRVal'] != '' 
+                         else "N/A")
+                    ))
+                    .alias('Heart Rate')
+                ])
             
             # Format sleep duration to hours with 2 decimal places
             if 'lastSleepStartDateTime' in display_df.columns and 'lastSleepEndDateTime' in display_df.columns:
                 # Calculate sleep duration directly from the timestamps
-                display_df['calculated_sleep_dur'] = display_df.apply(
-                    lambda row: calculate_sleep_duration(row.get('lastSleepStartDateTime'), row.get('lastSleepEndDateTime')),
-                    axis=1
-                )
+                display_df = display_df.with_columns([
+                    pl.struct(['lastSleepStartDateTime', 'lastSleepEndDateTime'])
+                    .map_elements(lambda row: calculate_sleep_duration(row['lastSleepStartDateTime'], row['lastSleepEndDateTime']))
+                    .alias('calculated_sleep_dur')
+                ])
                 
                 # Use calculated duration when available, fall back to stored duration
-                display_df['Sleep'] = display_df.apply(
-                    lambda row: f"{time_status_indicator(row['lastSleepEndDateTime'])} " + 
-                                (convert_min_to_hours(row.get('calculated_sleep_dur')) 
-                                 if not pd.isna(row.get('calculated_sleep_dur')) 
-                                 else convert_min_to_hours(row.get('lastSleepDur'))),
-                    axis=1
-                )
+                display_df = display_df.with_columns([
+                    pl.struct(['lastSleepEndDateTime', 'calculated_sleep_dur', 'lastSleepDur'])
+                    .map_elements(lambda row: 
+                        f"{time_status_indicator(row['lastSleepEndDateTime'])} " + 
+                        (convert_min_to_hours(row['calculated_sleep_dur']) 
+                         if row['calculated_sleep_dur'] is not None 
+                         else convert_min_to_hours(row['lastSleepDur']))
+                    )
+                    .alias('Sleep')
+                ])
             elif 'lastSleepEndDateTime' in display_df.columns and 'lastSleepDur' in display_df.columns:
-                display_df['Sleep'] = display_df.apply(
-                    lambda row: f"{time_status_indicator(row['lastSleepEndDateTime'])} {convert_min_to_hours(row.get('lastSleepDur'))}", 
-                    axis=1
-                )
+                display_df = display_df.with_columns([
+                    pl.struct(['lastSleepEndDateTime', 'lastSleepDur'])
+                    .map_elements(lambda row: 
+                        f"{time_status_indicator(row['lastSleepEndDateTime'])} {convert_min_to_hours(row['lastSleepDur'])}"
+                    )
+                    .alias('Sleep')
+                ])
             
             # Ensure steps are properly formatted with safe integer conversion
             if 'lastSteps' in display_df.columns and 'lastStepsVal' in display_df.columns:
-                display_df['Steps'] = display_df.apply(
-                    lambda row: f"{time_status_indicator(row.get('lastSteps'))} " + 
-                               (f"{safe_int_convert(row.get('lastStepsVal'))}" 
-                                if not pd.isna(row.get('lastStepsVal')) and row.get('lastStepsVal') != '' 
-                                else "N/A"), 
-                    axis=1
-                )
+                display_df = display_df.with_columns([
+                    pl.struct(['lastSteps', 'lastStepsVal'])
+                    .map_elements(lambda row: 
+                        f"{time_status_indicator(row['lastSteps'])} " + 
+                        (f"{safe_int_convert(row['lastStepsVal'])}" 
+                         if row['lastStepsVal'] is not None and row['lastStepsVal'] != '' 
+                         else "N/A")
+                    )
+                    .alias('Steps')
+                ])
             
             # Prepare battery column for ProgressColumn with better error handling
             if 'lastBattaryVal' in display_df.columns:
                 # Convert to numeric values and handle NaN and empty strings
-                display_df['Battery Level'] = display_df['lastBattaryVal'].apply(
-                    lambda x: 0 if pd.isna(x) or x == '' or not x else float(x) / 100.0 
-                )
+                display_df = display_df.with_columns([
+                    pl.col('lastBattaryVal')
+                    .map_elements(lambda x: 
+                        0 if x is None or x == '' or not x 
+                        else float(x) / 100.0
+                    )
+                    .alias('Battery Level')
+                ])
             
             # Define columns for display
             display_columns = ['watchName', 'project', 'Battery Level', 'Last Sync', 'Heart Rate', 'Sleep', 'Steps']
@@ -513,6 +563,11 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
             column_config = {
                 "watchName": "Watch Name",
                 "project": "Project",
+                "is_active": st.column_config.CheckboxColumn(
+                    "Active",
+                    help="Is the watch currently assigned to a student?",
+                    disabled=True
+                ),
                 "Battery Level": st.column_config.ProgressColumn(
                     "Battery",
                     help="Battery level of the watch",
@@ -528,7 +583,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
             
             # Highlight rows where the watch is assigned to current user
             if user_role.lower() == "student":
-                assigned_watches = display_df[display_df['assigned_student'] == user_email]['watchName'].tolist()
+                assigned_watches = display_df.filter(pl.col('assigned_student') == user_email).select('watchName').to_series().to_list()
             else:
                 assigned_watches = []
             
@@ -554,43 +609,31 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
                 
                 # Select columns that actually exist in the dataframe
                 available_cols = [col for col in detail_cols if col in latest_df.columns]
-                detail_df = latest_df[available_cols].copy()
+                detail_df = latest_df.select(available_cols).clone()
                 
                 # Format datetime columns for display
                 for col in ['lastCheck', 'lastSynced']:
                     if col in detail_df.columns:
                         try:
-                            # Check if column is datetime type
-                            if pd.api.types.is_datetime64_any_dtype(detail_df[col]):
-                                detail_df[col] = detail_df[col].dt.strftime('%Y-%m-%d %H:%M')
-                            else:
-                                # Try to convert to datetime first
-                                detail_df[col] = pd.to_datetime(detail_df[col], errors='coerce')
-                                # Then format if conversion succeeded
-                                mask = ~detail_df[col].isna()
-                                if mask.any():
-                                    detail_df.loc[mask, col] = detail_df.loc[mask, col].dt.strftime('%Y-%m-%d %H:%M')
+                            # Format datetime columns to string representation
+                            detail_df = detail_df.with_columns(
+                                pl.col(col).dt.strftime("%Y-%m-%d %H:%M").alias(col)
+                            )
                         except Exception as e:
                             # If formatting fails, keep as is
                             st.warning(f"Could not format {col} as datetime: {str(e)}")
                 
-                # Clean dataframe for Arrow compatibility
-                detail_df = preprocess_dataframe_for_display(detail_df)
-                
-                # Display as dataframe with student assignment highlighting
+                # Display as dataframe
                 st.dataframe(detail_df, use_container_width=True)
                 
                 # Show complete raw data from the sheet
                 st.subheader("Complete Raw Data")
                 
-                # Clean raw dataframe for Arrow compatibility
-                clean_raw_df = preprocess_dataframe_for_display(raw_df)
-                
-                # Display the processed raw data
-                st.dataframe(clean_raw_df, use_container_width=True)
+                # Display the raw data
+                st.dataframe(raw_df, use_container_width=True)
                 
                 # Add download button for the raw data
-                csv = raw_df.to_csv(index=False).encode('utf-8')
+                csv = raw_df.write_csv().encode('utf-8')
                 st.download_button(
                     label="Download Raw Data as CSV",
                     data=csv,
@@ -602,31 +645,34 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
             st.subheader("Visualizations")
             
             # Let user select a watch to view historical data
-            watch_options = sorted(filtered_df['watchName'].unique())
+            watch_options = sorted(filtered_df['watchName'].unique().to_list())
             if watch_options:
                 selected_watch = st.selectbox("Select Watch for History:", watch_options)
                 
                 # Get historical data for the selected watch - get all records, not just latest
-                watch_history = filtered_df[filtered_df['watchName'] == selected_watch].sort_values('lastCheck')
+                watch_history = filtered_df.filter(pl.col('watchName') == selected_watch).sort('lastCheck')
                 
                 # Add debug info to help troubleshoot visualization issues
-                st.write(f"Found {len(watch_history)} historical records for {selected_watch}")
+                st.write(f"Found {watch_history.height} historical records for {selected_watch}")
                 
-                if not watch_history.empty:
+                if not watch_history.is_empty():
                     # Create tabs for different metrics
                     tab1, tab2, tab3, tab4 = st.tabs(["Battery", "Heart Rate", "Steps", "Sleep"])
                     
                     with tab1:
                         # Clean and convert battery values
-                        watch_history['battery_num'] = pd.to_numeric(watch_history['lastBattaryVal'].astype(str).replace('%', '', regex=True), errors='coerce')
-                        battery_df = watch_history[['lastCheck', 'battery_num']].dropna()
+                        battery_df = watch_history.with_columns(
+                            pl.col('lastBattaryVal').str.replace('%', '').cast(pl.Float64, strict=False).alias('battery_num')
+                        ).select(['lastCheck', 'battery_num']).drop_nulls()
                         
-                        st.write(f"Battery data points: {len(battery_df)}")
-                        if not battery_df.empty:
+                        st.write(f"Battery data points: {battery_df.height}")
+                        if not battery_df.is_empty():
                             # Ensure data is properly sorted by time
-                            battery_df = battery_df.sort_values('lastCheck')
+                            battery_df = battery_df.sort('lastCheck')
                             
-                            fig = px.line(battery_df, x='lastCheck', y='battery_num', 
+                            # Convert to pandas for plotly compatibility
+                            battery_pd_df = battery_df.to_pandas()
+                            fig = px.line(battery_pd_df, x='lastCheck', y='battery_num', 
                                          title=f"Battery History - {selected_watch}",
                                          labels={'lastCheck': 'Time', 'battery_num': 'Battery Level (%)'},
                                          range_y=[0, 100])
@@ -636,15 +682,18 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
                     
                     with tab2:
                         # Convert HR values to numeric with better handling
-                        watch_history['hr_num'] = pd.to_numeric(watch_history['lastHRVal'], errors='coerce')
-                        hr_df = watch_history[['lastCheck', 'hr_num']].dropna()
+                        hr_df = watch_history.with_columns(
+                            pl.col('lastHRVal').cast(pl.Float64, strict=False).alias('hr_num')
+                        ).select(['lastCheck', 'hr_num']).drop_nulls()
                         
-                        st.write(f"Heart rate data points: {len(hr_df)}")
-                        if not hr_df.empty:
+                        st.write(f"Heart rate data points: {hr_df.height}")
+                        if not hr_df.is_empty():
                             # Ensure data is properly sorted by time
-                            hr_df = hr_df.sort_values('lastCheck')
+                            hr_df = hr_df.sort('lastCheck')
                             
-                            fig = px.line(hr_df, x='lastCheck', y='hr_num', 
+                            # Convert to pandas for plotly compatibility
+                            hr_pd_df = hr_df.to_pandas()
+                            fig = px.line(hr_pd_df, x='lastCheck', y='hr_num', 
                                          title=f"Heart Rate History - {selected_watch}",
                                          labels={'lastCheck': 'Time', 'hr_num': 'Heart Rate (bpm)'})
                             st.plotly_chart(fig, use_container_width=True)
@@ -653,15 +702,18 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
                     
                     with tab3:
                         # Clean and convert steps values
-                        watch_history['steps_num'] = pd.to_numeric(watch_history['lastStepsVal'], errors='coerce')
-                        steps_df = watch_history[['lastCheck', 'steps_num']].dropna()
+                        steps_df = watch_history.with_columns(
+                            pl.col('lastStepsVal').cast(pl.Float64, strict=False).alias('steps_num')
+                        ).select(['lastCheck', 'steps_num']).drop_nulls()
                         
-                        st.write(f"Steps data points: {len(steps_df)}")
-                        if not steps_df.empty:
+                        st.write(f"Steps data points: {steps_df.height}")
+                        if not steps_df.is_empty():
                             # Ensure data is properly sorted by time
-                            steps_df = steps_df.sort_values('lastCheck')
+                            steps_df = steps_df.sort('lastCheck')
                             
-                            fig = px.bar(steps_df, x='lastCheck', y='steps_num', 
+                            # Convert to pandas for plotly compatibility
+                            steps_pd_df = steps_df.to_pandas()
+                            fig = px.bar(steps_pd_df, x='lastCheck', y='steps_num', 
                                         title=f"Steps History - {selected_watch}",
                                         labels={'lastCheck': 'Time', 'steps_num': 'Steps'})
                             st.plotly_chart(fig, use_container_width=True)
@@ -670,19 +722,19 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
                     
                     with tab4:
                         # Try both the calculated sleep duration and the stored one
-                        if 'calculated_sleep_dur' in watch_history.columns:
-                            watch_history['sleep_min'] = pd.to_numeric(watch_history['calculated_sleep_dur'], errors='coerce')
-                        else:
-                            watch_history['sleep_min'] = pd.to_numeric(watch_history['lastSleepDur'], errors='coerce')
+                        sleep_col = 'calculated_sleep_dur' if 'calculated_sleep_dur' in watch_history.columns else 'lastSleepDur'
+                        sleep_df = watch_history.with_columns(
+                            pl.col(sleep_col).cast(pl.Float64, strict=False).alias('sleep_min')
+                        ).select(['lastCheck', 'sleep_min']).drop_nulls()
                         
-                        sleep_df = watch_history[['lastCheck', 'sleep_min']].dropna()
-                        
-                        st.write(f"Sleep data points: {len(sleep_df)}")
-                        if not sleep_df.empty:
+                        st.write(f"Sleep data points: {sleep_df.height}")
+                        if not sleep_df.is_empty():
                             # Ensure data is properly sorted by time
-                            sleep_df = sleep_df.sort_values('lastCheck')
+                            sleep_df = sleep_df.sort('lastCheck')
                             
-                            fig = px.bar(sleep_df, x='lastCheck', y='sleep_min', 
+                            # Convert to pandas for plotly compatibility
+                            sleep_pd_df = sleep_df.to_pandas()
+                            fig = px.bar(sleep_pd_df, x='lastCheck', y='sleep_min', 
                                         title=f"Sleep Duration History - {selected_watch}",
                                         labels={'lastCheck': 'Date', 'sleep_min': 'Sleep Duration (min)'})
                             st.plotly_chart(fig, use_container_width=True)
@@ -690,9 +742,9 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
                             st.info("No sleep data available for this watch")
                     
                     # If all visualizations are empty, show the raw data
-                    if (len(battery_df) + len(hr_df) + len(steps_df) + len(sleep_df)) == 0:
+                    if (battery_df.height + hr_df.height + steps_df.height + sleep_df.height) == 0:
                         st.warning("No visualization data available. Here's the raw data for troubleshooting:")
-                        st.dataframe(watch_history[['lastCheck', 'lastBattaryVal', 'lastHRVal', 'lastStepsVal', 'lastSleepDur']].head(10))
+                        st.dataframe(watch_history.select(['lastCheck', 'lastBattaryVal', 'lastHRVal', 'lastStepsVal', 'lastSleepDur']).head(10))
                 else:
                     st.info(f"No historical data available for {selected_watch}")
             else:
