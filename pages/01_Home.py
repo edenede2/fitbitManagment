@@ -13,7 +13,7 @@ st.set_page_config(
 if 'user_email' not in st.session_state:
     st.warning("Please log in from the main page to access this feature.")
     st.stop()
-user_role = st.session_state.get('user_role', 'Guest')
+# user_role = st.session_state.get('user_role', 'Guest')
 
 # if user_role == 'Guest':
 #     congrats()
