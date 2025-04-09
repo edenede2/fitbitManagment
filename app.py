@@ -6,14 +6,14 @@ import time
 from controllers.auth_controller import AuthenticationController
 from controllers.user_controller import UserController
 from controllers.project_controller import ProjectController
-from view.alerts_config import alerts_config_page
+from pages.alerts_config import alerts_config_page
 # Import views
-from view.dashboard import display_dashboard
-from view.homepage import display_homepage
+from pages.dashboard import display_dashboard
+from pages.homepage import display_homepage
 # from view.alertConfig import display_alerts
 
 # Import the fitbit management functionality
-from view.fitbit_management import load_fitbit_datatable
+from pages.fitbit_management import load_fitbit_datatable
 from model.alerts_management import show_alerts_management
 # Set up app configuration
 st.set_page_config(
@@ -87,7 +87,7 @@ def main():
             elif selected_page == "Alerts Configuration":
                 alerts_config_page(user_email, spreadsheet)
             elif selected_page == "NOVA Qualtrics Managment":
-                from view.nova_qualtrics_management import nova_qualtrics_management
+                from pages.nova_qualtrics_management import nova_qualtrics_management
                 nova_qualtrics_management(user_email, user_role, user_project, spreadsheet)
             elif selected_page == "Reports":
                 st.title("Reports")
