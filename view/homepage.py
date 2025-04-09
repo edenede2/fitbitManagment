@@ -127,18 +127,23 @@ def format_time_ago_concise(timestamp):
     # If timestamp is a string, try to parse it
     if isinstance(timestamp, str):
         try:
-            timestamp = pd.to_datetime(timestamp)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                timestamp = pd.to_datetime(timestamp)
         except:
             return timestamp
     
+    # Check for future dates by year first
     now = pd.Timestamp.now()
-    delta = now - timestamp
+    if timestamp.year > now.year:
+        return f"Future({timestamp.strftime('%Y-%m-%d')})"
     
+    delta = now - timestamp
     seconds = delta.total_seconds()
     
-    # Handle future dates
+    # Handle near-future dates (same year but future time)
     if seconds < 0:
-        return f"Future"
+        return f"Soon({timestamp.strftime('%H:%M')})"
     
     if seconds < 60:
         return f"{int(seconds)}s"
@@ -438,10 +443,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
             # Format columns for display with concise time
             if 'lastSynced' in display_df.columns:
                 display_df['Last Sync'] = display_df.apply(
-                    lambda row: f"{time_status_indicator(row['lastSynced'])} " + 
-                    (f"Future: {pd.to_datetime(row['lastSynced']).strftime('%Y-%m-%d')}" 
-                     if pd.to_datetime(row['lastSynced']).year > datetime.now().year 
-                     else format_time_ago_concise(row['lastSynced'])),
+                    lambda row: f"{time_status_indicator(row['lastSynced'])} {format_time_ago_concise(row['lastSynced'])}", 
                     axis=1
                 )
             
@@ -604,19 +606,26 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
             if watch_options:
                 selected_watch = st.selectbox("Select Watch for History:", watch_options)
                 
-                # Get historical data for the selected watch
+                # Get historical data for the selected watch - get all records, not just latest
                 watch_history = filtered_df[filtered_df['watchName'] == selected_watch].sort_values('lastCheck')
+                
+                # Add debug info to help troubleshoot visualization issues
+                st.write(f"Found {len(watch_history)} historical records for {selected_watch}")
                 
                 if not watch_history.empty:
                     # Create tabs for different metrics
                     tab1, tab2, tab3, tab4 = st.tabs(["Battery", "Heart Rate", "Steps", "Sleep"])
                     
                     with tab1:
-                        # Convert battery values to numeric
-                        watch_history['battery_num'] = pd.to_numeric(watch_history['lastBattaryVal'], errors='coerce')
+                        # Clean and convert battery values
+                        watch_history['battery_num'] = pd.to_numeric(watch_history['lastBattaryVal'].astype(str).replace('%', '', regex=True), errors='coerce')
                         battery_df = watch_history[['lastCheck', 'battery_num']].dropna()
                         
+                        st.write(f"Battery data points: {len(battery_df)}")
                         if not battery_df.empty:
+                            # Ensure data is properly sorted by time
+                            battery_df = battery_df.sort_values('lastCheck')
+                            
                             fig = px.line(battery_df, x='lastCheck', y='battery_num', 
                                          title=f"Battery History - {selected_watch}",
                                          labels={'lastCheck': 'Time', 'battery_num': 'Battery Level (%)'},
@@ -626,11 +635,15 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
                             st.info("No battery data available for this watch")
                     
                     with tab2:
-                        # Convert HR values to numeric
+                        # Convert HR values to numeric with better handling
                         watch_history['hr_num'] = pd.to_numeric(watch_history['lastHRVal'], errors='coerce')
                         hr_df = watch_history[['lastCheck', 'hr_num']].dropna()
                         
+                        st.write(f"Heart rate data points: {len(hr_df)}")
                         if not hr_df.empty:
+                            # Ensure data is properly sorted by time
+                            hr_df = hr_df.sort_values('lastCheck')
+                            
                             fig = px.line(hr_df, x='lastCheck', y='hr_num', 
                                          title=f"Heart Rate History - {selected_watch}",
                                          labels={'lastCheck': 'Time', 'hr_num': 'Heart Rate (bpm)'})
@@ -639,11 +652,15 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
                             st.info("No heart rate data available for this watch")
                     
                     with tab3:
-                        # Convert steps values to numeric
+                        # Clean and convert steps values
                         watch_history['steps_num'] = pd.to_numeric(watch_history['lastStepsVal'], errors='coerce')
                         steps_df = watch_history[['lastCheck', 'steps_num']].dropna()
                         
+                        st.write(f"Steps data points: {len(steps_df)}")
                         if not steps_df.empty:
+                            # Ensure data is properly sorted by time
+                            steps_df = steps_df.sort_values('lastCheck')
+                            
                             fig = px.bar(steps_df, x='lastCheck', y='steps_num', 
                                         title=f"Steps History - {selected_watch}",
                                         labels={'lastCheck': 'Time', 'steps_num': 'Steps'})
@@ -652,17 +669,30 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
                             st.info("No steps data available for this watch")
                     
                     with tab4:
-                        # Convert sleep duration to numeric
-                        watch_history['sleep_min'] = pd.to_numeric(watch_history['lastSleepDur'], errors='coerce')
+                        # Try both the calculated sleep duration and the stored one
+                        if 'calculated_sleep_dur' in watch_history.columns:
+                            watch_history['sleep_min'] = pd.to_numeric(watch_history['calculated_sleep_dur'], errors='coerce')
+                        else:
+                            watch_history['sleep_min'] = pd.to_numeric(watch_history['lastSleepDur'], errors='coerce')
+                        
                         sleep_df = watch_history[['lastCheck', 'sleep_min']].dropna()
                         
+                        st.write(f"Sleep data points: {len(sleep_df)}")
                         if not sleep_df.empty:
+                            # Ensure data is properly sorted by time
+                            sleep_df = sleep_df.sort_values('lastCheck')
+                            
                             fig = px.bar(sleep_df, x='lastCheck', y='sleep_min', 
                                         title=f"Sleep Duration History - {selected_watch}",
                                         labels={'lastCheck': 'Date', 'sleep_min': 'Sleep Duration (min)'})
                             st.plotly_chart(fig, use_container_width=True)
                         else:
                             st.info("No sleep data available for this watch")
+                    
+                    # If all visualizations are empty, show the raw data
+                    if (len(battery_df) + len(hr_df) + len(steps_df) + len(sleep_df)) == 0:
+                        st.warning("No visualization data available. Here's the raw data for troubleshooting:")
+                        st.dataframe(watch_history[['lastCheck', 'lastBattaryVal', 'lastHRVal', 'lastStepsVal', 'lastSleepDur']].head(10))
                 else:
                     st.info(f"No historical data available for {selected_watch}")
             else:
