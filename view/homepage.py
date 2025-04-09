@@ -19,94 +19,12 @@ import plotly.graph_objects as go
 import re
 # from streamlit_elements import elements, dashboard, mui, html
 
-# Add functions for caching processed data (not spreadsheet objects)
-@st.cache_data(ttl=300)
-def process_fitbit_log_data(log_data, user_email, user_role, user_project):
-    """Process and cache the fitbit log data with user context in the cache key"""
-    if not log_data:
-        return None
-    
-    # Convert to DataFrame
-    df = pd.DataFrame(log_data)
-    
-    # Convert datetime columns with specific format to avoid warnings
-    datetime_cols = ['lastCheck', 'lastSynced', 'lastBattary', 'lastHR', 
-                    'lastSleepStartDateTime', 'lastSleepEndDateTime', 'lastSteps']
-    
-    # Try common date formats with explicit format specification
-    for col in datetime_cols:
-        if col in df.columns:
-            # First try ISO format which is common in APIs and databases
-            try:
-                df[col] = pd.to_datetime(df[col], format='%Y-%m-%dT%H:%M:%S', errors='coerce')
-            except:
-                try:
-                    # Try standard date-time format
-                    df[col] = pd.to_datetime(df[col], format='%Y-%m-%d %H:%M:%S', errors='coerce')
-                except:
-                    # As last resort, let pandas try to figure it out but without warnings
-                    import warnings
-                    with warnings.catch_warnings():
-                        warnings.simplefilter("ignore")
-                        df[col] = pd.to_datetime(df[col], errors='coerce')
-    
-    # Sort by lastCheck (most recent first)
-    if 'lastCheck' in df.columns:
-        df = df.sort_values('lastCheck', ascending=False)
-        
-    # Filter based on user role and project
-    if user_role.lower() == "admin":
-        # Admin sees everything
-        filtered_df = df
-    elif user_role.lower() == "manager":
-        # Manager sees watches from their project
-        filtered_df = df[df['project'] == user_project]
-    else:
-        # Student sees watches from their project, highlighting their own
-        filtered_df = df[df['project'] == user_project]
-        
-    return filtered_df
-
-@st.cache_data(ttl=300)
-def process_watch_mapping(fitbit_data):
-    """Process and cache the watch mapping data"""
-    if not fitbit_data:
-        return {}
-    
-    # Map watch names to their assigned students
-    watch_mapping = {}
-    for item in fitbit_data:
-        watch_name = item.get("name", "")
-        project_name = item.get("project", "")
-        is_active = str(item.get("isActive", "")).lower() not in ["false", "0", "no", "n", ""]
-        
-        # Create key as project-watchName
-        key = f"{project_name}-{watch_name}"
-        
-        watch_mapping[key] = {
-            "student": item.get("currentStudent", ""),
-            "active": is_active
-        }
-        
-    return watch_mapping
-
 def display_homepage(user_email, user_role, user_project, spreadsheet: Spreadsheet) -> None:
     """
     Display the homepage with personalized content based on user's role and project
     """
     st.title("📊 Fitbit Management Dashboard")
     st.write("Welcome to the Fitbit Management System dashboard.")
-    
-    # Add refresh button
-    col1, col2, col3 = st.columns([2, 2, 1])
-    with col3:
-        if st.button("🔄 Refresh Data"):
-            # Clear caches to force fresh data
-            st.cache_data.clear()
-            st.rerun()
-            
-    # Show last update time
-    st.caption(f"Data last refreshed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     
     # Display role-specific information
     if user_role == "Admin":
@@ -223,11 +141,25 @@ def time_status_indicator(timestamp):
 def load_fitbit_sheet_data(spreadsheet):
     """Load data from the Fitbit sheet to identify watch assignments"""
     try:
-        # Get the fitbit sheet (don't cache the spreadsheet object)
+        # Get the fitbit sheet
         fitbit_sheet = spreadsheet.get_sheet("fitbit", "fitbit")
         
-        # Process and cache the mapping
-        return process_watch_mapping(fitbit_sheet.data)
+        # Map watch names to their assigned students
+        watch_mapping = {}
+        for item in fitbit_sheet.data:
+            watch_name = item.get("name", "")
+            project_name = item.get("project", "")
+            is_active = str(item.get("isActive", "")).lower() not in ["false", "0", "no", "n", ""]
+            
+            # Create key as project-watchName
+            key = f"{project_name}-{watch_name}"
+            
+            watch_mapping[key] = {
+                "student": item.get("currentStudent", ""),
+                "active": is_active
+            }
+            
+        return watch_mapping
     except Exception as e:
         st.error(f"Error loading Fitbit sheet data: {e}")
         return {}
@@ -238,33 +170,70 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
     
     with st.spinner("Loading Fitbit data..."):
         try:
-            # Get the raw data without caching the spreadsheet operations
+            # Load the FitbitLog sheet
             fitbit_log_sheet = spreadsheet.get_sheet("FitbitLog", "log")
-            
-            # Process and cache the data
-            filtered_df = process_fitbit_log_data(fitbit_log_sheet.data, user_email, user_role, user_project)
             
             # Get watch assignment info
             watch_mapping = load_fitbit_sheet_data(spreadsheet)
             
-            if filtered_df is None or filtered_df.empty:
+            if not fitbit_log_sheet.data:
                 st.warning("No Fitbit log data available.")
                 return
-                
+            
+            # Convert to DataFrame
+            df = pd.DataFrame(fitbit_log_sheet.data)
+            
+            # Convert datetime columns with specific format to avoid warnings
+            datetime_cols = ['lastCheck', 'lastSynced', 'lastBattary', 'lastHR', 
+                            'lastSleepStartDateTime', 'lastSleepEndDateTime', 'lastSteps']
+            
+            # Try common date formats with explicit format specification
+            # This prevents the dateutil fallback warnings
+            for col in datetime_cols:
+                if col in df.columns:
+                    # First try ISO format which is common in APIs and databases
+                    try:
+                        df[col] = pd.to_datetime(df[col], format='%Y-%m-%dT%H:%M:%S', errors='coerce')
+                    except:
+                        try:
+                            # Try standard date-time format
+                            df[col] = pd.to_datetime(df[col], format='%Y-%m-%d %H:%M:%S', errors='coerce')
+                        except:
+                            # As last resort, let pandas try to figure it out but without warnings
+                            import warnings
+                            with warnings.catch_warnings():
+                                warnings.simplefilter("ignore")
+                                df[col] = pd.to_datetime(df[col], errors='coerce')
+            
+            # Sort by lastCheck (most recent first)
+            if 'lastCheck' in df.columns:
+                df = df.sort_values('lastCheck', ascending=False)
+            
             # Add student assignment and watch status information
-            filtered_df['assigned_student'] = filtered_df.apply(
+            df['assigned_student'] = df.apply(
                 lambda row: watch_mapping.get(f"{row.get('project')}-{row.get('watchName')}", {}).get('student', ''),
                 axis=1
             )
             
-            filtered_df['is_active'] = filtered_df.apply(
+            df['is_active'] = df.apply(
                 lambda row: watch_mapping.get(f"{row.get('project')}-{row.get('watchName')}", {}).get('active', True),
                 axis=1
             )
             
+            # Filter based on user role and project
+            if user_role.lower() == "admin":
+                # Admin sees everything
+                filtered_df = df
+            elif user_role.lower() == "manager":
+                # Manager sees watches from their project
+                filtered_df = df[df['project'] == user_project]
+            else:
+                # Student sees watches from their project, highlighting their own
+                filtered_df = df[df['project'] == user_project]
+            
             # Allow filtering by project for Admin
             if user_role.lower() == "admin":
-                projects = sorted(filtered_df['project'].unique())
+                projects = sorted(df['project'].unique())
                 selected_projects = st.multiselect("Filter by Project:", projects, default=projects)
                 if selected_projects:
                     filtered_df = filtered_df[filtered_df['project'].isin(selected_projects)]

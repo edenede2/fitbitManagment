@@ -15,6 +15,8 @@ from pages.homepage import display_homepage
 # Import the fitbit management functionality
 from pages.fitbit_management import load_fitbit_datatable
 from model.alerts_management import show_alerts_management
+from pages.nova_qualtrics_management import nova_qualtrics_management
+
 # Set up app configuration
 st.set_page_config(
     page_title="Fitbit Management System",
@@ -87,7 +89,6 @@ def main():
             elif selected_page == "Alerts Configuration":
                 alerts_config_page(user_email, spreadsheet)
             elif selected_page == "NOVA Qualtrics Managment":
-                from pages.nova_qualtrics_management import nova_qualtrics_management
                 nova_qualtrics_management(user_email, user_role, user_project, spreadsheet)
             elif selected_page == "Reports":
                 st.title("Reports")
