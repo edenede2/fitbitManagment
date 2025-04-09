@@ -338,7 +338,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
                 st.metric("Low Battery", f"{low_battery}")
             with col4:
                 # Count watches not synced in last 24 hours
-                not_synced = latest_df[latest_df['lastSynced'] < (pd.Timestamp.now() - pd.Timedelta(hours=24))].shape[0]
+                not_synced = latest_df[pd.to_datetime(latest_df['lastSynced'], errors='coerce') < (pd.Timestamp.now() - pd.Timedelta(hours=24))].shape[0]
                 st.metric("Not Synced (24h)", f"{not_synced}")
             
             # For students, show their assigned watch first
