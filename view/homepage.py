@@ -113,6 +113,34 @@ def format_time_ago(timestamp):
     else:
         return timestamp.strftime("%Y-%m-%d")
 
+def format_time_ago_concise(timestamp):
+    """Format a datetime as a concise 'time ago' string with only the most significant unit"""
+    if timestamp is None or pd.isna(timestamp):
+        return "Never"
+    
+    # If timestamp is a string, try to parse it
+    if isinstance(timestamp, str):
+        try:
+            timestamp = pd.to_datetime(timestamp)
+        except:
+            return timestamp
+    
+    now = pd.Timestamp.now()
+    delta = now - timestamp
+    
+    seconds = delta.total_seconds()
+    
+    if seconds < 60:
+        return f"{int(seconds)}s"
+    elif seconds < 3600:
+        return f"{int(seconds/60)}m"
+    elif seconds < 86400:
+        return f"{int(seconds/3600)}h"
+    elif seconds < 604800:
+        return f"{int(seconds/86400)}d"
+    else:
+        return timestamp.strftime("%Y-%m-%d")
+
 def time_status_indicator(timestamp):
     """Return a status indicator based on time elapsed"""
     if timestamp is None or pd.isna(timestamp):
@@ -310,16 +338,17 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
             # Create a copy of the dataframe for display
             display_df = latest_df.copy()
             
-            # Format columns for display
+            # Format columns for display with concise time
             if 'lastSynced' in display_df.columns:
                 display_df['Last Sync'] = display_df.apply(
-                    lambda row: f"{time_status_indicator(row['lastSynced'])} {format_time_ago(row['lastSynced'])}", 
+                    lambda row: f"{time_status_indicator(row['lastSynced'])} {format_time_ago_concise(row['lastSynced'])}", 
                     axis=1
                 )
             
             if 'lastHR' in display_df.columns and 'lastHRVal' in display_df.columns:
+                # Fix heart rate display by properly handling NaN values
                 display_df['Heart Rate'] = display_df.apply(
-                    lambda row: f"{time_status_indicator(row['lastHR'])} {row.get('lastHRVal', 'N/A')} bpm", 
+                    lambda row: f"{time_status_indicator(row['lastHR'])} {str(row.get('lastHRVal', 'N/A')).replace('nan', 'N/A')} bpm", 
                     axis=1
                 )
             
@@ -335,58 +364,49 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
                     axis=1
                 )
             
-            # Prepare battery column separately for styling
+            # Prepare battery column for ProgressColumn
             if 'lastBattaryVal' in display_df.columns:
-                display_df['Battery'] = display_df['lastBattaryVal']
+                # Convert to numeric values and handle NaN
+                display_df['Battery Level'] = pd.to_numeric(display_df['lastBattaryVal'], errors='coerce') / 100.0
+                # For display in table cells
+                display_df['Battery Text'] = display_df['lastBattaryVal'].astype(str) + '%'
             
-            # Define the columns to display
-            display_columns = ['watchName', 'project', 'Battery', 'Last Sync', 'Heart Rate', 'Sleep', 'Steps']
+            # Define columns for display
+            display_columns = ['watchName', 'project', 'Battery Level', 'Last Sync', 'Heart Rate', 'Sleep', 'Steps']
             display_columns = [col for col in display_columns if col in display_df.columns]
+            
+            # Use column config to define column formats
+            column_config = {
+                "watchName": "Watch Name",
+                "project": "Project",
+                "Battery Level": st.column_config.ProgressColumn(
+                    "Battery",
+                    help="Battery level of the watch",
+                    format="%d%%",
+                    min_value=0,
+                    max_value=1.0,
+                    color=["red", "orange", "green"]
+                ),
+                "Last Sync": "Last Sync",
+                "Heart Rate": "Heart Rate",
+                "Sleep": "Sleep Duration",
+                "Steps": "Steps"
+            }
             
             # Highlight rows where the watch is assigned to current user
             if user_role.lower() == "student":
-                highlight_condition = display_df['assigned_student'] == user_email
+                assigned_watches = display_df[display_df['assigned_student'] == user_email]['watchName'].tolist()
             else:
-                highlight_condition = pd.Series([False] * len(display_df))
+                assigned_watches = []
             
-            # Style the dataframe
-            styled_df = display_df[display_columns].style
-            
-            # Apply row highlighting for student's assigned watch
-            def highlight_user_watch(row):
-                if row.name in highlight_condition[highlight_condition].index:
-                    return ['background-color: #e6f7ff'] * len(row)
-                return [''] * len(row)
-            
-            styled_df = styled_df.apply(highlight_user_watch, axis=1)
-            
-            # Apply battery level styling (as text since we can't use HTML in dataframe)
-            def battery_formatter(val):
-                try:
-                    battery = float(val)
-                    if pd.isna(battery):
-                        return "No data"
-                    
-                    if battery >= 80:
-                        color = "green"
-                    elif battery >= 50:
-                        color = "orange"
-                    else:
-                        color = "red"
-                    
-                    return f"background-color: {color}; color: white;"
-                except:
-                    return ""
-            
-            # Apply battery styling
-            if 'Battery' in display_columns:
-                styled_df = styled_df.applymap(battery_formatter, subset=['Battery'])
-            
-            # Display using st.dataframe
-            st.dataframe(styled_df, use_container_width=True)
-            
-            # Backup display method is no longer needed since we're using st.dataframe
-            # but we'll keep the raw data viewer
+            # Display using st.dataframe with column config
+            st.dataframe(
+                display_df[display_columns],
+                column_config=column_config,
+                use_container_width=True,
+                height=min(35 * len(display_df) + 38, 600),
+                hide_index=True
+            )
             
             # Add expandable section with detailed view
             with st.expander("View Detailed Data"):
