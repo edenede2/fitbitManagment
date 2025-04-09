@@ -627,6 +627,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                             )
                         except Exception as e:
                             # If formatting fails, keep as is
+                            pass
                             # st.warning(f"Could not format {col} as datetime: {str(e)}")
                 
                 # Display as dataframe
