@@ -1,12 +1,17 @@
 import streamlit as st
 from view.dashboard import display_dashboard
-
+from controllers.auth_controller import AuthenticationController
 # Page configuration
 st.set_page_config(
     page_title="Dashboard - Fitbit Management System",
     page_icon="📊",
     layout="wide"
 )
+
+# Initialize authentication controller
+auth_controller = AuthenticationController()
+# Handle authentication in sidebar
+auth_controller.render_auth_ui()
 
 # Check authentication
 if 'user_email' not in st.session_state:
