@@ -161,8 +161,12 @@ def time_status_indicator(timestamp):
         except:
             return "❓"
     
-    now = pd.Timestamp.now()
+    now = pd.Timestamp.now().to_datetime64()
+
+    timestamp = pd.to_datetime(timestamp).to_datetime64()
+
     delta = now - timestamp
+    # delta = now - timestamp
     hours = delta.total_seconds() / 3600
     st.write(f"Debug - Time difference in hours: {hours}")
     st.write(f"Debug - Current time: {now}")
