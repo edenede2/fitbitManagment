@@ -183,13 +183,27 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
             # Convert to DataFrame
             df = pd.DataFrame(fitbit_log_sheet.data)
             
-            # Convert datetime columns
+            # Convert datetime columns with specific format to avoid warnings
             datetime_cols = ['lastCheck', 'lastSynced', 'lastBattary', 'lastHR', 
                             'lastSleepStartDateTime', 'lastSleepEndDateTime', 'lastSteps']
             
+            # Try common date formats with explicit format specification
+            # This prevents the dateutil fallback warnings
             for col in datetime_cols:
                 if col in df.columns:
-                    df[col] = pd.to_datetime(df[col], errors='coerce')
+                    # First try ISO format which is common in APIs and databases
+                    try:
+                        df[col] = pd.to_datetime(df[col], format='%Y-%m-%dT%H:%M:%S', errors='coerce')
+                    except:
+                        try:
+                            # Try standard date-time format
+                            df[col] = pd.to_datetime(df[col], format='%Y-%m-%d %H:%M:%S', errors='coerce')
+                        except:
+                            # As last resort, let pandas try to figure it out but without warnings
+                            import warnings
+                            with warnings.catch_warnings():
+                                warnings.simplefilter("ignore")
+                                df[col] = pd.to_datetime(df[col], errors='coerce')
             
             # Sort by lastCheck (most recent first)
             if 'lastCheck' in df.columns:
