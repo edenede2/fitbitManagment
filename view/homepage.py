@@ -557,17 +557,17 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                 ])
             
             # Define columns for display
-            display_columns = ['watchName', 'is_active', 'project', 'Battery Level', 'Last Sync', 'Heart Rate', 'Sleep', 'Steps','lastBattary']
+            display_columns = ['watchName', 'is_active', 'project', 'Battery Level', 'Last Sync', 'Heart Rate', 'Sleep', 'Steps','lastSynced']
             display_columns = [col for col in display_columns if col in display_df.columns]
             
             # Use column config to define column formats
             column_config = {
                 "watchName": "Watch Name",
                 "project": "Project",
-                "lastBattary": st.column_config.DatetimeColumn(
-                    "Last Battery Check",
+                "lastSynced": st.column_config.DatetimeColumn(
+                    "Last Time Synced",
                     format="YYYY-MM-DD HH:mm",
-                    help="Last time the battery was checked"
+                    help="Last time the server synced with the watch",
                 ),
                 "is_active": st.column_config.CheckboxColumn(
                     "Active",
@@ -667,8 +667,12 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                     
                     with tab1:
                         # Clean and convert battery values
+                        # Handle both string and numeric types for battery values
                         battery_df = watch_history.with_columns(
-                            pl.col('lastBattaryVal').str.replace('%', '').cast(pl.Float64, strict=False).alias('battery_num')
+                            pl.when(pl.col('lastBattaryVal').dtype == pl.Utf8)
+                            .then(pl.col('lastBattaryVal').str.replace('%', '').cast(pl.Float64, strict=False))
+                            .otherwise(pl.col('lastBattaryVal').cast(pl.Float64, strict=False))
+                            .alias('battery_num')
                         ).select(['lastCheck', 'battery_num']).drop_nulls()
                         
                         st.write(f"Battery data points: {battery_df.height}")
