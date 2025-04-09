@@ -281,7 +281,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
             watch_mapping = load_fitbit_sheet_data(spreadsheet)
             
             fitbit_log_df = fitbit_log_sheet.to_dataframe(engine="polars")
-            if not fitbit_log_df.is_empty():
+            if fitbit_log_df.is_empty():
                 st.warning("No Fitbit log data available.")
                 return
             
