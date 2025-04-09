@@ -317,52 +317,62 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
                 </tr>
             """
             
+            # Use a safer approach for building the table rows
             for _, row in latest_df.iterrows():
-                is_student_watch = row.get('assigned_student') == user_email
-                tr_class = 'class="student-watch"' if is_student_watch else ''
-                
-                # Get values and format them
-                watch_name = row.get('watchName', '')
-                project = row.get('project', '')
-                battery = render_battery_gauge(row.get('lastBattaryVal', ''))
-                
-                # Format time values with status indicators
-                last_sync = row.get('lastSynced')
-                sync_indicator = time_status_indicator(last_sync)
-                sync_time = format_time_ago(last_sync)
-                
-                last_hr = row.get('lastHR')
-                hr_indicator = time_status_indicator(last_hr)
-                hr_time = format_time_ago(last_hr)
-                hr_val = row.get('lastHRVal', 'N/A')
-                
-                last_sleep = row.get('lastSleepEndDateTime')
-                sleep_indicator = time_status_indicator(last_sleep)
-                sleep_time = format_time_ago(last_sleep)
-                sleep_dur = row.get('lastSleepDur', 'N/A')
-                
-                last_steps = row.get('lastSteps')
-                steps_indicator = time_status_indicator(last_steps)
-                steps_time = format_time_ago(last_steps)
-                steps_val = row.get('lastStepsVal', 'N/A')
-                
-                # Add row to table
-                html_table += f"""
-                <tr {tr_class}>
-                    <td>{'👤 ' if is_student_watch else ''}{watch_name}</td>
-                    <td>{project}</td>
-                    <td>{battery}</td>
-                    <td>{sync_indicator} {sync_time}</td>
-                    <td>{hr_indicator} {hr_val} bpm</td>
-                    <td>{sleep_indicator} {sleep_dur} min</td>
-                    <td>{steps_indicator} {steps_val}</td>
-                </tr>
-                """
+                try:
+                    is_student_watch = row.get('assigned_student') == user_email
+                    tr_class = 'class="student-watch"' if is_student_watch else ''
+                    
+                    # Get values and format them safely
+                    watch_name = str(row.get('watchName', ''))
+                    project = str(row.get('project', ''))
+                    battery_html = render_battery_gauge(row.get('lastBattaryVal', ''))
+                    
+                    # Format time values with status indicators
+                    last_sync = row.get('lastSynced')
+                    sync_indicator = time_status_indicator(last_sync)
+                    sync_time = format_time_ago(last_sync)
+                    
+                    last_hr = row.get('lastHR')
+                    hr_indicator = time_status_indicator(last_hr)
+                    hr_val = str(row.get('lastHRVal', 'N/A'))
+                    
+                    last_sleep = row.get('lastSleepEndDateTime')
+                    sleep_indicator = time_status_indicator(last_sleep)
+                    sleep_dur = str(row.get('lastSleepDur', 'N/A'))
+                    
+                    last_steps = row.get('lastSteps')
+                    steps_indicator = time_status_indicator(last_steps)
+                    steps_val = str(row.get('lastStepsVal', 'N/A'))
+                    
+                    # Build row HTML one cell at a time
+                    row_html = f"<tr {tr_class}>\n"
+                    row_html += f"  <td>{'👤 ' if is_student_watch else ''}{watch_name}</td>\n"
+                    row_html += f"  <td>{project}</td>\n"
+                    row_html += f"  <td>{battery_html}</td>\n"
+                    row_html += f"  <td>{sync_indicator} {sync_time}</td>\n"
+                    row_html += f"  <td>{hr_indicator} {hr_val} bpm</td>\n"
+                    row_html += f"  <td>{sleep_indicator} {sleep_dur} min</td>\n"
+                    row_html += f"  <td>{steps_indicator} {steps_val}</td>\n"
+                    row_html += "</tr>\n"
+                    
+                    html_table += row_html
+                except Exception as e:
+                    # Skip this row if there's an error and add an error row instead
+                    st.warning(f"Error displaying watch data: {e}", icon="⚠️")
+                    html_table += f"<tr><td colspan='7'>Error displaying data for watch {row.get('watchName', 'unknown')}</td></tr>\n"
             
             html_table += "</table>"
             
             # Display the HTML table
             st.markdown(html_table, unsafe_allow_html=True)
+            
+            # Backup display method in case the HTML table fails
+            if st.checkbox("View alternative table format"):
+                display_cols = ['watchName', 'project', 'lastBattaryVal', 'lastSynced', 
+                               'lastHRVal', 'lastSleepDur', 'lastStepsVal']
+                available_cols = [col for col in display_cols if col in latest_df.columns]
+                st.dataframe(latest_df[available_cols], use_container_width=True)
             
             # Add expandable section with detailed view
             with st.expander("View Detailed Data"):
