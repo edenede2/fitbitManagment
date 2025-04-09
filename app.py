@@ -47,6 +47,22 @@ def main():
             
             # Display logout button
             st.sidebar.button("Logout", on_click=auth_controller.logout_user)
+            st.sidebar.info("To log out, click the 'Logout' button above.")
+            
+            # Add page descriptions
+            st.sidebar.markdown("## App Pages")
+            st.sidebar.markdown("""
+            - **Dashboard**: Overview of Fitbit activity and stats
+            - **User Management**: Manage user accounts and permissions
+            - **Device Tracking**: Monitor Fitbit devices and sync status
+            - **Data Analysis**: Analyze collected health and activity data
+            - **Reports**: Generate and export reports
+            """)
+            
+            # Add support information
+            st.sidebar.markdown("---")
+            st.sidebar.markdown("### Need Help?")
+            st.sidebar.markdown("Contact support: edenede2@gmail.com")
             
         except Exception as e:
             if "429" in str(e) or "Quota exceeded" in str(e):
@@ -60,8 +76,23 @@ def main():
         st.write("Please log in to access the dashboard and features.")
         
         # Show login instructions
-        st.info("Use the sidebar to log in or try a demo account.")
+        st.info("Use the sidebar to log in. Click the 'login with google' button to authenticate.")
         st.sidebar.button("login with google", on_click=auth_controller.login_with_google)
+        
+        # Add page descriptions for non-logged in users
+        st.markdown("## Features Available After Login:")
+        st.markdown("""
+        - **Dashboard**: Overview of Fitbit activity and stats
+        - **User Management**: Manage user accounts and permissions
+        - **Device Tracking**: Monitor Fitbit devices and sync status
+        - **Data Analysis**: Analyze collected health and activity data
+        - **Reports**: Generate and export reports
+        """)
+        
+        # Add support information
+        st.markdown("---")
+        st.markdown("### Need Help?")
+        st.markdown("Contact support: edenede2@gmail.com")
 
 if __name__ == "__main__":
     main()
