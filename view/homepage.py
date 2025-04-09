@@ -428,8 +428,9 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                 st.metric("Low Battery", f"{low_battery}")
             with col4:
                 # Count watches not synced in last 24 hours
+                # Use Python's datetime.now() instead of pl.now() which doesn't exist
                 not_synced = latest_df.filter(
-                    pl.col('lastSynced').cast(pl.Datetime, strict=False) < (pl.now() - timedelta(hours=24))
+                    pl.col('lastSynced').cast(pl.Datetime, strict=False) < (datetime.now() - timedelta(hours=24))
                 ).height
                 st.metric("Not Synced (24h)", f"{not_synced}")
             
