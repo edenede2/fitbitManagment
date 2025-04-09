@@ -183,27 +183,35 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
             # Convert to DataFrame
             df = pd.DataFrame(fitbit_log_sheet.data)
             
+            # Store original raw data before processing for display in expander
+            raw_df = df.copy()
+            
             # Convert datetime columns with specific format to avoid warnings
             datetime_cols = ['lastCheck', 'lastSynced', 'lastBattary', 'lastHR', 
                             'lastSleepStartDateTime', 'lastSleepEndDateTime', 'lastSteps']
             
-            # Try common date formats with explicit format specification
-            # This prevents the dateutil fallback warnings
+            # Try multiple date formats to ensure correct parsing
+            date_formats = ['%Y-%m-%dT%H:%M:%S.%fZ', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S', 
+                           '%m/%d/%Y %H:%M:%S', '%d/%m/%Y %H:%M:%S']
+            
             for col in datetime_cols:
                 if col in df.columns:
-                    # First try ISO format which is common in APIs and databases
-                    try:
-                        df[col] = pd.to_datetime(df[col], format='%Y-%m-%dT%H:%M:%S', errors='coerce')
-                    except:
-                        try:
-                            # Try standard date-time format
-                            df[col] = pd.to_datetime(df[col], format='%Y-%m-%d %H:%M:%S', errors='coerce')
-                        except:
-                            # As last resort, let pandas try to figure it out but without warnings
-                            import warnings
-                            with warnings.catch_warnings():
-                                warnings.simplefilter("ignore")
-                                df[col] = pd.to_datetime(df[col], errors='coerce')
+                    # Try each format in order
+                    parsed = False
+                    for fmt in date_formats:
+                        if not parsed:
+                            try:
+                                df[col] = pd.to_datetime(df[col], format=fmt, errors='coerce')
+                                parsed = True
+                            except:
+                                continue
+                    
+                    # If none of the explicit formats worked, try the default parser
+                    if not parsed:
+                        import warnings
+                        with warnings.catch_warnings():
+                            warnings.simplefilter("ignore")
+                            df[col] = pd.to_datetime(df[col], errors='coerce')
             
             # Sort by lastCheck (most recent first)
             if 'lastCheck' in df.columns:
@@ -390,7 +398,8 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
             
             # Add expandable section with detailed view
             with st.expander("View Detailed Data"):
-                # Show more columns in the detailed table
+                # First show the filtered view with key columns
+                st.subheader("Filtered Data View")
                 detail_cols = ['watchName', 'project', 'lastCheck', 'lastSynced', 
                               'lastBattaryVal', 'lastHRVal', 'lastStepsVal',
                               'CurrentFailedSync', 'TotalFailedSync',
@@ -409,6 +418,19 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
                 
                 # Display as dataframe with student assignment highlighting
                 st.dataframe(detail_df, use_container_width=True)
+                
+                # Show complete raw data from the sheet
+                st.subheader("Complete Raw Data")
+                st.dataframe(raw_df, use_container_width=True)
+                
+                # Add download button for the raw data
+                csv = raw_df.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="Download Raw Data as CSV",
+                    data=csv,
+                    file_name=f"fitbit_log_data_{datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv"
+                )
             
             # Add visualization section
             st.subheader("Visualizations")
