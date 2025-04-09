@@ -307,103 +307,86 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
             # Main watch table
             st.subheader("All Watches Overview")
             
-            # Create custom HTML table for better visualization
-            html_table = """
-            <style>
-                .fitbit-table {
-                    width: 100%;
-                    border-collapse: collapse;
-                    margin-bottom: 20px;
-                }
-                .fitbit-table th {
-                    background-color: #f2f2f2;
-                    padding: 8px;
-                    text-align: left;
-                    border: 1px solid #ddd;
-                }
-                .fitbit-table td {
-                    padding: 8px;
-                    border: 1px solid #ddd;
-                }
-                .fitbit-table tr:nth-child(even) {
-                    background-color: #f9f9f9;
-                }
-                .fitbit-table tr:hover {
-                    background-color: #f0f0f0;
-                }
-                .student-watch {
-                    background-color: #e6f7ff !important;
-                    font-weight: bold;
-                }
-            </style>
-            <table class="fitbit-table">
-                <tr>
-                    <th>Watch Name</th>
-                    <th>Project</th>
-                    <th>Battery</th>
-                    <th>Last Sync</th>
-                    <th>Heart Rate</th>
-                    <th>Sleep</th>
-                    <th>Steps</th>
-                </tr>
-            """
+            # Create a copy of the dataframe for display
+            display_df = latest_df.copy()
             
-            # Use a safer approach for building the table rows
-            for _, row in latest_df.iterrows():
+            # Format columns for display
+            if 'lastSynced' in display_df.columns:
+                display_df['Last Sync'] = display_df.apply(
+                    lambda row: f"{time_status_indicator(row['lastSynced'])} {format_time_ago(row['lastSynced'])}", 
+                    axis=1
+                )
+            
+            if 'lastHR' in display_df.columns and 'lastHRVal' in display_df.columns:
+                display_df['Heart Rate'] = display_df.apply(
+                    lambda row: f"{time_status_indicator(row['lastHR'])} {row.get('lastHRVal', 'N/A')} bpm", 
+                    axis=1
+                )
+            
+            if 'lastSleepEndDateTime' in display_df.columns and 'lastSleepDur' in display_df.columns:
+                display_df['Sleep'] = display_df.apply(
+                    lambda row: f"{time_status_indicator(row['lastSleepEndDateTime'])} {row.get('lastSleepDur', 'N/A')} min", 
+                    axis=1
+                )
+            
+            if 'lastSteps' in display_df.columns and 'lastStepsVal' in display_df.columns:
+                display_df['Steps'] = display_df.apply(
+                    lambda row: f"{time_status_indicator(row['lastSteps'])} {row.get('lastStepsVal', 'N/A')}", 
+                    axis=1
+                )
+            
+            # Prepare battery column separately for styling
+            if 'lastBattaryVal' in display_df.columns:
+                display_df['Battery'] = display_df['lastBattaryVal']
+            
+            # Define the columns to display
+            display_columns = ['watchName', 'project', 'Battery', 'Last Sync', 'Heart Rate', 'Sleep', 'Steps']
+            display_columns = [col for col in display_columns if col in display_df.columns]
+            
+            # Highlight rows where the watch is assigned to current user
+            if user_role.lower() == "student":
+                highlight_condition = display_df['assigned_student'] == user_email
+            else:
+                highlight_condition = pd.Series([False] * len(display_df))
+            
+            # Style the dataframe
+            styled_df = display_df[display_columns].style
+            
+            # Apply row highlighting for student's assigned watch
+            def highlight_user_watch(row):
+                if row.name in highlight_condition[highlight_condition].index:
+                    return ['background-color: #e6f7ff'] * len(row)
+                return [''] * len(row)
+            
+            styled_df = styled_df.apply(highlight_user_watch, axis=1)
+            
+            # Apply battery level styling (as text since we can't use HTML in dataframe)
+            def battery_formatter(val):
                 try:
-                    is_student_watch = row.get('assigned_student') == user_email
-                    tr_class = 'class="student-watch"' if is_student_watch else ''
+                    battery = float(val)
+                    if pd.isna(battery):
+                        return "No data"
                     
-                    # Get values and format them safely
-                    watch_name = str(row.get('watchName', ''))
-                    project = str(row.get('project', ''))
-                    battery_html = render_battery_gauge(row.get('lastBattaryVal', ''))
+                    if battery >= 80:
+                        color = "green"
+                    elif battery >= 50:
+                        color = "orange"
+                    else:
+                        color = "red"
                     
-                    # Format time values with status indicators
-                    last_sync = row.get('lastSynced')
-                    sync_indicator = time_status_indicator(last_sync)
-                    sync_time = format_time_ago(last_sync)
-                    
-                    last_hr = row.get('lastHR')
-                    hr_indicator = time_status_indicator(last_hr)
-                    hr_val = str(row.get('lastHRVal', 'N/A'))
-                    
-                    last_sleep = row.get('lastSleepEndDateTime')
-                    sleep_indicator = time_status_indicator(last_sleep)
-                    sleep_dur = str(row.get('lastSleepDur', 'N/A'))
-                    
-                    last_steps = row.get('lastSteps')
-                    steps_indicator = time_status_indicator(last_steps)
-                    steps_val = str(row.get('lastStepsVal', 'N/A'))
-                    
-                    # Build row HTML one cell at a time
-                    row_html = f"<tr {tr_class}>\n"
-                    row_html += f"  <td>{'👤 ' if is_student_watch else ''}{watch_name}</td>\n"
-                    row_html += f"  <td>{project}</td>\n"
-                    row_html += f"  <td>{battery_html}</td>\n"
-                    row_html += f"  <td>{sync_indicator} {sync_time}</td>\n"
-                    row_html += f"  <td>{hr_indicator} {hr_val} bpm</td>\n"
-                    row_html += f"  <td>{sleep_indicator} {sleep_dur} min</td>\n"
-                    row_html += f"  <td>{steps_indicator} {steps_val}</td>\n"
-                    row_html += "</tr>\n"
-                    
-                    html_table += row_html
-                except Exception as e:
-                    # Skip this row if there's an error and add an error row instead
-                    st.warning(f"Error displaying watch data: {e}", icon="⚠️")
-                    html_table += f"<tr><td colspan='7'>Error displaying data for watch {row.get('watchName', 'unknown')}</td></tr>\n"
+                    return f"background-color: {color}; color: white;"
+                except:
+                    return ""
             
-            html_table += "</table>"
+            # Apply battery styling
+            if 'Battery' in display_columns:
+                styled_df = styled_df.applymap(battery_formatter, subset=['Battery'])
             
-            # Display the HTML table
-            st.markdown(html_table, unsafe_allow_html=True)
+            # Display using st.dataframe
+            st.dataframe(styled_df, use_container_width=True)
             
-            # Backup display method in case the HTML table fails
-            if st.checkbox("View alternative table format"):
-                display_cols = ['watchName', 'project', 'lastBattaryVal', 'lastSynced', 
-                               'lastHRVal', 'lastSleepDur', 'lastStepsVal']
-                available_cols = [col for col in display_cols if col in latest_df.columns]
-                st.dataframe(latest_df[available_cols], use_container_width=True)
+            # Backup display method is no longer needed since we're using st.dataframe
+            # but we'll keep the raw data viewer
             
             # Add expandable section with detailed view
             with st.expander("View Detailed Data"):
