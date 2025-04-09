@@ -228,6 +228,22 @@ def preprocess_dataframe_for_display(df):
         except:
             pass  # Keep as is if conversion fails
     
+    # Ensure datetime columns are properly formatted for display
+    datetime_cols = ['lastCheck', 'lastSynced', 'lastBattary', 'lastHR', 
+                    'lastSleepStartDateTime', 'lastSleepEndDateTime', 'lastSteps']
+    
+    for col in [c for c in datetime_cols if c in processed_df.columns]:
+        if pd.api.types.is_datetime64_any_dtype(processed_df[col]):
+            # Already datetime, no action needed
+            pass
+        else:
+            # Try to convert to datetime
+            try:
+                processed_df[col] = pd.to_datetime(processed_df[col], errors='coerce')
+            except:
+                # If conversion fails, keep as is
+                pass
+    
     return processed_df
 
 def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
@@ -506,7 +522,20 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
                 # Format datetime columns for display
                 for col in ['lastCheck', 'lastSynced']:
                     if col in detail_df.columns:
-                        detail_df[col] = detail_df[col].dt.strftime('%Y-%m-%d %H:%M')
+                        try:
+                            # Check if column is datetime type
+                            if pd.api.types.is_datetime64_any_dtype(detail_df[col]):
+                                detail_df[col] = detail_df[col].dt.strftime('%Y-%m-%d %H:%M')
+                            else:
+                                # Try to convert to datetime first
+                                detail_df[col] = pd.to_datetime(detail_df[col], errors='coerce')
+                                # Then format if conversion succeeded
+                                mask = ~detail_df[col].isna()
+                                if mask.any():
+                                    detail_df.loc[mask, col] = detail_df.loc[mask, col].dt.strftime('%Y-%m-%d %H:%M')
+                        except Exception as e:
+                            # If formatting fails, keep as is
+                            st.warning(f"Could not format {col} as datetime: {str(e)}")
                 
                 # Clean dataframe for Arrow compatibility
                 detail_df = preprocess_dataframe_for_display(detail_df)
