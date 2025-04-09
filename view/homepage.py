@@ -186,32 +186,41 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
             # Store original raw data before processing for display in expander
             raw_df = df.copy()
             
-            # Convert datetime columns with specific format to avoid warnings
+            # Add debugging info for lastSynced column
+            st.write("Debug - Original date formats in lastSynced column:")
+            if 'lastSynced' in df.columns:
+                unique_date_formats = df['lastSynced'].dropna().unique()[:5]  # Show first 5 unique values
+                st.code(str(unique_date_formats))
+            
+            # Convert datetime columns with a more flexible approach
             datetime_cols = ['lastCheck', 'lastSynced', 'lastBattary', 'lastHR', 
                             'lastSleepStartDateTime', 'lastSleepEndDateTime', 'lastSteps']
             
-            # Try multiple date formats to ensure correct parsing
-            date_formats = ['%Y-%m-%dT%H:%M:%S.%fZ', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S', 
-                           '%m/%d/%Y %H:%M:%S', '%d/%m/%Y %H:%M:%S']
-            
             for col in datetime_cols:
                 if col in df.columns:
-                    # Try each format in order
-                    parsed = False
-                    for fmt in date_formats:
-                        if not parsed:
-                            try:
-                                df[col] = pd.to_datetime(df[col], format=fmt, errors='coerce')
-                                parsed = True
-                            except:
-                                continue
-                    
-                    # If none of the explicit formats worked, try the default parser
-                    if not parsed:
-                        import warnings
-                        with warnings.catch_warnings():
-                            warnings.simplefilter("ignore")
-                            df[col] = pd.to_datetime(df[col], errors='coerce')
+                    # First try pandas default parser without format specification
+                    # This is more flexible and handles many date formats automatically
+                    try:
+                        temp_series = pd.to_datetime(df[col], errors='coerce')
+                        # Only update if we successfully parsed some dates
+                        if not temp_series.isna().all():
+                            df[col] = temp_series
+                        else:
+                            # If all became NaT, keep original values
+                            st.warning(f"Failed to parse dates in {col} column")
+                    except Exception as e:
+                        st.warning(f"Error parsing {col}: {str(e)}")
+            
+            # After parsing, check if lastSynced column has valid dates
+            if 'lastSynced' in df.columns:
+                valid_dates = df['lastSynced'].notna().sum()
+                total_rows = len(df)
+                st.write(f"Successfully parsed {valid_dates} out of {total_rows} dates in lastSynced column")
+                
+                # If we have very few valid dates, try the original string values for display
+                if valid_dates < total_rows * 0.5:  # If less than 50% parsed successfully
+                    st.warning("Poor date parsing rate. Using original string values for lastSynced.")
+                    df['lastSynced'] = raw_df['lastSynced']  # Restore original values
             
             # Sort by lastCheck (most recent first)
             if 'lastCheck' in df.columns:
