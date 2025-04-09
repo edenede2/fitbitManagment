@@ -232,24 +232,53 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
                 unique_date_formats = df['lastSynced'].dropna().unique()[:5]  # Show first 5 unique values
                 # st.code(str(unique_date_formats))
             
-            # Convert datetime columns with a more flexible approach
+            # Define common date formats to try
+            date_formats = [
+                '%Y-%m-%dT%H:%M:%S.%f',  # ISO format with microseconds
+                '%Y-%m-%dT%H:%M:%S',     # ISO format without microseconds
+                '%Y-%m-%d %H:%M:%S',     # Standard datetime format
+                '%Y-%m-%d',              # Just date
+                '%m/%d/%Y %H:%M:%S',     # US format
+                '%d/%m/%Y %H:%M:%S'      # European format
+            ]
+            
+            # Convert datetime columns with specified formats to avoid warnings
             datetime_cols = ['lastCheck', 'lastSynced', 'lastBattary', 'lastHR', 
                             'lastSleepStartDateTime', 'lastSleepEndDateTime', 'lastSteps']
             
             for col in datetime_cols:
                 if col in df.columns:
-                    # First try pandas default parser without format specification
-                    # This is more flexible and handles many date formats automatically
-                    try:
-                        temp_series = pd.to_datetime(df[col], errors='coerce')
-                        # Only update if we successfully parsed some dates
-                        if not temp_series.isna().all():
-                            df[col] = temp_series
-                        else:
-                            # If all became NaT, keep original values
-                            st.warning(f"Failed to parse dates in {col} column")
-                    except Exception as e:
-                        st.warning(f"Error parsing {col}: {str(e)}")
+                    # Try each format in order until one works
+                    parsed = None
+                    for fmt in date_formats:
+                        try:
+                            # Try to parse with the specific format
+                            temp_series = pd.to_datetime(df[col], format=fmt, errors='coerce')
+                            # Check if we got some non-null values
+                            if not temp_series.isna().all():
+                                parsed = temp_series
+                                break
+                        except:
+                            continue
+                    
+                    # If none of the formats worked, fall back to the default parser
+                    if parsed is None:
+                        try:
+                            # Fall back to dateutil parser but suppress warnings
+                            import warnings
+                            with warnings.catch_warnings():
+                                warnings.simplefilter("ignore")
+                                parsed = pd.to_datetime(df[col], errors='coerce')
+                        except Exception as e:
+                            st.warning(f"Error parsing {col}: {str(e)}")
+                            continue
+                    
+                    # Update the column if we got some valid dates
+                    if parsed is not None and not parsed.isna().all():
+                        df[col] = parsed
+                    else:
+                        # If all became NaT, keep original values
+                        st.warning(f"Failed to parse dates in {col} column")
             
             # After parsing, check if lastSynced column has valid dates
             if 'lastSynced' in df.columns:
@@ -358,31 +387,32 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
                 )
             
             if 'lastHR' in display_df.columns and 'lastHRVal' in display_df.columns:
-                # Fix heart rate display by properly handling NaN values
+                # Fix heart rate display by properly handling NaN values and ensuring string conversion
                 display_df['Heart Rate'] = display_df.apply(
-                    lambda row: f"{time_status_indicator(row['lastHR'])} {str(row.get('lastHRVal', 'N/A')).replace('nan', 'N/A')} bpm", 
+                    lambda row: f"{time_status_indicator(row['lastHR'])} {'' if pd.isna(row.get('lastHRVal')) else str(int(row.get('lastHRVal'))) + ' bpm'}", 
                     axis=1
                 )
             
             # Format sleep duration to hours with 2 decimal places
             if 'lastSleepEndDateTime' in display_df.columns and 'lastSleepDur' in display_df.columns:
                 display_df['Sleep'] = display_df.apply(
-                    lambda row: f"{time_status_indicator(row['lastSleepEndDateTime'])} {convert_min_to_hours(row.get('lastSleepDur', 'N/A'))}", 
+                    lambda row: f"{time_status_indicator(row['lastSleepEndDateTime'])} {convert_min_to_hours(row.get('lastSleepDur'))}", 
                     axis=1
                 )
             
             if 'lastSteps' in display_df.columns and 'lastStepsVal' in display_df.columns:
+                # Ensure steps are properly formatted as integers when available
                 display_df['Steps'] = display_df.apply(
-                    lambda row: f"{time_status_indicator(row['lastSteps'])} {row.get('lastStepsVal', 'N/A')}", 
+                    lambda row: f"{time_status_indicator(row.get('lastSteps'))} {'' if pd.isna(row.get('lastStepsVal')) else str(int(row.get('lastStepsVal')))}", 
                     axis=1
                 )
             
-            # Prepare battery column for ProgressColumn
+            # Prepare battery column for ProgressColumn - ensure numeric values
             if 'lastBattaryVal' in display_df.columns:
                 # Convert to numeric values and handle NaN
                 display_df['Battery Level'] = pd.to_numeric(display_df['lastBattaryVal'], errors='coerce') / 100.0
-                # For display in table cells
-                display_df['Battery Text'] = display_df['lastBattaryVal'].astype(str) + '%'
+                # Replace NaNs with 0 for the progress column
+                display_df['Battery Level'] = display_df['Battery Level'].fillna(0)
             
             # Define columns for display
             display_columns = ['watchName', 'project', 'Battery Level', 'Last Sync', 'Heart Rate', 'Sleep', 'Steps']
