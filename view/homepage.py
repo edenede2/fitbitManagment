@@ -164,7 +164,8 @@ def time_status_indicator(timestamp):
     now = pd.Timestamp.now().to_datetime64()
     timestamp = pd.to_datetime(timestamp).to_datetime64()
     delta = now - timestamp
-    hours = delta.total_seconds() / 3600
+    # Convert numpy.timedelta64 to hours by dividing by 1 hour
+    hours = delta / np.timedelta64(1, 'h')
     # Handle future dates
     if hours < 0:
         return "⏳"  # Hourglass for future time
@@ -266,6 +267,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
                         try:
                             # Fall back to dateutil parser but suppress warnings
                             import warnings
+                            import numpy as np
                             with warnings.catch_warnings():
                                 warnings.simplefilter("ignore")
                                 parsed = pd.to_datetime(df[col], errors='coerce')
