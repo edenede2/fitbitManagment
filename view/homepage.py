@@ -6,325 +6,459 @@ from entity.Watch import Watch, WatchFactory
 from entity.Sheet import Spreadsheet, GoogleSheetsAdapter
 from Decorators.congrates import congrats, welcome_returning_user
 from model.config import get_secrets
+import pandas as pd
+import polars as pl
+import numpy as np
+from datetime import datetime, timedelta
+import time
+from entity.Sheet import GoogleSheetsAdapter, SheetsAPI, Spreadsheet
+import altair as alt
+import uuid
+import plotly.express as px
+import plotly.graph_objects as go
+import re
+# from streamlit_elements import elements, dashboard, mui, html
 
 def display_homepage(user_email, user_role, user_project, spreadsheet: Spreadsheet) -> None:
     """
     Display the homepage with personalized content based on user's role and project
     """
-    # Get user data for personalization
-    user_data = {}
-    user_name = user_email.split('@')[0] if '@' in user_email else user_email
+    st.title("📊 Fitbit Management Dashboard")
+    st.write("Welcome to the Fitbit Management System dashboard.")
     
-    try:
-        # Try to get user details from spreadsheet
-        # spreadsheet = Spreadsheet(
-        #     'usersPassRoles',
-        #     get_secrets().get('spreadsheet_key'),
-        # )            
-        # GoogleSheetsAdapter.connect(spreadsheet)
-        users_sheet = spreadsheet.get_sheet("user", "user")
-        user_entry = next((u for u in users_sheet.data if u.get('email') == user_email), None)
-        
-        if user_entry:
-            user_name = user_entry.get('name', user_name)
-            last_login = None
-            if user_entry.get('last_login'):
-                try:
-                    if user_entry.get('last_login') == None or user_entry.get('last_login') == '':
-                        last_login = datetime.datetime.now()
-                        # Update last login time in the sheet
-                        user_entry['last_login'] = last_login.isoformat()
-                        spreadsheet.update_sheet("user", "user", user_entry)
-                        GoogleSheetsAdapter.save(spreadsheet)
-                    else:
-                        last_login = datetime.datetime.fromisoformat(user_entry.get('last_login'))
-                except ValueError:
-                    pass
-                    
-            # Display personalized welcome message with last login time if available
-            if last_login:
-                welcome_msg = welcome_returning_user(user_name, last_login)
-                st.header(welcome_msg)
-            else:
-                welcome_msg = congrats(user_name, user_role, user_entry)
-                st.header(welcome_msg)
-        else:
-            # Fallback to simple greeting
-            welcome_msg = congrats(user_name, user_role)
-            st.header(welcome_msg)
-    except Exception as e:
-        # Fallback in case of any error
-        welcome_msg = congrats(user_name, user_role)
-        st.header(welcome_msg)
-    
-    # System overview stats using entities
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.metric("Your Role", user_role)
-        
-    with col2:
-        st.metric("Project", user_project)
-            
-    with col3:
-        # Get watch count from entity layer
-        try:
-            # spreadsheet = Spreadsheet(
-            #     'usersPassRoles',
-            #     get_secrets().get('spreadsheet_key')
-            # )
-
-            # GoogleSheetsAdapter.connect(spreadsheet)
-            fitbits_sheet = spreadsheet.get_sheet("fitbit", "fitbit")
-
-
-            
-            if user_role == "Admin":
-                # Admin sees all watches in all projects
-                st.metric("System Watches", len(fitbits_sheet.data))
-            elif user_role == "Manager":
-                # Managers see watches in their project
-                watches = [w for w in fitbits_sheet.data if w.get('project') == user_project]
-                st.metric("Watches in Project", len(watches))
-            elif user_role == "Student":
-                # Count watches assigned to this student
-                watches = [w for w in fitbits_sheet.data if w.get('user') == user_email]
-                st.metric("Your Watches", len(watches))
-            else:
-                st.metric("System Watches", len(fitbits_sheet.data))
-        except Exception as e:
-            st.metric("Watches", "N/A")
-    
-    # Recent activity from logs
-    st.subheader("Recent Activity")
-    
-    try:
-        # Get log data from entity layer
-        logs_sheet = spreadsheet.get_sheet("log", "log")
-        
-        if user_role == "Admin":
-            # Admin sees logs from all projects
-            # Show most recent 5 log entries
-            recent_logs = sorted(logs_sheet.data, 
-                               key=lambda x: x.get('lastCheck', ''), 
-                               reverse=True)[:5]
-            
-            if recent_logs:
-                for log in recent_logs:
-                    project_name = log.get('project', 'Unknown Project')
-                    st.info(f"{log.get('lastCheck', 'Unknown time')} - Project: {project_name} - Watch {log.get('watchName', 'Unknown')} - "
-                           f"Battery: {log.get('lastBattaryVal', 'N/A')}, "
-                           f"HR: {log.get('lastHRVal', 'N/A')}")
-            else:
-                st.write("No recent activity recorded")
-        elif user_role == "Manager":
-            # Filter logs for this project
-            project_logs = [log for log in logs_sheet.data 
-                           if log.get('project') == user_project]
-            
-            # Show most recent 5 log entries
-            recent_logs = sorted(project_logs, 
-                               key=lambda x: x.get('lastCheck', ''), 
-                               reverse=True)[:5]
-            
-            if recent_logs:
-                for log in recent_logs:
-                    st.info(f"{log.get('lastCheck', 'Unknown time')} - Watch {log.get('watchName', 'Unknown')} - "
-                           f"Battery: {log.get('lastBattaryVal', 'N/A')}, "
-                           f"HR: {log.get('lastHRVal', 'N/A')}")
-            else:
-                st.write("No recent activity recorded")
-        elif user_role == "Student":
-            # Get just this student's watches
-            student_watches = [w.get('name') for w in fitbits_sheet.data 
-                             if w.get('user') == user_email]
-            
-            # Filter logs for student's watches
-            student_logs = [log for log in logs_sheet.data 
-                           if log.get('watchName') in student_watches]
-            
-            # Show most recent 5 log entries
-            recent_logs = sorted(student_logs, 
-                               key=lambda x: x.get('lastCheck', ''), 
-                               reverse=True)[:5]
-            
-            if recent_logs:
-                for log in recent_logs:
-                    st.info(f"{log.get('lastCheck', 'Unknown time')} - Watch {log.get('watchName', 'Unknown')} - "
-                           f"Battery: {log.get('lastBattaryVal', 'N/A')}, "
-                           f"HR: {log.get('lastHRVal', 'N/A')}")
-            else:
-                st.write("No recent activity recorded for your watches")
-        else:
-            st.write("No activity data available for your role")
-    except Exception as e:
-        st.error(f"Unable to load recent activity")
-        st.write("No recent activity data available")
-    
-    # Achievements/Milestones check
-    try:
-        # Just some simple examples
-        if user_role == "Admin":
-            # Check all watches health across projects
-        #     spreadsheet = spreadsheet = Spreadsheet(
-        #     'usersPassRoles',
-        #     get_secrets().get('spreadsheet_key'),
-        # )
-        #     GoogleSheetsAdapter.connect(spreadsheet)
-            fitbits_sheet = spreadsheet.get_sheet("fitbit", "fitbit")
-            logs_sheet = spreadsheet.get_sheet("FitbitLog", "log")
-            
-            all_watches = fitbits_sheet.data
-            active_watches = [w for w in all_watches if str(w.get('isActive', '')).lower() != 'false']
-            
-            if active_watches:
-                # Rest of achievement logic remains the same but applies to all projects
-                # Get latest log for each watch
-                active_watch_names = [w.get('name') for w in active_watches]
-                
-                # Get all logs for active watches
-                watch_logs = {}
-                for log in logs_sheet.data:
-                    watch_name = log.get('watchName')
-                    if watch_name in active_watch_names:
-                        last_check = log.get('lastCheck', '')
-                        if watch_name not in watch_logs or last_check > watch_logs[watch_name].get('lastCheck', ''):
-                            watch_logs[watch_name] = log
-                
-                # Count watches with good battery
-                good_battery_count = sum(
-                    1 for log in watch_logs.values() 
-                    if log.get('lastBattaryVal') and float(log.get('lastBattaryVal', 0)) > 80
-                )
-                
-                # Show achievement if all watches have good battery
-                if good_battery_count == len(active_watches) and len(active_watches) > 0:
-                    st.success("🔋 Excellent! All system watches have good battery levels!")
-                    
-                # Count recently synced watches (last 24 hours)
-                now = datetime.datetime.now()
-                synced_count = 0
-                
-                for log in watch_logs.values():
-                    if log.get('lastSynced'):
-                        try:
-                            last_sync = datetime.datetime.fromisoformat(log.get('lastSynced').replace('Z', ''))
-                            if (now - last_sync).total_seconds() < 24 * 3600:  # 24 hours
-                                synced_count += 1
-                        except (ValueError, TypeError):
-                            pass
-                
-                # Show achievement if all watches synced recently
-                if synced_count == len(active_watches) and len(active_watches) > 0:
-                    st.success("🌟 Fantastic job! All system watches are synced and up to date!")
-                    
-        elif user_role == "Manager":
-            # Check watch health for this project
-        #     spreadsheet = Spreadsheet(
-        #     'usersPassRoles',
-        #     get_secrets().get('spreadsheet_key'),
-        # )
-        #     GoogleSheetsAdapter.connect(spreadsheet)
-            fitbits_sheet = spreadsheet.get_sheet("fitbit", "fitbit")
-            logs_sheet = spreadsheet.get_sheet("FitbitLog", "log")
-            
-            project_watches = [w for w in fitbits_sheet.data if w.get('project') == user_project]
-            active_watches = [w for w in project_watches if str(w.get('isActive', '')).lower() != 'false']
-            
-            if active_watches:
-                # Get latest log for each watch
-                active_watch_names = [w.get('name') for w in active_watches]
-                
-                # Get all logs for active watches
-                watch_logs = {}
-                for log in logs_sheet.data:
-                    watch_name = log.get('watchName')
-                    if watch_name in active_watch_names:
-                        last_check = log.get('lastCheck', '')
-                        if watch_name not in watch_logs or last_check > watch_logs[watch_name].get('lastCheck', ''):
-                            watch_logs[watch_name] = log
-                
-                # Count watches with good battery
-                good_battery_count = sum(
-                    1 for log in watch_logs.values() 
-                    if log.get('lastBattaryVal') and float(log.get('lastBattaryVal', 0)) > 80
-                )
-                
-                # Show achievement if all watches have good battery
-                if good_battery_count == len(active_watches) and len(active_watches) > 0:
-                    st.success("🔋 Excellent! All your project's watches have good battery levels!")
-                    
-                # Count recently synced watches (last 24 hours)
-                now = datetime.datetime.now()
-                synced_count = 0
-                
-                for log in watch_logs.values():
-                    if log.get('lastSynced'):
-                        try:
-                            last_sync = datetime.datetime.fromisoformat(log.get('lastSynced').replace('Z', ''))
-                            if (now - last_sync).total_seconds() < 24 * 3600:  # 24 hours
-                                synced_count += 1
-                        except (ValueError, TypeError):
-                            pass
-                
-                # Show achievement if all watches synced recently
-                if synced_count == len(active_watches) and len(active_watches) > 0:
-                    st.success("🌟 Fantastic job! All your watches are synced and up to date!")
-                    
-        elif user_role == "Student":
-            # Get student's watches
-        #     spreadsheet = Spreadsheet(
-        #     'usersPassRoles',
-        #     get_secrets().get('spreadsheet_key'),
-        # )
-        #     GoogleSheetsAdapter.connect(spreadsheet)
-            fitbits_sheet = spreadsheet.get_sheet("fitbit", "fitbit")
-            logs_sheet = spreadsheet.get_sheet("FitbitLog", "log")
-            
-            student_watches = [w for w in fitbits_sheet.data if w.get('user') == user_email]
-            
-            if student_watches:
-                watch_names = [w.get('name') for w in student_watches]
-                recent_syncs = []
-                
-                # Get latest logs for student watches
-                for watch_name in watch_names:
-                    logs = [log for log in logs_sheet.data if log.get('watchName') == watch_name]
-                    if logs:
-                        latest_log = max(logs, key=lambda x: x.get('lastCheck', ''))
-                        if latest_log.get('lastSynced'):
-                            recent_syncs.append(latest_log)
-                
-                # Show achievement if student has synced watches recently
-                if len(recent_syncs) == len(student_watches) and student_watches:
-                    st.success("👏 Great job keeping your watches synced!")
-                
-    except Exception as e:
-        # Fail silently for achievements
-        pass
-    
-    # Quick actions based on role
-    st.subheader("Quick Actions")
-    cols = st.columns(3)
-    
+    # Display role-specific information
     if user_role == "Admin":
-        if cols[0].button("View All Watches"):
-            st.session_state.navigate_to = "dashboard_all_watches"
-        if cols[1].button("Add New Watch"):
-            st.session_state.navigate_to = "add_watch"
-        if cols[2].button("Manage Users"):
-            st.session_state.navigate_to = "manage_users"
-    
+        st.info(f"You are logged in as an Administrator with access to all projects.")
     elif user_role == "Manager":
-        if cols[0].button("View Project Watches"):
-            st.session_state.navigate_to = "dashboard_project_watches"
-        if cols[1].button("Assign Watches"):
-            st.session_state.navigate_to = "assign_watches"
-        if cols[2].button("View Reports"):
-            st.session_state.navigate_to = "reports"
-    
+        st.info(f"You are logged in as a Manager for project: {user_project}")
     elif user_role == "Student":
-        if cols[0].button("My Watch Status"):
-            st.session_state.navigate_to = "my_watches"
-        if cols[1].button("Submit Data"):
-            st.session_state.navigate_to = "submit_data"
+        st.info(f"You are logged in as a Student assigned to project: {user_project}")
+    else:
+        st.info(f"You are logged in as a Guest with limited access.")
+    
+    # Display project overview
+    st.subheader("Project Overview")
+    
+    # Add the Fitbit Log table
+    display_fitbit_log_table(user_email, user_role, user_project, spreadsheet)
+    
+    # Add any additional homepage content here
+    st.subheader("Quick Links")
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.write("**Dashboard**")
+        st.write("View detailed analytics and statistics.")
+    with col2:
+        st.write("**Fitbit Management**")
+        st.write("Manage Fitbit devices and assignments.")
+    with col3:
+        st.write("**Alerts Configuration**")
+        st.write("Configure alert thresholds and notifications.")
+
+def render_battery_gauge(battery_level):
+    """Render a battery level as a colored progress bar"""
+    try:
+        if battery_level is None or battery_level == "" or pd.isna(battery_level):
+            return "No data"
+        
+        # Convert to numeric value
+        battery = float(battery_level)
+        
+        # Determine color based on level
+        if battery >= 80:
+            color = "green"
+        elif battery >= 50:
+            color = "orange"
+        else:
+            color = "red"
+            
+        # Create HTML for progress bar
+        html = f"""
+        <div style="width:100%; background-color:#f0f0f0; border-radius:5px; height:20px;">
+            <div style="width:{battery}%; background-color:{color}; height:20px; border-radius:5px; text-align:center; color:white; line-height:20px; font-size:12px;">
+                {battery}%
+            </div>
+        </div>
+        """
+        return html
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+def format_time_ago(timestamp):
+    """Format a datetime as a human-readable 'time ago' string"""
+    if timestamp is None or pd.isna(timestamp):
+        return "Never"
+    
+    # If timestamp is a string, try to parse it
+    if isinstance(timestamp, str):
+        try:
+            timestamp = pd.to_datetime(timestamp)
+        except:
+            return timestamp
+    
+    now = pd.Timestamp.now()
+    delta = now - timestamp
+    
+    seconds = delta.total_seconds()
+    
+    if seconds < 60:
+        return f"{int(seconds)}s ago"
+    elif seconds < 3600:
+        return f"{int(seconds/60)}m ago"
+    elif seconds < 86400:
+        return f"{int(seconds/3600)}h ago"
+    elif seconds < 604800:
+        return f"{int(seconds/86400)}d ago"
+    else:
+        return timestamp.strftime("%Y-%m-%d")
+
+def time_status_indicator(timestamp):
+    """Return a status indicator based on time elapsed"""
+    if timestamp is None or pd.isna(timestamp):
+        return "❓"
+    
+    # If timestamp is a string, try to parse it
+    if isinstance(timestamp, str):
+        try:
+            timestamp = pd.to_datetime(timestamp)
+        except:
+            return "❓"
+    
+    now = pd.Timestamp.now()
+    delta = now - timestamp
+    hours = delta.total_seconds() / 3600
+    
+    if hours <= 3:
+        return "✅"
+    elif hours <= 12:
+        return "🟡"
+    elif hours <= 24:
+        return "🟠"
+    else:
+        return "🔴"
+
+def load_fitbit_sheet_data(spreadsheet):
+    """Load data from the Fitbit sheet to identify watch assignments"""
+    try:
+        # Get the fitbit sheet
+        fitbit_sheet = spreadsheet.get_sheet("fitbit", "fitbit")
+        
+        # Map watch names to their assigned students
+        watch_mapping = {}
+        for item in fitbit_sheet.data:
+            watch_name = item.get("name", "")
+            project_name = item.get("project", "")
+            is_active = str(item.get("isActive", "")).lower() not in ["false", "0", "no", "n", ""]
+            
+            # Create key as project-watchName
+            key = f"{project_name}-{watch_name}"
+            
+            watch_mapping[key] = {
+                "student": item.get("currentStudent", ""),
+                "active": is_active
+            }
+            
+        return watch_mapping
+    except Exception as e:
+        st.error(f"Error loading Fitbit sheet data: {e}")
+        return {}
+
+def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
+    """Display the Fitbit Log table with data from the FitbitLog sheet"""
+    st.subheader("Fitbit Watch Status")
+    
+    with st.spinner("Loading Fitbit data..."):
+        try:
+            # Load the FitbitLog sheet
+            fitbit_log_sheet = spreadsheet.get_sheet("FitbitLog", "log")
+            
+            # Get watch assignment info
+            watch_mapping = load_fitbit_sheet_data(spreadsheet)
+            
+            if not fitbit_log_sheet.data:
+                st.warning("No Fitbit log data available.")
+                return
+            
+            # Convert to DataFrame
+            df = pd.DataFrame(fitbit_log_sheet.data)
+            
+            # Convert datetime columns
+            datetime_cols = ['lastCheck', 'lastSynced', 'lastBattary', 'lastHR', 
+                            'lastSleepStartDateTime', 'lastSleepEndDateTime', 'lastSteps']
+            
+            for col in datetime_cols:
+                if col in df.columns:
+                    df[col] = pd.to_datetime(df[col], errors='coerce')
+            
+            # Sort by lastCheck (most recent first)
+            if 'lastCheck' in df.columns:
+                df = df.sort_values('lastCheck', ascending=False)
+            
+            # Add student assignment and watch status information
+            df['assigned_student'] = df.apply(
+                lambda row: watch_mapping.get(f"{row.get('project')}-{row.get('watchName')}", {}).get('student', ''),
+                axis=1
+            )
+            
+            df['is_active'] = df.apply(
+                lambda row: watch_mapping.get(f"{row.get('project')}-{row.get('watchName')}", {}).get('active', True),
+                axis=1
+            )
+            
+            # Filter based on user role and project
+            if user_role.lower() == "admin":
+                # Admin sees everything
+                filtered_df = df
+            elif user_role.lower() == "manager":
+                # Manager sees watches from their project
+                filtered_df = df[df['project'] == user_project]
+            else:
+                # Student sees watches from their project, highlighting their own
+                filtered_df = df[df['project'] == user_project]
+            
+            # Allow filtering by project for Admin
+            if user_role.lower() == "admin":
+                projects = sorted(df['project'].unique())
+                selected_projects = st.multiselect("Filter by Project:", projects, default=projects)
+                if selected_projects:
+                    filtered_df = filtered_df[filtered_df['project'].isin(selected_projects)]
+            
+            # Get the latest record for each watch
+            latest_df = filtered_df.sort_values('lastCheck', ascending=False).drop_duplicates('watchName')
+            
+            # Display summary metrics
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Total Watches", len(latest_df))
+            with col2:
+                st.metric("Active Watches", len(latest_df[latest_df['is_active'] == True]))
+            with col3:
+                low_battery = len(latest_df[latest_df['lastBattaryVal'].astype(str).str.replace('%', '').astype(float, errors='ignore') < 20])
+                st.metric("Low Battery", f"{low_battery}")
+            with col4:
+                # Count watches not synced in last 24 hours
+                not_synced = latest_df[latest_df['lastSynced'] < (pd.Timestamp.now() - pd.Timedelta(hours=24))].shape[0]
+                st.metric("Not Synced (24h)", f"{not_synced}")
+            
+            # For students, show their assigned watch first
+            if user_role.lower() == "student":
+                my_watches = latest_df[latest_df['assigned_student'] == user_email]
+                if not my_watches.empty:
+                    st.subheader("My Assigned Watch")
+                    for _, row in my_watches.iterrows():
+                        col1, col2 = st.columns([1, 3])
+                        with col1:
+                            st.markdown(f"### {row['watchName']}")
+                            st.markdown(f"**Project:** {row['project']}")
+                        
+                        with col2:
+                            battery_val = row.get('lastBattaryVal', '')
+                            last_sync = format_time_ago(row.get('lastSynced'))
+                            sync_status = time_status_indicator(row.get('lastSynced'))
+                            
+                            st.markdown(f"**Battery:** {render_battery_gauge(battery_val)}", unsafe_allow_html=True)
+                            st.markdown(f"**Last Synced:** {sync_status} {last_sync}")
+                            
+                            # Show heart rate and steps
+                            hr_val = row.get('lastHRVal', 'N/A')
+                            steps_val = row.get('lastStepsVal', 'N/A')
+                            st.markdown(f"**Heart Rate:** {hr_val} bpm | **Steps:** {steps_val}")
+                            
+                            # Show sleep data if available
+                            sleep_start = row.get('lastSleepStartDateTime')
+                            sleep_end = row.get('lastSleepEndDateTime')
+                            sleep_dur = row.get('lastSleepDur', 'N/A')
+                            
+                            if pd.notna(sleep_start) and pd.notna(sleep_end):
+                                st.markdown(f"**Last Sleep:** {sleep_start.strftime('%m/%d %H:%M')} to {sleep_end.strftime('%m/%d %H:%M')} ({sleep_dur} min)")
+            
+            # Main watch table
+            st.subheader("All Watches Overview")
+            
+            # Create custom HTML table for better visualization
+            html_table = """
+            <style>
+                .fitbit-table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    margin-bottom: 20px;
+                }
+                .fitbit-table th {
+                    background-color: #f2f2f2;
+                    padding: 8px;
+                    text-align: left;
+                    border: 1px solid #ddd;
+                }
+                .fitbit-table td {
+                    padding: 8px;
+                    border: 1px solid #ddd;
+                }
+                .fitbit-table tr:nth-child(even) {
+                    background-color: #f9f9f9;
+                }
+                .fitbit-table tr:hover {
+                    background-color: #f0f0f0;
+                }
+                .student-watch {
+                    background-color: #e6f7ff !important;
+                    font-weight: bold;
+                }
+            </style>
+            <table class="fitbit-table">
+                <tr>
+                    <th>Watch Name</th>
+                    <th>Project</th>
+                    <th>Battery</th>
+                    <th>Last Sync</th>
+                    <th>Heart Rate</th>
+                    <th>Sleep</th>
+                    <th>Steps</th>
+                </tr>
+            """
+            
+            for _, row in latest_df.iterrows():
+                is_student_watch = row.get('assigned_student') == user_email
+                tr_class = 'class="student-watch"' if is_student_watch else ''
+                
+                # Get values and format them
+                watch_name = row.get('watchName', '')
+                project = row.get('project', '')
+                battery = render_battery_gauge(row.get('lastBattaryVal', ''))
+                
+                # Format time values with status indicators
+                last_sync = row.get('lastSynced')
+                sync_indicator = time_status_indicator(last_sync)
+                sync_time = format_time_ago(last_sync)
+                
+                last_hr = row.get('lastHR')
+                hr_indicator = time_status_indicator(last_hr)
+                hr_time = format_time_ago(last_hr)
+                hr_val = row.get('lastHRVal', 'N/A')
+                
+                last_sleep = row.get('lastSleepEndDateTime')
+                sleep_indicator = time_status_indicator(last_sleep)
+                sleep_time = format_time_ago(last_sleep)
+                sleep_dur = row.get('lastSleepDur', 'N/A')
+                
+                last_steps = row.get('lastSteps')
+                steps_indicator = time_status_indicator(last_steps)
+                steps_time = format_time_ago(last_steps)
+                steps_val = row.get('lastStepsVal', 'N/A')
+                
+                # Add row to table
+                html_table += f"""
+                <tr {tr_class}>
+                    <td>{'👤 ' if is_student_watch else ''}{watch_name}</td>
+                    <td>{project}</td>
+                    <td>{battery}</td>
+                    <td>{sync_indicator} {sync_time}</td>
+                    <td>{hr_indicator} {hr_val} bpm</td>
+                    <td>{sleep_indicator} {sleep_dur} min</td>
+                    <td>{steps_indicator} {steps_val}</td>
+                </tr>
+                """
+            
+            html_table += "</table>"
+            
+            # Display the HTML table
+            st.markdown(html_table, unsafe_allow_html=True)
+            
+            # Add expandable section with detailed view
+            with st.expander("View Detailed Data"):
+                # Show more columns in the detailed table
+                detail_cols = ['watchName', 'project', 'lastCheck', 'lastSynced', 
+                              'lastBattaryVal', 'lastHRVal', 'lastStepsVal',
+                              'CurrentFailedSync', 'TotalFailedSync',
+                              'CurrentFailedHR', 'TotalFailedHR',
+                              'CurrentFailedSleep', 'TotalFailedSleep',
+                              'CurrentFailedSteps', 'TotalFailedSteps']
+                
+                # Select columns that actually exist in the dataframe
+                available_cols = [col for col in detail_cols if col in latest_df.columns]
+                detail_df = latest_df[available_cols].copy()
+                
+                # Format datetime columns for display
+                for col in ['lastCheck', 'lastSynced']:
+                    if col in detail_df.columns:
+                        detail_df[col] = detail_df[col].dt.strftime('%Y-%m-%d %H:%M')
+                
+                # Display as dataframe with student assignment highlighting
+                st.dataframe(detail_df, use_container_width=True)
+            
+            # Add visualization section
+            st.subheader("Visualizations")
+            
+            # Let user select a watch to view historical data
+            watch_options = sorted(filtered_df['watchName'].unique())
+            if watch_options:
+                selected_watch = st.selectbox("Select Watch for History:", watch_options)
+                
+                # Get historical data for the selected watch
+                watch_history = filtered_df[filtered_df['watchName'] == selected_watch].sort_values('lastCheck')
+                
+                if not watch_history.empty:
+                    # Create tabs for different metrics
+                    tab1, tab2, tab3, tab4 = st.tabs(["Battery", "Heart Rate", "Steps", "Sleep"])
+                    
+                    with tab1:
+                        # Convert battery values to numeric
+                        watch_history['battery_num'] = pd.to_numeric(watch_history['lastBattaryVal'], errors='coerce')
+                        battery_df = watch_history[['lastCheck', 'battery_num']].dropna()
+                        
+                        if not battery_df.empty:
+                            fig = px.line(battery_df, x='lastCheck', y='battery_num', 
+                                         title=f"Battery History - {selected_watch}",
+                                         labels={'lastCheck': 'Time', 'battery_num': 'Battery Level (%)'},
+                                         range_y=[0, 100])
+                            st.plotly_chart(fig, use_container_width=True)
+                        else:
+                            st.info("No battery data available for this watch")
+                    
+                    with tab2:
+                        # Convert HR values to numeric
+                        watch_history['hr_num'] = pd.to_numeric(watch_history['lastHRVal'], errors='coerce')
+                        hr_df = watch_history[['lastCheck', 'hr_num']].dropna()
+                        
+                        if not hr_df.empty:
+                            fig = px.line(hr_df, x='lastCheck', y='hr_num', 
+                                         title=f"Heart Rate History - {selected_watch}",
+                                         labels={'lastCheck': 'Time', 'hr_num': 'Heart Rate (bpm)'})
+                            st.plotly_chart(fig, use_container_width=True)
+                        else:
+                            st.info("No heart rate data available for this watch")
+                    
+                    with tab3:
+                        # Convert steps values to numeric
+                        watch_history['steps_num'] = pd.to_numeric(watch_history['lastStepsVal'], errors='coerce')
+                        steps_df = watch_history[['lastCheck', 'steps_num']].dropna()
+                        
+                        if not steps_df.empty:
+                            fig = px.bar(steps_df, x='lastCheck', y='steps_num', 
+                                        title=f"Steps History - {selected_watch}",
+                                        labels={'lastCheck': 'Time', 'steps_num': 'Steps'})
+                            st.plotly_chart(fig, use_container_width=True)
+                        else:
+                            st.info("No steps data available for this watch")
+                    
+                    with tab4:
+                        # Convert sleep duration to numeric
+                        watch_history['sleep_min'] = pd.to_numeric(watch_history['lastSleepDur'], errors='coerce')
+                        sleep_df = watch_history[['lastCheck', 'sleep_min']].dropna()
+                        
+                        if not sleep_df.empty:
+                            fig = px.bar(sleep_df, x='lastCheck', y='sleep_min', 
+                                        title=f"Sleep Duration History - {selected_watch}",
+                                        labels={'lastCheck': 'Date', 'sleep_min': 'Sleep Duration (min)'})
+                            st.plotly_chart(fig, use_container_width=True)
+                        else:
+                            st.info("No sleep data available for this watch")
+                else:
+                    st.info(f"No historical data available for {selected_watch}")
+            else:
+                st.info("No watches available for visualization")
+                
+        except Exception as e:
+            st.error(f"Error displaying Fitbit log data: {e}")
+            # Add debugging info if needed
+            st.exception(e)
