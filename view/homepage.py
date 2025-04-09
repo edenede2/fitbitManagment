@@ -386,10 +386,22 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
                     axis=1
                 )
             
+            def safe_int_convert(val):
+                """Safely convert a value to int with error handling"""
+                try:
+                    if pd.isna(val) or val == '' or not val:
+                        return 'N/A'
+                    return int(float(val))  # Convert to float first for strings like '72.0'
+                except (ValueError, TypeError):
+                    return val
+
+            # Fix heart rate display by properly handling NaN values and empty strings
             if 'lastHR' in display_df.columns and 'lastHRVal' in display_df.columns:
-                # Fix heart rate display by properly handling NaN values and ensuring string conversion
                 display_df['Heart Rate'] = display_df.apply(
-                    lambda row: f"{time_status_indicator(row['lastHR'])} {'' if pd.isna(row.get('lastHRVal')) else str(int(row.get('lastHRVal'))) + ' bpm'}", 
+                    lambda row: f"{time_status_indicator(row['lastHR'])} " + 
+                               (f"{safe_int_convert(row.get('lastHRVal'))} bpm" 
+                                if not pd.isna(row.get('lastHRVal')) and row.get('lastHRVal') != '' 
+                                else "N/A"), 
                     axis=1
                 )
             
@@ -400,19 +412,22 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
                     axis=1
                 )
             
+            # Ensure steps are properly formatted with safe integer conversion
             if 'lastSteps' in display_df.columns and 'lastStepsVal' in display_df.columns:
-                # Ensure steps are properly formatted as integers when available
                 display_df['Steps'] = display_df.apply(
-                    lambda row: f"{time_status_indicator(row.get('lastSteps'))} {'' if pd.isna(row.get('lastStepsVal')) else str(int(row.get('lastStepsVal')))}", 
+                    lambda row: f"{time_status_indicator(row.get('lastSteps'))} " + 
+                               (f"{safe_int_convert(row.get('lastStepsVal'))}" 
+                                if not pd.isna(row.get('lastStepsVal')) and row.get('lastStepsVal') != '' 
+                                else "N/A"), 
                     axis=1
                 )
             
-            # Prepare battery column for ProgressColumn - ensure numeric values
+            # Prepare battery column for ProgressColumn with better error handling
             if 'lastBattaryVal' in display_df.columns:
-                # Convert to numeric values and handle NaN
-                display_df['Battery Level'] = pd.to_numeric(display_df['lastBattaryVal'], errors='coerce') / 100.0
-                # Replace NaNs with 0 for the progress column
-                display_df['Battery Level'] = display_df['Battery Level'].fillna(0)
+                # Convert to numeric values and handle NaN and empty strings
+                display_df['Battery Level'] = display_df['lastBattaryVal'].apply(
+                    lambda x: 0 if pd.isna(x) or x == '' or not x else float(x) / 100.0 
+                )
             
             # Define columns for display
             display_columns = ['watchName', 'project', 'Battery Level', 'Last Sync', 'Heart Rate', 'Sleep', 'Steps']
