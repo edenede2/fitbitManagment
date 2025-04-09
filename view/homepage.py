@@ -23,7 +23,7 @@ def display_homepage(user_email, user_role, user_project, spreadsheet: Spreadshe
     """
     Display the homepage with personalized content based on user's role and project
     """
-    st.title("📊 Fitbit Management Dashboard")
+    congrats(user_name=user_email.split('@')[0], user_role=user_role)
     st.write("Welcome to the Fitbit Management System dashboard.")
     
     # Display role-specific information
