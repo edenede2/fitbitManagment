@@ -159,27 +159,44 @@ def time_status_indicator(timestamp):
     # If timestamp is a string, try to parse it
     if isinstance(timestamp, str):
         try:
-            timestamp = pd.to_datetime(timestamp)
+            # Suppress warnings about format inference
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                timestamp = pd.to_datetime(timestamp)
         except:
             return "❓"
     
-    now = pd.Timestamp.now().to_datetime64()
-    timestamp = pd.to_datetime(timestamp).to_datetime64()
-    delta = now - timestamp
-    # Convert numpy.timedelta64 to hours by dividing by 1 hour
-    hours = delta / np.timedelta64(1, 'h')
-    # Handle future dates
-    if hours < 0:
-        return "⏳"  # Hourglass for future time
-    
-    if hours <= 3:
-        return "✅"
-    elif hours <= 12:
-        return "🟡"
-    elif hours <= 24:
-        return "🟠"
-    else:
-        return "🔴"
+    # Convert to datetime64 for consistent time delta calculation
+    try:
+        now = pd.Timestamp.now().to_datetime64()
+        timestamp = pd.to_datetime(timestamp).to_datetime64()
+        
+        # Handle future dates properly: check year first
+        timestamp_year = pd.to_datetime(timestamp).year
+        current_year = pd.to_datetime(now).year
+        
+        if timestamp_year > current_year:
+            return "🔵"  # Blue circle for future years
+        
+        delta = now - timestamp
+        # Convert numpy.timedelta64 to hours by dividing by 1 hour
+        hours = delta / np.timedelta64(1, 'h')
+        
+        # Handle future dates
+        if hours < 0:
+            return "⏳"  # Hourglass for future time
+        
+        # Handle past dates as before
+        if hours <= 3:
+            return "✅"
+        elif hours <= 12:
+            return "🟡"
+        elif hours <= 24:
+            return "🟠"
+        else:
+            return "🔴"
+    except Exception:
+        return "❓"  # Return question mark for any conversion failures
 
 def load_fitbit_sheet_data(spreadsheet):
     """Load data from the Fitbit sheet to identify watch assignments"""
@@ -421,7 +438,10 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
             # Format columns for display with concise time
             if 'lastSynced' in display_df.columns:
                 display_df['Last Sync'] = display_df.apply(
-                    lambda row: f"{time_status_indicator(row['lastSynced'])} {format_time_ago_concise(row['lastSynced'])}", 
+                    lambda row: f"{time_status_indicator(row['lastSynced'])} " + 
+                    (f"Future: {pd.to_datetime(row['lastSynced']).strftime('%Y-%m-%d')}" 
+                     if pd.to_datetime(row['lastSynced']).year > datetime.now().year 
+                     else format_time_ago_concise(row['lastSynced'])),
                     axis=1
                 )
             
@@ -445,7 +465,22 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
                 )
             
             # Format sleep duration to hours with 2 decimal places
-            if 'lastSleepEndDateTime' in display_df.columns and 'lastSleepDur' in display_df.columns:
+            if 'lastSleepStartDateTime' in display_df.columns and 'lastSleepEndDateTime' in display_df.columns:
+                # Calculate sleep duration directly from the timestamps
+                display_df['calculated_sleep_dur'] = display_df.apply(
+                    lambda row: calculate_sleep_duration(row.get('lastSleepStartDateTime'), row.get('lastSleepEndDateTime')),
+                    axis=1
+                )
+                
+                # Use calculated duration when available, fall back to stored duration
+                display_df['Sleep'] = display_df.apply(
+                    lambda row: f"{time_status_indicator(row['lastSleepEndDateTime'])} " + 
+                                (convert_min_to_hours(row.get('calculated_sleep_dur')) 
+                                 if not pd.isna(row.get('calculated_sleep_dur')) 
+                                 else convert_min_to_hours(row.get('lastSleepDur'))),
+                    axis=1
+                )
+            elif 'lastSleepEndDateTime' in display_df.columns and 'lastSleepDur' in display_df.columns:
                 display_df['Sleep'] = display_df.apply(
                     lambda row: f"{time_status_indicator(row['lastSleepEndDateTime'])} {convert_min_to_hours(row.get('lastSleepDur'))}", 
                     axis=1
@@ -653,3 +688,24 @@ def convert_min_to_hours(minutes_value):
         return f"{hours:.2f} h"
     except (ValueError, TypeError):
         return f"{minutes_value}"
+
+def calculate_sleep_duration(start_time, end_time):
+    """Calculate sleep duration between two timestamps in minutes"""
+    if pd.isna(start_time) or pd.isna(end_time):
+        return None
+    
+    try:
+        # Ensure both are datetime objects
+        if isinstance(start_time, str):
+            start_time = pd.to_datetime(start_time)
+        if isinstance(end_time, str):
+            end_time = pd.to_datetime(end_time)
+        
+        # Calculate duration in minutes
+        delta = end_time - start_time
+        minutes = delta.total_seconds() / 60
+        
+        # Return duration in minutes (should be positive)
+        return abs(minutes)
+    except Exception:
+        return None
