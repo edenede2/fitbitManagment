@@ -483,7 +483,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
                 # Format datetime columns for display
                 for col in ['lastCheck', 'lastSynced']:
                     if col in detail_df.columns:
-                        detail_df[col] = detail_df[col].dt.strftime('%Y-%m-%d %H:%M')
+                        detail_df[col] = detail_df[col].dt.strftime('%Y-%m-%dT%H:%M:%S.%f')
                 
                 # Display as dataframe with student assignment highlighting
                 st.dataframe(detail_df, use_container_width=True)
