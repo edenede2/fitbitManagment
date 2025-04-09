@@ -361,7 +361,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
             # Sort by lastCheck (most recent first)
             if 'lastCheck' in fitbit_log_df.columns:
                 # df = df.sort_values('lastCheck', ascending=False)
-                fitbit_log_df = fitbit_log_df.sort_values('lastCheck', ascending=False)
+                fitbit_log_df = fitbit_log_df.sort('lastCheck', descending=True)
             
             # Add student assignment and watch status information
             # Create a mapping dictionary for assigned students
