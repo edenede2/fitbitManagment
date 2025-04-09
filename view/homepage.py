@@ -384,8 +384,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet):
                     help="Battery level of the watch",
                     format="%d%%",
                     min_value=0,
-                    max_value=1.0,
-                    color=["red", "orange", "green"]
+                    max_value=1.0
                 ),
                 "Last Sync": "Last Sync",
                 "Heart Rate": "Heart Rate",
