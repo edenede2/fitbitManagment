@@ -370,7 +370,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
             # Add assigned_student column using polars expressions
             fitbit_log_df = fitbit_log_df.with_columns([
                 (pl.col("project") + "-" + pl.col("watchName"))
-                .map_dict(student_mapping, default='')
+                .map_elements(lambda key: student_mapping.get(key, ''))
                 .alias("assigned_student")
             ])
             fitbit_log_df = fitbit_log_df.with_columns(
