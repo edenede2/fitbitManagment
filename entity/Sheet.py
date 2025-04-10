@@ -120,6 +120,7 @@ class SheetFactory:
             'suspicious_nums': SuspiciousNums,
             'student_fitbit': FitbitStudent,
             'chats': ChatsSheet,
+            'fibroEMA': FibroEMASheet,
             'generic': Sheet
         }
         
@@ -177,6 +178,14 @@ class BulldogSheet(Sheet):
     schema: SheetSchema = field(default_factory=lambda: SheetSchema(
         columns=['שם',	'נייד',	'קטגוריה ( לא חובה )',	'סטטוס שליחה',	'זמן שליחה'],
         required_columns=['שם', 'נייד']
+    ))
+
+@dataclass
+class FibroEMASheet(Sheet):
+    """Sheet for storing Fibro EMA data"""
+    schema: SheetSchema = field(default_factory=lambda: SheetSchema(
+        columns=['User Id', 'KEY', 'Date Time'],
+        required_columns=['User Id', 'KEY']
     ))
 
 @dataclass
@@ -374,7 +383,7 @@ class GoogleSheetsAdapter:
             sheets_names = [
                 "user", "project", "fitbit", "log", "bulldog", "EMA", "FitbitLog",
                 "fitbit_alerts_config", "qualtrics_alerts_config", "late_nums", "suspicious_nums",
-                "EMA", "student_fitbit", "chats"
+                "EMA", "student_fitbit", "chats", "for_analysis"
             ]
             if sheet_name not in sheets_names:
                 continue
@@ -453,6 +462,10 @@ class GoogleSheetsAdapter:
                 sheet_type = 'EMA'
             elif 'qualtrics_nova' in sheet_name.lower():
                 sheet_type = 'EMA'
+            elif 'fibroema' in sheet_name.lower():
+                sheet_type = 'fibroEMA'
+            elif 'for_analysis' in sheet_name.lower():
+                sheet_type = 'fibroEMA'
             
             # Create and populate the sheet
             sheet = SheetFactory.create_sheet(sheet_type, sheet_name)
