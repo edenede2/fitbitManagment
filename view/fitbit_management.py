@@ -50,7 +50,7 @@ def load_fitbit_datatable(user_email: str, user_role: str, user_project: str, sp
                 # if isinstance(user_project, str):
                 #     user_projects = [user_project]
                 
-                st.sidebar.write(f"Your projects: {', '.join(user_project)}")
+                # st.sidebar.write(f"Your projects: {', '.join(user_project)}")
                 
                 # Filter devices by project
                 fitbit_df = fitbit_df.filter(pl.col("project") == user_project)
