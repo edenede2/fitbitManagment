@@ -24,7 +24,7 @@ user_role = st.session_state.get('user_role', 'Guest')
 user_project = st.session_state.get('user_project', 'None')
 
 # Only show for NOVA managers or admin
-if not ((user_project == 'nova' and user_role == 'manager') or user_role == 'Admin'):
+if not ((user_project == 'fibro') or user_role == 'Admin'):
     st.warning("You don't have permission to access this page.")
     st.stop()
 
