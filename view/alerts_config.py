@@ -13,10 +13,11 @@ def load_spreadsheet() -> Spreadsheet:
     GoogleSheetsAdapter.connect(spreadsheet)
     return spreadsheet
 
-def get_user_fitbit_config(spreadsheet:Spreadsheet, user_email):
+def get_user_fitbit_config(spreadsheet:Spreadsheet, user_email, user_project):
     """Get Fitbit configuration for the current user"""
     # Get the fitbit alerts config sheet
     fitbit_config_sheet = spreadsheet.get_sheet("fitbit_alerts_config", "fitbit_alerts_config")
+    fitbit_sheet_df = spreadsheet.get_sheet("fitbit", "fitbit").to_dataframe(engine="polars")
     
     # Convert to DataFrame for easier filtering
     config_df = fitbit_config_sheet.to_dataframe(engine="polars")
@@ -34,7 +35,9 @@ def get_user_fitbit_config(spreadsheet:Spreadsheet, user_email):
             'currentStepsThr': 3,
             'totalStepsThr': 10,
             'batteryThr': 20,
-            'manager': user_email
+            'manager': user_email,
+            'email': user_email,
+            'watch': ''
         }
     
     # Filter by manager email
@@ -53,11 +56,14 @@ def get_user_fitbit_config(spreadsheet:Spreadsheet, user_email):
             'currentStepsThr': 3,
             'totalStepsThr': 10,
             'batteryThr': 20,
-            'manager': user_email
+            'manager': user_email,
+            'email': user_email,
+            'watch': ''
         }
+    watche_name_list = fitbit_sheet_df.filter(pl.col('project') == user_project).select('watch').unique().to_list()
     
     # Return the first config for this user
-    return user_config.to_dicts()[0]
+    return user_config.to_dicts()[0], watche_name_list
 
 def get_user_qualtrics_config(spreadsheet:Spreadsheet, user_email):
     """Get Qualtrics configuration for the current user"""
@@ -303,7 +309,7 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
         st.header("Fitbit Alerts Configuration")
         
         # Get current configuration
-        fitbit_config = get_user_fitbit_config(spreadsheet, user_email)
+        fitbit_config, watch_names = get_user_fitbit_config(spreadsheet, user_email, user_project)
         
         # Create form for editing configuration
         with st.form("fitbit_config_form"):
@@ -346,6 +352,14 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
                                         min_value=5, max_value=50, 
                                         value=int(fitbit_config.get('batteryThr', 20)))
             
+            st.subheader("Recipient Email")
+            st.write("This email will receive alerts when the thresholds are exceeded.")
+            recipient_email = st.text_input("Recipient Email", value=user_email)
+
+            st.subheader("(OPTIONAL) Watch Name")
+            st.write("Select the specific watch name for which you want to set the alerts config.")
+            watch_name = st.selectbox("Watch Name", options=watch_names, index=0)
+            
             save_button = st.form_submit_button("Save Configuration")
             
             if save_button:
@@ -361,7 +375,9 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
                     'currentStepsThr': current_steps_thr,
                     'totalStepsThr': total_steps_thr,
                     'batteryThr': battery_thr,
-                    'manager': user_email
+                    'manager': user_email,
+                    'email': recipient_email,
+                    'watch': watch_name
                 }
                 
                 # Save the configuration
