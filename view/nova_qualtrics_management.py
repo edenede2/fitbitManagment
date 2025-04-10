@@ -17,9 +17,9 @@ def nova_qualtrics_management(user_email, user_role, user_project, spreadsheet):
         spreadsheet: The spreadsheet entity
     """
     # Check access permissions
-    if not _check_access(user_role, user_project):
-        st.error("You don't have permission to access this page")
-        return
+    # if not _check_access(user_role, user_project):
+    #     st.error("You don't have permission to access this page")
+    #     return
     
     # Page title and description
     st.title("📊 NOVA Qualtrics Management")
