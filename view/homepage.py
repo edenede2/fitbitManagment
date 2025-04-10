@@ -489,7 +489,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                     pl.col('lastSynced')
                     .map_elements(lambda x: (
                         "Never"
-                        if x is None or pd.isna(x) or str(x) == 'NaT'
+                        if x is None or pd.isna(x) or x == pd.NaT or str(x) in ("NaT","nat")
                         else f"{time_status_indicator(x)} {format_time_ago_concise(x)}"
                     ), return_dtype=pl.Utf8)
                     .alias('Last Sync')
