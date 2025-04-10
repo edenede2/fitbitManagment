@@ -60,7 +60,7 @@ def load_fitbit_datatable(user_email: str, user_role: str, user_project: str, sp
                     return
                 
                 # Also filter users by project for student assignment
-                user_df = user_df.filter(pl.col("project").is_in(user_project))
+                user_df = user_df.filter(pl.col("project")== user_project)
             
             # Display management interface based on role
             if user_role == 'Admin':
