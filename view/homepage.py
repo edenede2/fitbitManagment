@@ -297,7 +297,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
             )
 
             # Cast to datetime after inserting placeholder
-            fitbit_log_df = fitbit_log_df.with_column(
+            fitbit_log_df = fitbit_log_df.with_columns(
                 pl.col('lastSynced').cast(pl.Datetime, strict=False)
             )
             
