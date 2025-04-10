@@ -45,7 +45,7 @@ def load_fitbit_datatable(user_email: str, user_role: str, user_project: str, sp
             user_df = user_sheet.to_dataframe(engine="polars")
             
             # Filter based on user role
-            if user_role == 'manager':
+            if user_role == 'Manager':
                 # user_projects = user_details.get('projects', [])
                 # if isinstance(user_project, str):
                 #     user_projects = [user_project]
