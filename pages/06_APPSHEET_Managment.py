@@ -1,32 +1,36 @@
 import streamlit as st
-from view.alerts_config import alerts_config_page
+from view.fibro_appsheet_managment import fibro_appsheet_management
 from controllers.auth_controller import AuthenticationController
+
 # Page configuration
 st.set_page_config(
-    page_title="Alerts Configuration - Fitbit Management System",
-    page_icon="🔔",
+    page_title="Fibro AppSheet Management - Fitbit Management System",
+    page_icon="📋",
     layout="wide"
 )
+
 # Initialize authentication controller
 auth_controller = AuthenticationController()
 # Handle authentication in sidebar
 auth_controller.render_auth_ui()
+
 # Check authentication
 if 'user_email' not in st.session_state:
     st.warning("Please log in from the main page to access this feature.")
     st.stop()
 
-# Check role permissions (only Manager and Admin have access)
+# Check role permissions
 user_role = st.session_state.get('user_role', 'Guest')
-if user_role not in ['Admin', 'manager']:
+user_project = st.session_state.get('user_project', 'None')
+
+# Only show for NOVA managers or admin
+if not ((user_project == 'fibro') or user_role == 'Admin'):
     st.warning("You don't have permission to access this page.")
     st.stop()
 
 # Get data from session state
 user_email = st.session_state.user_email
-spreadsheet = st.session_state.get('spreadsheet', None)
-user_role = st.session_state.get('user_role', 'Guest')
-user_project = st.session_state.get('user_project', 'None')
+spreadsheet = st.session_state.get('fibro_spreadsheet', None)
 
-# Display alerts configuration interface
-alerts_config_page(user_email, spreadsheet, user_role, user_project)
+# Display FIBRO EMA management interface
+fibro_appsheet_management(user_email, user_role, user_project, spreadsheet)

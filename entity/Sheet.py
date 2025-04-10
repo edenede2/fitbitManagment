@@ -120,7 +120,8 @@ class SheetFactory:
             'suspicious_nums': SuspiciousNums,
             'student_fitbit': FitbitStudent,
             'chats': ChatsSheet,
-            'fibroEMA': FibroEMASheet,
+            'for_analysis': FibroEMASheet,
+            'appsheet_config': AppSheetConfig,
             'generic': Sheet
         }
         
@@ -145,6 +146,14 @@ class ProjectSheet(Sheet):
     schema: SheetSchema = field(default_factory=lambda: SheetSchema(
         columns=['id', 'name'],
         required_columns=['name']
+    ))
+
+@dataclass
+class AppSheetConfig(Sheet):
+    """Sheet for storing AppSheet configuration data"""
+    schema: SheetSchema = field(default_factory=lambda: SheetSchema(
+        columns=['email', 'user', 'missingThr'],
+        required_columns=['email', 'user']
     ))
 
 
@@ -184,7 +193,20 @@ class BulldogSheet(Sheet):
 class FibroEMASheet(Sheet):
     """Sheet for storing Fibro EMA data"""
     schema: SheetSchema = field(default_factory=lambda: SheetSchema(
-        columns=['User Id', 'KEY', 'Date Time'],
+        columns=['User Id', 'KEY', 'Date Time','העריכי כמה שעות ישנת אתמול בלילה?',
+                'העריכי מספרית את איכות השינה שלך (1- שינה גרועה, 10- שינה מעולה)',
+                r'"עד כמה את מרגישה רגועה עכשיו אחרי השינה בלילה?(1- כלל לא רגועה, 10 רגועה מאוד)"',
+                r'"מהי רמת הכאב שלך כרגע?(1- אין כאב, 10- הכאב החמור ביותר)"',r'איפה כואב לך?',
+                'אחר:','באיזו יד כואב לך?', 'באיזו רגל כואב לך?',
+                'מלבד כאב, אילו סימפטומים את חשה כרגע בנוסף? (ניתן להוסיף)',
+                'דרגי עד כמה את מרגישה כרגע לחוצה  (5= כל הזמן, 4= רוב הזמן, 3= חלק מהזמן, 2= מעט מהזמן, 1= כלל לא)',
+                'דרגי עד כמה את מרגישה כרגע חסרת תקווה  (5= כל הזמן, 4= רוב הזמן, 3= חלק מהזמן, 2= מעט מהזמן, 1= כלל לא)',
+                'דרגי עד כמה את מרגישה כרגע חסרת מנוחה או חסרת שקט?  (5= כל הזמן, 4= רוב הזמן, 3= חלק מהזמן, 2= מעט מהזמן, 1= כלל לא)',
+                'דרגי עד כמה את מרגישה כרגע מדוכאת ששום דבר לא יכול לשמח אותך?  (5= כל הזמן, 4= רוב הזמן, 3= חלק מהזמן, 2= מעט מהזמן, 1= כלל לא)',
+                'דרגי עד כמה את מרגישה כרגע שכל דבר מחייב מאמץ?  (5= כל הזמן, 4= רוב הזמן, 3= חלק מהזמן, 2= מעט מהזמן, 1= כלל לא)',
+                'דרגי עד כמה את מרגישה כרגע חסרת ערך?  (5= כל הזמן, 4= רוב הזמן, 3= חלק מהזמן, 2= מעט מהזמן, 1= כלל לא)','EDA אנא בצעי כעת בעזרת הצמיד מדידת',
+                'איפה את נמצאת כרגע:','אחר -','עם מי את נמצאת כרגע:','"דרגי את היום שלך: רמת כאב כללית(1- ללא כאב, 10- הכאב הגרוע ביותר)"', '"דרגי את היום שלך: רמת תפקוד כללית(1- גרועה, 10- מעולה)"',
+                'איזו תרופה לקחת היום ,באיזה מינון ומתי?', 'מלבד תרופות, האם ניסית דבר מה נוסף במטרה להרגיע את הכאב? אם כן, אנא פרטי', 'סכמי את היום שלך בכמה מילים אם תרצי האם יש משהו נוסף לגבי היום שחשוב שנדע'],
         required_columns=['User Id', 'KEY']
     ))
 
@@ -202,8 +224,8 @@ class FitbitAlertsConfig(Sheet):
     schema: SheetSchema = field(default_factory=lambda: SheetSchema(
         columns=['project','currentSyncThr', 'totalSyncThr', 'currentHrThr', 'totalHrThr',
                 'currentSleepThr', 'totalSleepThr', 'currentStepsThr', 'totalStepsThr', 'batteryThr',
-                'manager'],
-        required_columns=['project', 'watchName']
+                'manager','email', 'watch', 'endDate'],
+        required_columns=['project', 'manager']
     ))
 
 @dataclass
@@ -383,7 +405,7 @@ class GoogleSheetsAdapter:
             sheets_names = [
                 "user", "project", "fitbit", "log", "bulldog", "EMA", "FitbitLog",
                 "fitbit_alerts_config", "qualtrics_alerts_config", "late_nums", "suspicious_nums",
-                "EMA", "student_fitbit", "chats", "for_analysis"
+                "EMA", "student_fitbit", "chats", "for_analysis", "appsheet_alerts_config"
             ]
             if sheet_name not in sheets_names:
                 continue
@@ -465,7 +487,7 @@ class GoogleSheetsAdapter:
             elif 'fibroema' in sheet_name.lower():
                 sheet_type = 'fibroEMA'
             elif 'for_analysis' in sheet_name.lower():
-                sheet_type = 'fibroEMA'
+                sheet_type = 'for_analysis'
             
             # Create and populate the sheet
             sheet = SheetFactory.create_sheet(sheet_type, sheet_name)

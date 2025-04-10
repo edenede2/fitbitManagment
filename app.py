@@ -30,6 +30,9 @@ def main():
             # Store spreadsheet in session state
             if 'spreadsheet' not in st.session_state:
                 st.session_state.spreadsheet = auth_controller.get_spreadsheet()
+
+            if 'fibro_spreadsheet' not in st.session_state:
+                st.session_state.fibro_spreadsheet = auth_controller.get_fibro_spreasheet()
             
             # Get user info - either from Streamlit auth or session state (for demo)
             if st.experimental_user.is_logged_in:
@@ -63,6 +66,17 @@ def main():
             st.sidebar.markdown("---")
             st.sidebar.markdown("### Need Help?")
             st.sidebar.markdown("Contact support: edenede2@gmail.com")
+
+            st.title("Welcome to the Fitbit Management System")
+            st.write("You are logged in as: **{}**".format(st.session_state.user_email))
+            st.write("Your role is: **{}**".format(st.session_state.user_role))
+            st.write("Your project is: **{}**".format(st.session_state.user_project))
+            st.write("You can now access the dashboard and features.")
+            st.write("Use the sidebar to navigate through the app.")
+            st.write("Click the 'Logout' button in the sidebar to log out.")
+            st.write("If you encounter any issues, please contact support.")
+            st.write("You can also use the sidebar to navigate through the app.")
+            st.write("Click the 'Logout' button in the sidebar to log out.")
             
         except Exception as e:
             if "429" in str(e) or "Quota exceeded" in str(e):
