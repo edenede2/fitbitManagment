@@ -416,6 +416,16 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                 st.rerun()
             
             # Display the loaded data after loading is complete
+            if st.session_state.loading_complete and "loaded_watch" in st.session_state:
+                # Check if the loaded watch matches the selected watch
+                if st.session_state.loaded_watch != selected_watch:
+                    st.warning("Data loaded for a different watch. Please reload.")
+                    st.session_state.loading_complete = False
+                    st.session_state.loaded_dates = []
+                    st.session_state.current_data = None
+                    st.session_state.loaded_watch = None
+                    st.session_state.loaded_signal = None
+                    st.rerun()
             if st.session_state.loading_complete and st.session_state.loaded_watch == selected_watch:
                 st.success(f"Data loaded successfully for {len(st.session_state.loaded_dates)} dates")
                 
