@@ -224,7 +224,7 @@ class FitbitAlertsConfig(Sheet):
     schema: SheetSchema = field(default_factory=lambda: SheetSchema(
         columns=['project','currentSyncThr', 'totalSyncThr', 'currentHrThr', 'totalHrThr',
                 'currentSleepThr', 'totalSleepThr', 'currentStepsThr', 'totalStepsThr', 'batteryThr',
-                'manager','email', 'watch'],
+                'manager','email', 'watch', 'endDate'],
         required_columns=['project', 'manager']
     ))
 

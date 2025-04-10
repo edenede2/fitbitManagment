@@ -3,6 +3,7 @@ import pandas as pd
 from entity.Sheet import GoogleSheetsAdapter, SheetFactory, Spreadsheet
 from model.config import get_secrets
 import polars as pl
+from datetime import date, timedelta
 def load_spreadsheet() -> Spreadsheet:
     """Load the spreadsheet with all configuration data"""
     secrets = get_secrets()
@@ -37,7 +38,8 @@ def get_user_fitbit_config(spreadsheet:Spreadsheet, user_email, user_project):
             'batteryThr': 20,
             'manager': user_email,
             'email': user_email,
-            'watch': ''
+            'watch': '',
+            'endDate': date.today() + timedelta(days=30)
         }
     
     # Filter by manager email
@@ -58,7 +60,8 @@ def get_user_fitbit_config(spreadsheet:Spreadsheet, user_email, user_project):
             'batteryThr': 20,
             'manager': user_email,
             'email': user_email,
-            'watch': ''
+            'watch': '',
+            'endDate': date.today() + timedelta(days=30)
         }
     watche_name_list = fitbit_sheet_df.filter(pl.col('project') == user_project).select('watch').unique().to_list()
     
@@ -359,6 +362,10 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
             st.subheader("(OPTIONAL) Watch Name")
             st.write("Select the specific watch name for which you want to set the alerts config.")
             watch_name = st.selectbox("Watch Name", options=watch_names, index=0)
+
+            st.subheader("End Date")
+            st.write("This date will be used to stop the alerts.")
+            end_date = st.date_input("End Date", value=date.today() + timedelta(days=30))
             
             save_button = st.form_submit_button("Save Configuration")
             
@@ -377,7 +384,8 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
                     'batteryThr': battery_thr,
                     'manager': user_email,
                     'email': recipient_email,
-                    'watch': watch_name
+                    'watch': watch_name,
+                    'endDate': end_date.strftime("%Y-%m-%d")
                 }
                 
                 # Save the configuration
