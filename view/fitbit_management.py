@@ -64,6 +64,7 @@ def load_fitbit_datatable(user_email: str, user_role: str, user_project: str, sp
             
             # Display management interface based on role
             if user_role == 'Admin':
+                fitbit_df = original_fitbit_df
                 display_admin_interface(fitbit_df, user_df, fitbit_sheet, spreadsheet)
             else:  # manager
                 display_manager_interface(fitbit_df, user_df, fitbit_sheet, spreadsheet, user_project,original_fitbit_df)
