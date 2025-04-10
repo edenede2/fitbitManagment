@@ -232,6 +232,9 @@ def save_changes(edited_df: pl.DataFrame, fitbit_sheet: Any, spreadsheet: Spread
         # Show success message
         st.success("Changes saved successfully!")
         
+        # Add warning about cloud update delay
+        st.warning("⚠️ Please note: Changes may take 2-3 minutes to fully update in the cloud.")
+        
         # Add timestamp
         st.write(f"Last updated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     except Exception as e:

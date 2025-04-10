@@ -160,14 +160,14 @@ class FitbitSheet(Sheet):
 class LogSheet(Sheet):
     """Sheet for storing log data"""
     schema: SheetSchema = field(default_factory=lambda: SheetSchema(
-        columns=['projec', 'watchName',	'lastCheck', 'lastSynced',
+        columns=['project', 'watchName',	'lastCheck', 'lastSynced',
                 'lastBattary', 'lastHR', 'lastSleepStartDateTime',	'lastSleepEndDateTime',
                 'lastSteps','lastBattaryVal','lastHRVal', 'lastHRSeq',
                 'lastSleepDur',	'lastStepsVal',	'CurrentFailedSync', 'TotalFailedSync'
                 'CurrentFailedHR',	'TotalFailedHR', 'CurrentFailedSleep', 'TotalFailedSleep',
                 'CurrentFailedSteps', 'TotalFailedSteps','CurrentFailedBattary', 'TotalFailedBattary',
                   'ID'],
-        required_columns=['timestamp', 'event']
+        required_columns=['project', 'ID','lastCheck']
     ))
 
 

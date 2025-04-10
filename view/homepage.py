@@ -6,325 +6,810 @@ from entity.Watch import Watch, WatchFactory
 from entity.Sheet import Spreadsheet, GoogleSheetsAdapter
 from Decorators.congrates import congrats, welcome_returning_user
 from model.config import get_secrets
+import pandas as pd
+import polars as pl
+import numpy as np
+from datetime import datetime, timedelta
+import time
+from entity.Sheet import GoogleSheetsAdapter, SheetsAPI, Spreadsheet
+import altair as alt
+import uuid
+import plotly.express as px
+import plotly.graph_objects as go
+import re
+import warnings
+from typing import List, Dict, Any
+# from streamlit_elements import elements, dashboard, mui, html
 
 def display_homepage(user_email, user_role, user_project, spreadsheet: Spreadsheet) -> None:
     """
     Display the homepage with personalized content based on user's role and project
     """
-    # Get user data for personalization
-    user_data = {}
-    user_name = user_email.split('@')[0] if '@' in user_email else user_email
-    
-    try:
-        # Try to get user details from spreadsheet
-        # spreadsheet = Spreadsheet(
-        #     'usersPassRoles',
-        #     get_secrets().get('spreadsheet_key'),
-        # )            
-        # GoogleSheetsAdapter.connect(spreadsheet)
-        users_sheet = spreadsheet.get_sheet("user", "user")
-        user_entry = next((u for u in users_sheet.data if u.get('email') == user_email), None)
+    if user_email is None:
+        st.warning("Please go to the app page and come back or refresh the page.")
+    else:
+        st.title(congrats(user_name=user_email.split('@')[0], user_role=user_role))
+        st.write("Welcome to the Fitbit Management System dashboard.")
         
-        if user_entry:
-            user_name = user_entry.get('name', user_name)
-            last_login = None
-            if user_entry.get('last_login'):
-                try:
-                    if user_entry.get('last_login') == None or user_entry.get('last_login') == '':
-                        last_login = datetime.datetime.now()
-                        # Update last login time in the sheet
-                        user_entry['last_login'] = last_login.isoformat()
-                        spreadsheet.update_sheet("user", "user", user_entry)
-                        GoogleSheetsAdapter.save(spreadsheet)
-                    else:
-                        last_login = datetime.datetime.fromisoformat(user_entry.get('last_login'))
-                except ValueError:
-                    pass
-                    
-            # Display personalized welcome message with last login time if available
-            if last_login:
-                welcome_msg = welcome_returning_user(user_name, last_login)
-                st.header(welcome_msg)
-            else:
-                welcome_msg = congrats(user_name, user_role, user_entry)
-                st.header(welcome_msg)
+        # Display role-specific information
+        if user_role == "Admin":
+            st.info(f"You are logged in as an Administrator with access to all projects.")
+        elif user_role == "Manager":
+            st.info(f"You are logged in as a Manager for project: {user_project}")
+        elif user_role == "Student":
+            st.info(f"You are logged in as a Student assigned to project: {user_project}")
         else:
-            # Fallback to simple greeting
-            welcome_msg = congrats(user_name, user_role)
-            st.header(welcome_msg)
-    except Exception as e:
-        # Fallback in case of any error
-        welcome_msg = congrats(user_name, user_role)
-        st.header(welcome_msg)
-    
-    # System overview stats using entities
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.metric("Your Role", user_role)
+            st.info(f"You are logged in as a Guest with limited access.")
         
-    with col2:
-        st.metric("Project", user_project)
+        # Display project overview
+        st.subheader("Project Overview")
+        
+        # Add the Fitbit Log table
+        display_fitbit_log_table(user_email, user_role, user_project, spreadsheet)
+        
+        # Add any additional homepage content here
+        st.subheader("Quick Links")
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.write("**Dashboard**")
+            st.write("View detailed analytics and statistics.")
+        with col2:
+            st.write("**Fitbit Management**")
+            st.write("Manage Fitbit devices and assignments.")
+        with col3:
+            st.write("**Alerts Configuration**")
+            st.write("Configure alert thresholds and notifications.")
+
+def render_battery_gauge(battery_level):
+    """Render a battery level as a colored progress bar"""
+    try:
+        if battery_level is None or battery_level == "" or pd.isna(battery_level):
+            return "No data"
+        
+        # Convert to numeric value
+        battery = float(battery_level)
+        
+        # Determine color based on level
+        if battery >= 80:
+            color = "green"
+        elif battery >= 50:
+            color = "orange"
+        else:
+            color = "red"
             
-    with col3:
-        # Get watch count from entity layer
+        # Create HTML for progress bar
+        html = f"""
+        <div style="width:100%; background-color:#f0f0f0; border-radius:5px; height:20px;">
+            <div style="width:{battery}%; background-color:{color}; height:20px; border-radius:5px; text-align:center; color:white; line-height:20px; font-size:12px;">
+                {battery}%
+            </div>
+        </div>
+        """
+        return html
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+def format_time_ago(timestamp):
+    """Format a datetime as a human-readable 'time ago' string"""
+    if timestamp is None or pd.isna(timestamp):
+        return "Never"
+    
+    # If timestamp is a string, try to parse it
+    if isinstance(timestamp, str):
         try:
-            # spreadsheet = Spreadsheet(
-            #     'usersPassRoles',
-            #     get_secrets().get('spreadsheet_key')
-            # )
-
-            # GoogleSheetsAdapter.connect(spreadsheet)
-            fitbits_sheet = spreadsheet.get_sheet("fitbit", "fitbit")
-
-
-            
-            if user_role == "Admin":
-                # Admin sees all watches in all projects
-                st.metric("System Watches", len(fitbits_sheet.data))
-            elif user_role == "Manager":
-                # Managers see watches in their project
-                watches = [w for w in fitbits_sheet.data if w.get('project') == user_project]
-                st.metric("Watches in Project", len(watches))
-            elif user_role == "Student":
-                # Count watches assigned to this student
-                watches = [w for w in fitbits_sheet.data if w.get('user') == user_email]
-                st.metric("Your Watches", len(watches))
-            else:
-                st.metric("System Watches", len(fitbits_sheet.data))
-        except Exception as e:
-            st.metric("Watches", "N/A")
+            timestamp = pd.to_datetime(timestamp)
+        except:
+            return timestamp
     
-    # Recent activity from logs
-    st.subheader("Recent Activity")
+    now = pd.Timestamp.now()
+    delta = now - timestamp
     
+    seconds = delta.total_seconds()
+    
+    # Handle future dates
+    if seconds < 0:
+        return f"Future: {timestamp.strftime('%Y-%m-%d %H:%M')}"
+    
+    if seconds < 60:
+        return f"{int(seconds)}s ago"
+    elif seconds < 3600:
+        return f"{int(seconds/60)}m ago"
+    elif seconds < 86400:
+        return f"{int(seconds/3600)}h ago"
+    elif seconds < 604800:
+        return f"{int(seconds/86400)}d ago"
+    else:
+        return timestamp.strftime("%Y-%m-%d")
+
+def format_time_ago_concise(timestamp):
+    """Format a datetime as a concise 'time ago' string with only the most significant unit"""
+    if timestamp is None or pd.isna(timestamp):
+        return "Never"
+    
+    # If timestamp is a string, try to parse it
+    if isinstance(timestamp, str):
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                timestamp = pd.to_datetime(timestamp)
+        except:
+            return timestamp
+    
+    # Check for future dates by year first
+    now = pd.Timestamp.now()
+    if timestamp.year > now.year:
+        return f"Future({timestamp.strftime('%Y-%m-%d')})"
+    
+    delta = now - timestamp
+    seconds = delta.total_seconds()
+    
+    # Handle near-future dates (same year but future time)
+    if seconds < 0:
+        return f"Soon({timestamp.strftime('%H:%M')})"
+    
+    if seconds < 60:
+        return f"{int(seconds)}s"
+    elif seconds < 3600:
+        return f"{int(seconds/60)}m"
+    elif seconds < 86400:
+        return f"{int(seconds/3600)}h"
+    elif seconds < 604800:
+        return f"{int(seconds/86400)}d"
+    else:
+        return timestamp.strftime("%Y-%m-%d")
+
+def time_status_indicator(timestamp):
+    """Return a status indicator based on time elapsed"""
+    if timestamp is None or pd.isna(timestamp):
+        return "❓"
+    
+    # If timestamp is a string, try to parse it
+    if isinstance(timestamp, str):
+        try:
+            # Suppress warnings about format inference
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                timestamp = pd.to_datetime(timestamp)
+        except:
+            return "❓"
+    
+    # Convert to datetime64 for consistent time delta calculation
     try:
-        # Get log data from entity layer
-        logs_sheet = spreadsheet.get_sheet("log", "log")
+        now = pd.Timestamp.now().to_datetime64()
+        timestamp = pd.to_datetime(timestamp).to_datetime64()
         
-        if user_role == "Admin":
-            # Admin sees logs from all projects
-            # Show most recent 5 log entries
-            recent_logs = sorted(logs_sheet.data, 
-                               key=lambda x: x.get('lastCheck', ''), 
-                               reverse=True)[:5]
-            
-            if recent_logs:
-                for log in recent_logs:
-                    project_name = log.get('project', 'Unknown Project')
-                    st.info(f"{log.get('lastCheck', 'Unknown time')} - Project: {project_name} - Watch {log.get('watchName', 'Unknown')} - "
-                           f"Battery: {log.get('lastBattaryVal', 'N/A')}, "
-                           f"HR: {log.get('lastHRVal', 'N/A')}")
-            else:
-                st.write("No recent activity recorded")
-        elif user_role == "Manager":
-            # Filter logs for this project
-            project_logs = [log for log in logs_sheet.data 
-                           if log.get('project') == user_project]
-            
-            # Show most recent 5 log entries
-            recent_logs = sorted(project_logs, 
-                               key=lambda x: x.get('lastCheck', ''), 
-                               reverse=True)[:5]
-            
-            if recent_logs:
-                for log in recent_logs:
-                    st.info(f"{log.get('lastCheck', 'Unknown time')} - Watch {log.get('watchName', 'Unknown')} - "
-                           f"Battery: {log.get('lastBattaryVal', 'N/A')}, "
-                           f"HR: {log.get('lastHRVal', 'N/A')}")
-            else:
-                st.write("No recent activity recorded")
-        elif user_role == "Student":
-            # Get just this student's watches
-            student_watches = [w.get('name') for w in fitbits_sheet.data 
-                             if w.get('user') == user_email]
-            
-            # Filter logs for student's watches
-            student_logs = [log for log in logs_sheet.data 
-                           if log.get('watchName') in student_watches]
-            
-            # Show most recent 5 log entries
-            recent_logs = sorted(student_logs, 
-                               key=lambda x: x.get('lastCheck', ''), 
-                               reverse=True)[:5]
-            
-            if recent_logs:
-                for log in recent_logs:
-                    st.info(f"{log.get('lastCheck', 'Unknown time')} - Watch {log.get('watchName', 'Unknown')} - "
-                           f"Battery: {log.get('lastBattaryVal', 'N/A')}, "
-                           f"HR: {log.get('lastHRVal', 'N/A')}")
-            else:
-                st.write("No recent activity recorded for your watches")
+        # Handle future dates properly: check year first
+        timestamp_year = pd.to_datetime(timestamp).year
+        current_year = pd.to_datetime(now).year
+        
+        if timestamp_year > current_year:
+            return "🔵"  # Blue circle for future years
+        
+        delta = now - timestamp
+        # Convert numpy.timedelta64 to hours by dividing by 1 hour
+        hours = delta / np.timedelta64(1, 'h')
+        
+        # Handle future dates
+        if hours < 0:
+            return "⏳"  # Hourglass for future time
+        
+        # Handle past dates as before
+        if hours <= 3:
+            return "✅"
+        elif hours <= 12:
+            return "🟡"
+        elif hours <= 24:
+            return "🟠"
         else:
-            st.write("No activity data available for your role")
-    except Exception as e:
-        st.error(f"Unable to load recent activity")
-        st.write("No recent activity data available")
-    
-    # Achievements/Milestones check
+            return "🔴"
+    except Exception:
+        return "❓"  # Return question mark for any conversion failures
+
+def load_fitbit_sheet_data(spreadsheet:Spreadsheet) -> Dict[str, Any]:
+    """Load data from the Fitbit sheet to identify watch assignments"""
     try:
-        # Just some simple examples
-        if user_role == "Admin":
-            # Check all watches health across projects
-        #     spreadsheet = spreadsheet = Spreadsheet(
-        #     'usersPassRoles',
-        #     get_secrets().get('spreadsheet_key'),
-        # )
-        #     GoogleSheetsAdapter.connect(spreadsheet)
-            fitbits_sheet = spreadsheet.get_sheet("fitbit", "fitbit")
-            logs_sheet = spreadsheet.get_sheet("FitbitLog", "log")
+        # Get the fitbit sheet
+        fitbit_sheet = spreadsheet.get_sheet("fitbit", "fitbit")
+        
+        # Map watch names to their assigned students
+        watch_mapping = {}
+        for item in fitbit_sheet.data:
+            watch_name = item.get("name", "")
+            project_name = item.get("project", "")
+            is_active = str(item.get("isActive", "")).lower() not in ["false", "0", "no", "n", ""]
             
-            all_watches = fitbits_sheet.data
-            active_watches = [w for w in all_watches if str(w.get('isActive', '')).lower() != 'false']
+            # Create key as project-watchName
+            key = f"{project_name}-{watch_name}"
             
-            if active_watches:
-                # Rest of achievement logic remains the same but applies to all projects
-                # Get latest log for each watch
-                active_watch_names = [w.get('name') for w in active_watches]
-                
-                # Get all logs for active watches
-                watch_logs = {}
-                for log in logs_sheet.data:
-                    watch_name = log.get('watchName')
-                    if watch_name in active_watch_names:
-                        last_check = log.get('lastCheck', '')
-                        if watch_name not in watch_logs or last_check > watch_logs[watch_name].get('lastCheck', ''):
-                            watch_logs[watch_name] = log
-                
-                # Count watches with good battery
-                good_battery_count = sum(
-                    1 for log in watch_logs.values() 
-                    if log.get('lastBattaryVal') and float(log.get('lastBattaryVal', 0)) > 80
-                )
-                
-                # Show achievement if all watches have good battery
-                if good_battery_count == len(active_watches) and len(active_watches) > 0:
-                    st.success("🔋 Excellent! All system watches have good battery levels!")
-                    
-                # Count recently synced watches (last 24 hours)
-                now = datetime.datetime.now()
-                synced_count = 0
-                
-                for log in watch_logs.values():
-                    if log.get('lastSynced'):
-                        try:
-                            last_sync = datetime.datetime.fromisoformat(log.get('lastSynced').replace('Z', ''))
-                            if (now - last_sync).total_seconds() < 24 * 3600:  # 24 hours
-                                synced_count += 1
-                        except (ValueError, TypeError):
-                            pass
-                
-                # Show achievement if all watches synced recently
-                if synced_count == len(active_watches) and len(active_watches) > 0:
-                    st.success("🌟 Fantastic job! All system watches are synced and up to date!")
-                    
-        elif user_role == "Manager":
-            # Check watch health for this project
-        #     spreadsheet = Spreadsheet(
-        #     'usersPassRoles',
-        #     get_secrets().get('spreadsheet_key'),
-        # )
-        #     GoogleSheetsAdapter.connect(spreadsheet)
-            fitbits_sheet = spreadsheet.get_sheet("fitbit", "fitbit")
-            logs_sheet = spreadsheet.get_sheet("FitbitLog", "log")
+            watch_mapping[key] = {
+                "student": item.get("currentStudent", ""),
+                "active": is_active
+            }
             
-            project_watches = [w for w in fitbits_sheet.data if w.get('project') == user_project]
-            active_watches = [w for w in project_watches if str(w.get('isActive', '')).lower() != 'false']
-            
-            if active_watches:
-                # Get latest log for each watch
-                active_watch_names = [w.get('name') for w in active_watches]
-                
-                # Get all logs for active watches
-                watch_logs = {}
-                for log in logs_sheet.data:
-                    watch_name = log.get('watchName')
-                    if watch_name in active_watch_names:
-                        last_check = log.get('lastCheck', '')
-                        if watch_name not in watch_logs or last_check > watch_logs[watch_name].get('lastCheck', ''):
-                            watch_logs[watch_name] = log
-                
-                # Count watches with good battery
-                good_battery_count = sum(
-                    1 for log in watch_logs.values() 
-                    if log.get('lastBattaryVal') and float(log.get('lastBattaryVal', 0)) > 80
-                )
-                
-                # Show achievement if all watches have good battery
-                if good_battery_count == len(active_watches) and len(active_watches) > 0:
-                    st.success("🔋 Excellent! All your project's watches have good battery levels!")
-                    
-                # Count recently synced watches (last 24 hours)
-                now = datetime.datetime.now()
-                synced_count = 0
-                
-                for log in watch_logs.values():
-                    if log.get('lastSynced'):
-                        try:
-                            last_sync = datetime.datetime.fromisoformat(log.get('lastSynced').replace('Z', ''))
-                            if (now - last_sync).total_seconds() < 24 * 3600:  # 24 hours
-                                synced_count += 1
-                        except (ValueError, TypeError):
-                            pass
-                
-                # Show achievement if all watches synced recently
-                if synced_count == len(active_watches) and len(active_watches) > 0:
-                    st.success("🌟 Fantastic job! All your watches are synced and up to date!")
-                    
-        elif user_role == "Student":
-            # Get student's watches
-        #     spreadsheet = Spreadsheet(
-        #     'usersPassRoles',
-        #     get_secrets().get('spreadsheet_key'),
-        # )
-        #     GoogleSheetsAdapter.connect(spreadsheet)
-            fitbits_sheet = spreadsheet.get_sheet("fitbit", "fitbit")
-            logs_sheet = spreadsheet.get_sheet("FitbitLog", "log")
-            
-            student_watches = [w for w in fitbits_sheet.data if w.get('user') == user_email]
-            
-            if student_watches:
-                watch_names = [w.get('name') for w in student_watches]
-                recent_syncs = []
-                
-                # Get latest logs for student watches
-                for watch_name in watch_names:
-                    logs = [log for log in logs_sheet.data if log.get('watchName') == watch_name]
-                    if logs:
-                        latest_log = max(logs, key=lambda x: x.get('lastCheck', ''))
-                        if latest_log.get('lastSynced'):
-                            recent_syncs.append(latest_log)
-                
-                # Show achievement if student has synced watches recently
-                if len(recent_syncs) == len(student_watches) and student_watches:
-                    st.success("👏 Great job keeping your watches synced!")
-                
+        return watch_mapping
     except Exception as e:
-        # Fail silently for achievements
-        pass
+        st.error(f"Error loading Fitbit sheet data: {e}")
+        return {}
+
+def preprocess_dataframe_for_display(df):
+    """Clean dataframe to make it Arrow-compatible for display"""
+    processed_df = df.copy()
     
-    # Quick actions based on role
-    st.subheader("Quick Actions")
-    cols = st.columns(3)
+    # Identify columns that should be numeric
+    potential_numeric_cols = [
+        'lastBattaryVal', 'lastHRVal', 'lastStepsVal', 'lastSleepDur',
+        'CurrentFailedSync', 'TotalFailedSync', 'CurrentFailedHR', 'TotalFailedHR',
+        'CurrentFailedSleep', 'TotalFailedSleep', 'CurrentFailedSteps', 'TotalFailedSteps'
+    ]
     
-    if user_role == "Admin":
-        if cols[0].button("View All Watches"):
-            st.session_state.navigate_to = "dashboard_all_watches"
-        if cols[1].button("Add New Watch"):
-            st.session_state.navigate_to = "add_watch"
-        if cols[2].button("Manage Users"):
-            st.session_state.navigate_to = "manage_users"
+    # Process each column that exists in the dataframe
+    for col in [c for c in potential_numeric_cols if c in processed_df.columns]:
+        # Convert empty strings to None first
+        processed_df[col] = processed_df[col].replace('', None)
+        # Then convert column to appropriate type
+        try:
+            processed_df[col] = pd.to_numeric(processed_df[col], errors='coerce')
+        except:
+            pass  # Keep as is if conversion fails
     
-    elif user_role == "Manager":
-        if cols[0].button("View Project Watches"):
-            st.session_state.navigate_to = "dashboard_project_watches"
-        if cols[1].button("Assign Watches"):
-            st.session_state.navigate_to = "assign_watches"
-        if cols[2].button("View Reports"):
-            st.session_state.navigate_to = "reports"
+    # Ensure datetime columns are properly formatted for display
+    datetime_cols = ['lastCheck', 'lastSynced', 'lastBattary', 'lastHR', 
+                    'lastSleepStartDateTime', 'lastSleepEndDateTime', 'lastSteps']
     
-    elif user_role == "Student":
-        if cols[0].button("My Watch Status"):
-            st.session_state.navigate_to = "my_watches"
-        if cols[1].button("Submit Data"):
-            st.session_state.navigate_to = "submit_data"
+    for col in [c for c in datetime_cols if c in processed_df.columns]:
+        if pd.api.types.is_datetime64_any_dtype(processed_df[col]):
+            # Already datetime, no action needed
+            pass
+        else:
+            # Try to convert to datetime
+            try:
+                processed_df[col] = pd.to_datetime(processed_df[col], errors='coerce')
+            except:
+                # If conversion fails, keep as is
+                pass
+    
+    return processed_df
+
+def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: Spreadsheet) -> None:
+    """Display the Fitbit Log table with data from the FitbitLog sheet"""
+    st.subheader("Fitbit Watch Status")
+    
+    with st.spinner("Loading Fitbit data..."):
+        try:
+            # Load the FitbitLog sheet
+            fitbit_log_sheet = spreadsheet.get_sheet("FitbitLog", "log")
+            
+            # Get watch assignment info
+            watch_mapping = load_fitbit_sheet_data(spreadsheet)
+            
+            fitbit_log_df = fitbit_log_sheet.to_dataframe(engine="polars")
+            if fitbit_log_df.is_empty():
+                st.warning("No Fitbit log data available.")
+                return
+            
+            # Convert to DataFrame
+            # df = fitbit_log_sheet.to_dataframe()
+            
+            # Store original raw data before processing for display in expander
+            raw_df = fitbit_log_df.clone()
+            
+            # Add debugging info for lastSynced column
+            # st.write("Debug - Original date formats in lastSynced column:")
+            # if 'lastSynced' in df.columns:
+            #     unique_date_formats = df['lastSynced'].dropna().unique()[:5]  # Show first 5 unique values
+                # st.code(str(unique_date_formats))
+            
+            # Define datetime formats - prioritize the confirmed correct format
+            primary_format = '%Y-%m-%dT%H:%M:%S.%f'  # ISO format with microseconds (correct format)
+            fallback_formats = [
+                '%Y-%m-%dT%H:%M:%S',     # ISO format without microseconds
+                '%Y-%m-%d %H:%M:%S'      # Standard datetime format
+            ]
+            
+            # Convert datetime columns using the correct format first
+            datetime_cols = ['lastCheck', 'lastSynced', 'lastBattary', 'lastHR', 
+                            'lastSleepStartDateTime', 'lastSleepEndDateTime', 'lastSteps']
+            
+            for col in datetime_cols:
+                if col in fitbit_log_df.columns:
+                    # First try the primary format which we know is correct
+                    try:
+                        with warnings.catch_warnings():
+                            warnings.simplefilter("ignore")
+                            # df[col] = pd.to_datetime(df[col], format=primary_format, errors='coerce')
+                            fitbit_log_df = fitbit_log_df.with_columns(
+                                pl.col(col).cast(pl.DateTime, strict=False)
+                            )
+                    except Exception:
+                        pass
+                    
+                    # If we still have NaN values, try the fallback formats
+                    # if df[col].isna().any():
+                    # if fitbit_log_df[col].isna().any():
+                    #     for fmt in fallback_formats:
+                    #         try:
+                    #             # Create a temporary series for the NaN values
+                    #             mask = df[col].isna()
+                    #             if mask.any():
+                    #                 temp = pd.to_datetime(df.loc[mask, col], format=fmt, errors='coerce')
+                    #                 # Update only the rows that were successfully parsed
+                    #                 df.loc[mask & ~temp.isna(), col] = temp.dropna()
+                    #         except Exception:
+                    #             continue
+                    
+                    # As a last resort, try the flexible parser for any remaining NaNs
+                    # if df[col].isna().any():
+                    #     try:
+                    #         mask = df[col].isna()
+                    #         with warnings.catch_warnings():
+                    #             warnings.simplefilter("ignore")
+                    #             temp = pd.to_datetime(df.loc[mask, col], errors='coerce')
+                    #             df.loc[mask & ~temp.isna(), col] = temp.dropna()
+                    #     except Exception as e:
+                    #         st.warning(f"Error parsing remaining {col} values: {str(e)}")
+            
+            # After parsing, check if lastSynced column has valid dates
+            # if 'lastSynced' in fitbit_log_df.columns:
+            #     valid_dates = df['lastSynced'].notna().sum()
+            #     valid_dates = fitbit_log_df
+            #     total_rows = len(df)
+            #     # st.write(f"Successfully parsed {valid_dates} out of {total_rows} dates in lastSynced column")
+                
+            #     # If we have very few valid dates, try the original string values for display
+            #     if valid_dates < total_rows * 0.5:  # If less than 50% parsed successfully
+            #         st.warning("Poor date parsing rate. Using original string values for lastSynced.")
+            #         df['lastSynced'] = raw_df['lastSynced']  # Restore original values
+            
+            # Sort by lastCheck (most recent first)
+            if 'lastCheck' in fitbit_log_df.columns:
+                # df = df.sort_values('lastCheck', ascending=False)
+                fitbit_log_df = fitbit_log_df.sort('lastCheck', descending=True)
+            
+            # Add student assignment and watch status information
+            # Create a mapping dictionary for assigned students
+            student_mapping = {key: value.get('student', '') for key, value in watch_mapping.items()}
+
+            # Add assigned_student column using polars expressions
+            fitbit_log_df = fitbit_log_df.with_columns([
+                (pl.col("project") + "-" + pl.col("watchName"))
+                .map_elements(lambda key: student_mapping.get(key, ''))
+                .alias("assigned_student")
+            ])
+            fitbit_log_df = fitbit_log_df.with_columns(
+                pl.col('assigned_student').cast(pl.Utf8)
+            )
+
+
+            
+            # Create a mapping dictionary for active status
+            active_mapping = {key: value.get('active', True) for key, value in watch_mapping.items()}
+
+            # Add is_active column using polars expressions
+            fitbit_log_df = fitbit_log_df.with_columns([
+                (pl.col("project") + "-" + pl.col("watchName"))
+                .map_elements(lambda key: active_mapping.get(key, True))
+                .alias("is_active")
+            ])
+
+            # Ensure the column is of boolean type
+            fitbit_log_df = fitbit_log_df.with_columns(
+                pl.col("is_active").cast(pl.Boolean)
+            )
+            
+            # Filter based on user role and project
+            if user_role.lower() == "admin":
+                # Admin sees everything
+                filtered_df = fitbit_log_df
+            elif user_role.lower() == "manager":
+                # Manager sees watches from their project
+                filtered_df = fitbit_log_df.filter(pl.col('project') == user_project)
+            else:
+                # Student sees watches from their project, highlighting their own
+                filtered_df = fitbit_log_df.filter(pl.col('project') == user_project)
+            
+            # Allow filtering by project for Admin
+            if user_role.lower() == "admin":
+                projects = sorted(fitbit_log_df['project'].unique())
+                selected_projects = st.multiselect("Filter by Project:", projects, default=projects)
+                if selected_projects:
+                    filtered_df = filtered_df.filter(pl.col('project').is_in(selected_projects))
+            
+            # Get the latest record for each watch
+            latest_df = filtered_df.sort("lastCheck", descending=True).unique(subset=["watchName"], keep="first")
+            
+            # Display summary metrics
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Total Watches", len(latest_df))
+            with col2:
+                st.metric("Active Watches", len(latest_df.filter(pl.col('is_active') == True)))
+            with col3:
+                low_battery = len(latest_df.filter(
+                    pl.col('lastBattaryVal').cast(pl.Utf8).str.replace('%', '').cast(pl.Float64, strict=False) < 20
+                ))
+                st.metric("Low Battery", f"{low_battery}")
+            with col4:
+                # Count watches not synced in last 24 hours
+                # Use Python's datetime.now() instead of pl.now() which doesn't exist
+                not_synced = latest_df.filter(
+                    pl.col('lastSynced').cast(pl.Datetime, strict=False) < (datetime.now() - timedelta(hours=24))
+                ).height
+                st.metric("Not Synced (24h)", f"{not_synced}")
+            
+            # For students, show their assigned watch first
+            if user_role.lower() == "student":
+                my_watches = latest_df.filter(pl.col('assigned_student') == user_email)
+                if not my_watches.is_empty():
+                    st.subheader("My Assigned Watch")
+                    for _, row in my_watches.iter_rows():
+                        col1, col2 = st.columns([1, 3])
+                        with col1:
+                            st.markdown(f"### {row['watchName']}")
+                            st.markdown(f"**Project:** {row['project']}")
+                        
+                        with col2:
+                            battery_val = row.get('lastBattaryVal', '')
+                            last_sync = format_time_ago(row.get('lastSynced'))
+                            sync_status = time_status_indicator(row.get('lastSynced'))
+                            
+                            st.markdown(f"**Battery:** {render_battery_gauge(battery_val)}", unsafe_allow_html=True)
+                            st.markdown(f"**Last Synced:** {sync_status} {last_sync}")
+                            
+                            # Show heart rate and steps
+                            hr_val = row.get('lastHRVal', 'N/A')
+                            steps_val = row.get('lastStepsVal', 'N/A')
+                            st.markdown(f"**Heart Rate:** {hr_val} bpm | **Steps:** {steps_val}")
+                            
+                            # Show sleep data if available
+                            sleep_start = row.get('lastSleepStartDateTime')
+                            sleep_end = row.get('lastSleepEndDateTime')
+                            sleep_dur = row.get('lastSleepDur', 'N/A')
+                            
+                            if pd.notna(sleep_start) and pd.notna(sleep_end):
+                                st.markdown(f"**Last Sleep:** {sleep_start.strftime('%m/%d %H:%M')} to {sleep_end.strftime('%m/%d %H:%M')} ({sleep_dur} min)")
+            
+            # Main watch table
+            st.subheader("All Watches Overview")
+            
+            # Create a copy of the dataframe for display
+            display_df = latest_df.clone()
+            
+            # Format columns for display with concise time, safely handling NaT/None
+            if 'lastSynced' in display_df.columns:
+                display_df = display_df.with_columns([
+                    pl.col('lastSynced')
+                    .map_elements(lambda x: (
+                        "Never" 
+                        if x is None or pd.isna(x) 
+                        else f"{time_status_indicator(x)} {format_time_ago_concise(x)}"
+                    ))
+                    .alias('Last Sync')
+                ])
+            def safe_int_convert(val):
+                """Safely convert a value to int with error handling"""
+                try:
+                    if pd.isna(val) or val == '' or not val:
+                        return 'N/A'
+                    return int(float(val))  # Convert to float first for strings like '72.0'
+                except (ValueError, TypeError):
+                    return val
+
+            # Fix heart rate display by properly handling NaN values and empty strings
+            if 'lastHR' in display_df.columns and 'lastHRVal' in display_df.columns:
+                display_df = display_df.with_columns([
+                    pl.struct(['lastHR', 'lastHRVal'])
+                    .map_elements(lambda row: (
+                        f"{time_status_indicator(row['lastHR'])} " + 
+                        (f"{safe_int_convert(row['lastHRVal'])} bpm" 
+                         if row['lastHRVal'] is not None and row['lastHRVal'] != '' 
+                         else "N/A")
+                    ))
+                    .alias('Heart Rate')
+                ])
+            
+            # Format sleep duration to hours with 2 decimal places
+            if 'lastSleepStartDateTime' in display_df.columns and 'lastSleepEndDateTime' in display_df.columns:
+                # Calculate sleep duration directly from the timestamps
+                display_df = display_df.with_columns([
+                    pl.struct(['lastSleepStartDateTime', 'lastSleepEndDateTime'])
+                    .map_elements(lambda row: calculate_sleep_duration(row['lastSleepStartDateTime'], row['lastSleepEndDateTime']))
+                    .alias('calculated_sleep_dur')
+                ])
+                
+                # Use calculated duration when available, fall back to stored duration
+                display_df = display_df.with_columns([
+                    pl.struct(['lastSleepEndDateTime', 'calculated_sleep_dur', 'lastSleepDur'])
+                    .map_elements(lambda row: 
+                        f"{time_status_indicator(row['lastSleepEndDateTime'])} " + 
+                        (convert_min_to_hours(row['calculated_sleep_dur']) 
+                         if row['calculated_sleep_dur'] is not None 
+                         else convert_min_to_hours(row['lastSleepDur']))
+                    )
+                    .alias('Sleep')
+                ])
+            elif 'lastSleepEndDateTime' in display_df.columns and 'lastSleepDur' in display_df.columns:
+                display_df = display_df.with_columns([
+                    pl.struct(['lastSleepEndDateTime', 'lastSleepDur'])
+                    .map_elements(lambda row: 
+                        f"{time_status_indicator(row['lastSleepEndDateTime'])} {convert_min_to_hours(row['lastSleepDur'])}"
+                    )
+                    .alias('Sleep')
+                ])
+            
+            # Ensure steps are properly formatted with safe integer conversion
+            if 'lastSteps' in display_df.columns and 'lastStepsVal' in display_df.columns:
+                display_df = display_df.with_columns([
+                    pl.struct(['lastSteps', 'lastStepsVal'])
+                    .map_elements(lambda row: 
+                        f"{time_status_indicator(row['lastSteps'])} " + 
+                        (f"{safe_int_convert(row['lastStepsVal'])}" 
+                         if row['lastStepsVal'] is not None and row['lastStepsVal'] != '' 
+                         else "N/A")
+                    )
+                    .alias('Steps')
+                ])
+            
+            # Prepare battery column for ProgressColumn with better error handling
+            if 'lastBattaryVal' in display_df.columns:
+                # Convert to numeric values and handle NaN and empty strings
+                display_df = display_df.with_columns([
+                    pl.col('lastBattaryVal')
+                    .map_elements(lambda x: 
+                        0 if x is None or x == '' or not x 
+                        else float(x) / 100.0
+                    )
+                    .alias('Battery Level')
+                ])
+            
+            # Define columns for display
+            display_columns = ['watchName', 'is_active', 'project', 'Battery Level', 'Last Sync', 'Heart Rate', 'Sleep', 'Steps','lastSynced']
+            display_columns = [col for col in display_columns if col in display_df.columns]
+            
+            # Use column config to define column formats
+            column_config = {
+                "watchName": "Watch Name",
+                "project": "Project",
+                "lastSynced": st.column_config.DatetimeColumn(
+                    "Last Time Synced",
+                    format="YYYY-MM-DD HH:mm",
+                    help="Last time the server synced with the watch",
+                ),
+                "is_active": st.column_config.CheckboxColumn(
+                    "Active",
+                    help="Is the watch currently assigned to a student?",
+                    disabled=True
+                ),
+                "Battery Level": st.column_config.ProgressColumn(
+                    "Battery",
+                    help="Battery level of the watch",
+                    format="percent",
+                    min_value=0,
+                    max_value=1.0
+                ),
+                "Last Sync": "Last Sync",
+                "Heart Rate": "Heart Rate",
+                "Sleep": "Sleep Duration",
+                "Steps": "Steps"
+            }
+            
+            # Highlight rows where the watch is assigned to current user
+            if user_role.lower() == "student":
+                assigned_watches = display_df.filter(pl.col('assigned_student') == user_email).select('watchName').to_series().to_list()
+            else:
+                assigned_watches = []
+            
+            # Display using st.dataframe with column config
+            st.dataframe(
+                display_df[display_columns],
+                column_config=column_config,
+                use_container_width=True,
+                height=min(35 * len(display_df) + 38, 600),
+                hide_index=True
+            )
+            
+            # Add expandable section with detailed view
+            with st.expander("View Detailed Data"):
+                # First show the filtered view with key columns
+                st.subheader("Filtered Data View")
+                detail_cols = ['watchName', 'project', 'lastCheck', 'lastSynced', 
+                              'lastBattaryVal', 'lastHRVal', 'lastStepsVal',
+                              'CurrentFailedSync', 'TotalFailedSync',
+                              'CurrentFailedHR', 'TotalFailedHR',
+                              'CurrentFailedSleep', 'TotalFailedSleep',
+                              'CurrentFailedSteps', 'TotalFailedSteps']
+                
+                # Select columns that actually exist in the dataframe
+                available_cols = [col for col in detail_cols if col in latest_df.columns]
+                detail_df = latest_df.select(available_cols).clone()
+                
+                # Format datetime columns for display
+                for col in ['lastCheck', 'lastSynced']:
+                    if col in detail_df.columns:
+                        try:
+                            # Format datetime columns to string representation
+                            detail_df = detail_df.with_columns(
+                                pl.col(col).dt.strftime("%Y-%m-%d %H:%M").alias(col)
+                            )
+                        except Exception as e:
+                            # If formatting fails, keep as is
+                            pass
+                            # st.warning(f"Could not format {col} as datetime: {str(e)}")
+                
+                # Display as dataframe
+                st.dataframe(detail_df, use_container_width=True)
+                
+                # Show complete raw data from the sheet
+                st.subheader("Complete Raw Data")
+                
+                # Display the raw data
+                st.dataframe(raw_df, use_container_width=True)
+                
+                # Add download button for the raw data
+                csv = raw_df.write_csv().encode('utf-8')
+                st.download_button(
+                    label="Download Raw Data as CSV",
+                    data=csv,
+                    file_name=f"fitbit_log_data_{datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv"
+                )
+            
+            # Add visualization section
+            st.subheader("Visualizations")
+            
+            # Let user select a watch to view historical data
+            watch_options = sorted(filtered_df['watchName'].unique().to_list())
+            if watch_options:
+                selected_watch = st.selectbox("Select Watch for History:", watch_options)
+                
+                # Get historical data for the selected watch - get all records, not just latest
+                watch_history = filtered_df.filter(pl.col('watchName') == selected_watch).sort('lastCheck')
+                
+                # Add debug info to help troubleshoot visualization issues
+                st.write(f"Found {watch_history.height} historical records for {selected_watch}")
+                
+                if not watch_history.is_empty():
+                    # Create tabs for different metrics
+                    tab1, tab2, tab3, tab4 = st.tabs(["Battery", "Heart Rate", "Steps", "Sleep"])
+                    
+                    with tab1:
+                        # Clean and convert battery values
+                        # Handle both string and numeric types for battery values
+                        battery_df = watch_history.with_columns(
+                            pl.when(pl.col('lastBattaryVal').cast(pl.Utf8).str.contains('%'))
+                            .then(
+                                pl.col('lastBattaryVal')
+                                .cast(pl.Utf8)
+                                .str.replace('%', '')
+                                .cast(pl.Float64, strict=False)
+                            )
+                            .otherwise(pl.col('lastBattaryVal').cast(pl.Float64, strict=False))
+                            .alias('battery_num')
+                        ).select(['lastCheck', 'battery_num']).drop_nulls()
+                        
+                        st.write(f"Battery data points: {battery_df.height}")
+                        if not battery_df.is_empty():
+                            # Ensure data is properly sorted by time
+                            battery_df = battery_df.sort('lastCheck')
+                            
+                            # Convert to pandas for plotly compatibility
+                            battery_pd_df = battery_df.to_pandas()
+                            fig = px.line(battery_pd_df, x='lastCheck', y='battery_num', 
+                                         title=f"Battery History - {selected_watch}",
+                                         labels={'lastCheck': 'Time', 'battery_num': 'Battery Level (%)'},
+                                         range_y=[0, 100])
+                            st.plotly_chart(fig, use_container_width=True)
+                        else:
+                            st.info("No battery data available for this watch")
+                    
+                    with tab2:
+                        # Convert HR values to numeric with better handling
+                        hr_df = watch_history.with_columns(
+                            pl.col('lastHRVal').cast(pl.Float64, strict=False).alias('hr_num')
+                        ).select(['lastCheck', 'hr_num']).drop_nulls()
+                        
+                        st.write(f"Heart rate data points: {hr_df.height}")
+                        if not hr_df.is_empty():
+                            # Ensure data is properly sorted by time
+                            hr_df = hr_df.sort('lastCheck')
+                            
+                            # Convert to pandas for plotly compatibility
+                            hr_pd_df = hr_df.to_pandas()
+                            fig = px.line(hr_pd_df, x='lastCheck', y='hr_num', 
+                                         title=f"Heart Rate History - {selected_watch}",
+                                         labels={'lastCheck': 'Time', 'hr_num': 'Heart Rate (bpm)'})
+                            st.plotly_chart(fig, use_container_width=True)
+                        else:
+                            st.info("No heart rate data available for this watch")
+                    
+                    with tab3:
+                        # Clean and convert steps values
+                        steps_df = watch_history.with_columns(
+                            pl.col('lastStepsVal').cast(pl.Float64, strict=False).alias('steps_num')
+                        ).select(['lastCheck', 'steps_num']).drop_nulls()
+                        
+                        st.write(f"Steps data points: {steps_df.height}")
+                        if not steps_df.is_empty():
+                            # Ensure data is properly sorted by time
+                            steps_df = steps_df.sort('lastCheck')
+                            
+                            # Convert to pandas for plotly compatibility
+                            steps_pd_df = steps_df.to_pandas()
+                            fig = px.bar(steps_pd_df, x='lastCheck', y='steps_num', 
+                                        title=f"Steps History - {selected_watch}",
+                                        labels={'lastCheck': 'Time', 'steps_num': 'Steps'})
+                            st.plotly_chart(fig, use_container_width=True)
+                        else:
+                            st.info("No steps data available for this watch")
+                    
+                    with tab4:
+                        # Try both the calculated sleep duration and the stored one
+                        sleep_col = 'calculated_sleep_dur' if 'calculated_sleep_dur' in watch_history.columns else 'lastSleepDur'
+                        sleep_df = watch_history.with_columns(
+                            pl.col(sleep_col).cast(pl.Float64, strict=False).alias('sleep_min')
+                        ).select(['lastCheck', 'sleep_min']).drop_nulls()
+                        
+                        st.write(f"Sleep data points: {sleep_df.height}")
+                        if not sleep_df.is_empty():
+                            # Ensure data is properly sorted by time
+                            sleep_df = sleep_df.sort('lastCheck')
+                            
+                            # Convert to pandas for plotly compatibility
+                            sleep_pd_df = sleep_df.to_pandas()
+                            fig = px.bar(sleep_pd_df, x='lastCheck', y='sleep_min', 
+                                        title=f"Sleep Duration History - {selected_watch}",
+                                        labels={'lastCheck': 'Date', 'sleep_min': 'Sleep Duration (min)'})
+                            st.plotly_chart(fig, use_container_width=True)
+                        else:
+                            st.info("No sleep data available for this watch")
+                    
+                    # If all visualizations are empty, show the raw data
+                    if (battery_df.height + hr_df.height + steps_df.height + sleep_df.height) == 0:
+                        st.warning("No visualization data available. Here's the raw data for troubleshooting:")
+                        st.dataframe(watch_history.select(['lastCheck', 'lastBattaryVal', 'lastHRVal', 'lastStepsVal', 'lastSleepDur']).head(10))
+                else:
+                    st.info(f"No historical data available for {selected_watch}")
+            else:
+                st.info("No watches available for visualization")
+                
+        except Exception as e:
+            st.error(f"Error displaying Fitbit log data: {e}")
+            # Add debugging info if needed
+            st.exception(e)
+
+def convert_min_to_hours(minutes_value):
+    """Convert minutes to hours with 2 decimal places"""
+    try:
+        # Handle non-numeric values
+        if minutes_value == 'N/A' or minutes_value is None or pd.isna(minutes_value):
+            return 'N/A'
+        
+        # Convert to float and divide by 60
+        minutes = float(minutes_value)
+        hours = minutes / 60.0
+        
+        # Format with 2 decimal places
+        return f"{hours:.2f} h"
+    except (ValueError, TypeError):
+        return f"{minutes_value}"
+
+def calculate_sleep_duration(start_time, end_time):
+    """Calculate sleep duration between two timestamps in minutes"""
+    if pd.isna(start_time) or pd.isna(end_time):
+        return None
+    
+    try:
+        # Ensure both are datetime objects
+        if isinstance(start_time, str):
+            start_time = pd.to_datetime(start_time)
+        if isinstance(end_time, str):
+            end_time = pd.to_datetime(end_time)
+        
+        # Calculate duration in minutes
+        delta = end_time - start_time
+        minutes = delta.total_seconds() / 60
+        
+        # Return duration in minutes (should be positive)
+        return abs(minutes)
+    except Exception:
+        return None
