@@ -373,22 +373,20 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
             # Add assigned_student column using polars expressions
             fitbit_log_df = fitbit_log_df.with_columns([
                 (pl.col("project") + "-" + pl.col("watchName"))
-                .map_elements(lambda key: student_mapping.get(key, ''))
+                .map_elements(lambda key: student_mapping.get(key, ''), return_dtype=pl.Utf8)
                 .alias("assigned_student")
             ])
             fitbit_log_df = fitbit_log_df.with_columns(
                 pl.col('assigned_student').cast(pl.Utf8)
             )
 
-
-            
             # Create a mapping dictionary for active status
             active_mapping = {key: value.get('active', True) for key, value in watch_mapping.items()}
 
             # Add is_active column using polars expressions
             fitbit_log_df = fitbit_log_df.with_columns([
                 (pl.col("project") + "-" + pl.col("watchName"))
-                .map_elements(lambda key: active_mapping.get(key, True))
+                .map_elements(lambda key: active_mapping.get(key, True), return_dtype=pl.Boolean)
                 .alias("is_active")
             ])
 
@@ -483,7 +481,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                         "Never"
                         if x is None or pd.isna(x) or str(x) == 'NaT'
                         else f"{time_status_indicator(x)} {format_time_ago_concise(x)}"
-                    ))
+                    ), return_dtype=pl.Utf8)
                     .alias('Last Sync')
                 ])
             def safe_int_convert(val):
@@ -504,38 +502,29 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                         (f"{safe_int_convert(row['lastHRVal'])} bpm" 
                          if row['lastHRVal'] is not None and row['lastHRVal'] != '' 
                          else "N/A")
-                    ))
+                    ), return_dtype=pl.Utf8)
                     .alias('Heart Rate')
                 ])
             
-            # Format sleep duration to hours with 2 decimal places
-            if 'lastSleepStartDateTime' in display_df.columns and 'lastSleepEndDateTime' in display_df.columns:
-                # Calculate sleep duration directly from the timestamps
-                display_df = display_df.with_columns([
-                    pl.struct(['lastSleepStartDateTime', 'lastSleepEndDateTime'])
-                    .map_elements(lambda row: calculate_sleep_duration(row['lastSleepStartDateTime'], row['lastSleepEndDateTime']))
-                    .alias('calculated_sleep_dur')
-                ])
-                
-                # Use calculated duration when available, fall back to stored duration
-                display_df = display_df.with_columns([
-                    pl.struct(['lastSleepEndDateTime', 'calculated_sleep_dur', 'lastSleepDur'])
-                    .map_elements(lambda row: 
-                        f"{time_status_indicator(row['lastSleepEndDateTime'])} " + 
-                        (convert_min_to_hours(row['calculated_sleep_dur']) 
-                         if row['calculated_sleep_dur'] is not None 
-                         else convert_min_to_hours(row['lastSleepDur']))
-                    )
-                    .alias('Sleep')
-                ])
-            elif 'lastSleepEndDateTime' in display_df.columns and 'lastSleepDur' in display_df.columns:
-                display_df = display_df.with_columns([
-                    pl.struct(['lastSleepEndDateTime', 'lastSleepDur'])
-                    .map_elements(lambda row: 
-                        f"{time_status_indicator(row['lastSleepEndDateTime'])} {convert_min_to_hours(row['lastSleepDur'])}"
-                    )
-                    .alias('Sleep')
-                ])
+            # Calculate sleep duration directly from the timestamps
+            display_df = display_df.with_columns([
+                pl.struct(['lastSleepStartDateTime', 'lastSleepEndDateTime'])
+                .map_elements(lambda row: calculate_sleep_duration(row['lastSleepStartDateTime'], row['lastSleepEndDateTime']), 
+                             return_dtype=pl.Float64)
+                .alias('calculated_sleep_dur')
+            ])
+            
+            # Use calculated duration when available, fall back to stored duration
+            display_df = display_df.with_columns([
+                pl.struct(['lastSleepEndDateTime', 'calculated_sleep_dur', 'lastSleepDur'])
+                .map_elements(lambda row: 
+                    f"{time_status_indicator(row['lastSleepEndDateTime'])} " + 
+                    (convert_min_to_hours(row['calculated_sleep_dur']) 
+                     if row['calculated_sleep_dur'] is not None 
+                     else convert_min_to_hours(row['lastSleepDur']))
+                , return_dtype=pl.Utf8)
+                .alias('Sleep')
+            ])
             
             # Ensure steps are properly formatted with safe integer conversion
             if 'lastSteps' in display_df.columns and 'lastStepsVal' in display_df.columns:
@@ -546,7 +535,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                         (f"{safe_int_convert(row['lastStepsVal'])}" 
                          if row['lastStepsVal'] is not None and row['lastStepsVal'] != '' 
                          else "N/A")
-                    )
+                    , return_dtype=pl.Utf8)
                     .alias('Steps')
                 ])
             
@@ -558,7 +547,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                     .map_elements(lambda x: 
                         0 if x is None or x == '' or not x 
                         else float(x) / 100.0
-                    )
+                    , return_dtype=pl.Float64)
                     .alias('Battery Level')
                 ])
             
