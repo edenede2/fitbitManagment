@@ -289,7 +289,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                 return
             
             # 1) Fill null and empty "lastSynced" with a placeholder date
-            fitbit_log_df = fitbit_log_df.with_column(
+            fitbit_log_df = fitbit_log_df.with_columns(
                 pl.when(pl.col('lastSynced').is_null() | (pl.col('lastSynced') == ''))
                 .then(pl.lit("2000-01-01 00:00:00"))
                 .otherwise(pl.col('lastSynced'))
