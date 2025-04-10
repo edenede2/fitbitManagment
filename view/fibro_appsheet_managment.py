@@ -23,15 +23,20 @@ def display_fibro_ema_data(spreadsheet: Spreadsheet):
             pandas_df = spreadsheet.get_sheet("for_analysis", "for_analysis").to_dataframe(engine="pandas")
             
             if pandas_df is not None and not pandas_df.empty:
-                # Clean data before converting to polars
-                # Replace empty strings with None in all object columns
-                for col in pandas_df.select_dtypes(include=['object']).columns:
-                    pandas_df[col] = pandas_df[col].replace('', None)
+                # Handle mixed types issues before converting to polars
+                # First, detect object columns that might contain mixed types
+                for col in pandas_df.columns:
+                    # Convert any column that might have mixed types to string
+                    # This prevents PyArrow conversion errors
+                    if pandas_df[col].dtype == 'object':
+                        pandas_df[col] = pandas_df[col].astype(str)
+                        # Replace 'nan' strings with None
+                        pandas_df[col] = pandas_df[col].replace('nan', None)
+                        pandas_df[col] = pandas_df[col].replace('None', None)
+                        pandas_df[col] = pandas_df[col].replace('', None)
                 
-                # Convert to polars with explicit schema inference on all rows
-                df = pl.from_pandas(pandas_df)
-                
-                st.session_state.fibro_ema_data = df
+                # Use pandas directly instead of polars for now to avoid conversion issues
+                st.session_state.fibro_ema_data = pandas_df
                 st.success("EMA data loaded successfully!")
             else:
                 st.error("No data found in the EMA sheet.")
@@ -47,7 +52,8 @@ def display_fibro_ema_data(spreadsheet: Spreadsheet):
     # Get unique user IDs for filtering - handle potential None values
     try:
         if "User Id" in df.columns:
-            user_ids = sorted([id for id in df.select("User Id").unique().to_series().to_list() if id])
+            # Using pandas methods instead of polars
+            user_ids = sorted([id for id in df["User Id"].unique() if pd.notna(id) and id])
         else:
             st.warning("No 'User Id' column found in data")
             user_ids = []
@@ -65,38 +71,30 @@ def display_fibro_ema_data(spreadsheet: Spreadsheet):
     
     # Filter data based on user selection
     if selected_user != "All Users":
-        filtered_df = df.filter(pl.col("User Id") == selected_user)
-        st.write(f"Showing data for User: **{selected_user}** ({filtered_df.height} records)")
+        # Using pandas filtering
+        filtered_df = df[df["User Id"] == selected_user]
+        st.write(f"Showing data for User: **{selected_user}** ({len(filtered_df)} records)")
     else:
         filtered_df = df
-        st.write(f"Showing data for **All Users** ({filtered_df.height} records)")
+        st.write(f"Showing data for **All Users** ({len(filtered_df)} records)")
     
     # Create tabs for different views
     tab1, tab2, tab3 = st.tabs(["Data Table", "Summary Statistics", "Visualizations"])
     
     with tab1:
         # Prepare data for display
-        # Polars operations are immutable by default, no need for copy()
         display_df = filtered_df
         
         # Format datetime for better readability
         if "Date Time" in display_df.columns:
             try:
-                display_df = display_df.with_columns([
-                    pl.col("Date Time").cast(pl.Datetime).alias("Date Time"),
-                    pl.col("Date Time").cast(pl.Datetime).dt.strftime("%Y-%m-%d %H:%M").alias("Formatted Date")
-                ])
+                display_df["Formatted Date"] = pd.to_datetime(display_df["Date Time"]).dt.strftime("%Y-%m-%d %H:%M")
             except Exception as e:
                 st.warning(f"Could not format DateTime: {str(e)}")
         
         # Create a more compact display for User Id (truncate if needed)
         if "User Id" in display_df.columns:
-            display_df = display_df.with_columns([
-                pl.when(pl.col("User Id").str.lengths() > 10)
-                .then(pl.col("User Id").str.slice(0, 10) + "...")
-                .otherwise(pl.col("User Id"))
-                .alias("User")
-            ])
+            display_df["User"] = display_df["User Id"].apply(lambda x: x[:10] + "..." if len(x) > 10 else x)
         
         # Select columns to display
         if st.checkbox("Show all columns", value=False):
@@ -113,22 +111,16 @@ def display_fibro_ema_data(spreadsheet: Spreadsheet):
         
         # Show the filtered dataframe
         if "Formatted Date" in cols_to_display:
-            # Sort by date and select columns
-            display_pd_df = (display_df
-                .select(cols_to_display)
-                .sort("Formatted Date", descending=True)
-                .to_pandas())
+            display_pd_df = display_df[cols_to_display].sort_values("Formatted Date", ascending=False)
         else:
-            display_pd_df = display_df.select(cols_to_display).to_pandas()
+            display_pd_df = display_df[cols_to_display]
             
         st.dataframe(display_pd_df, use_container_width=True)
         
         # Option to download data
-        # Convert to pandas for CSV export (simpler)
-        pandas_df = filtered_df.to_pandas()
         st.download_button(
             "Download Filtered Data",
-            pandas_df.to_csv(index=False).encode("utf-8"),
+            filtered_df.to_csv(index=False).encode("utf-8"),
             file_name=f"fibro_ema_data_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
             mime="text/csv"
         )
@@ -136,28 +128,20 @@ def display_fibro_ema_data(spreadsheet: Spreadsheet):
     with tab2:
         st.subheader("Summary Statistics")
         
-        # User submission counts using Polars
-        user_counts = (df
-            .group_by("User Id")
-            .agg(pl.count().alias("Submission Count"))
-            .sort("Submission Count", descending=True)
-            .to_pandas())
+        # User submission counts using pandas
+        user_counts = df["User Id"].value_counts().reset_index()
+        user_counts.columns = ["User Id", "Submission Count"]
         
         st.write("#### Submissions by User")
         st.dataframe(user_counts, use_container_width=True)
         
-        # Submissions by date using Polars
+        # Submissions by date using pandas
         if "Date Time" in df.columns:
             try:
-                date_df = df.with_columns([
-                    pl.col("Date Time").cast(pl.Datetime).dt.date().alias("Date")
-                ])
-                
-                date_counts = (date_df
-                    .group_by("Date")
-                    .agg(pl.count().alias("Submission Count"))
-                    .sort("Date")
-                    .to_pandas())
+                df["Date"] = pd.to_datetime(df["Date Time"]).dt.date
+                date_counts = df["Date"].value_counts().reset_index()
+                date_counts.columns = ["Date", "Submission Count"]
+                date_counts = date_counts.sort_values("Date")
                 
                 st.write("#### Submissions by Date")
                 st.dataframe(date_counts, use_container_width=True)
@@ -165,42 +149,36 @@ def display_fibro_ema_data(spreadsheet: Spreadsheet):
                 st.warning(f"Could not analyze by date: {str(e)}")
         
         # Show numeric column statistics if available
-        numeric_cols = [col for col in filtered_df.columns if filtered_df[col].dtype in [pl.Float32, pl.Float64, pl.Int32, pl.Int64]]
+        numeric_cols = [col for col in filtered_df.columns if pd.api.types.is_numeric_dtype(filtered_df[col])]
         if numeric_cols:
             st.write("#### Numeric Data Statistics")
-            # Convert to pandas for describe() method
-            stats_df = filtered_df.select(numeric_cols).to_pandas().describe()
+            stats_df = filtered_df[numeric_cols].describe()
             st.dataframe(stats_df, use_container_width=True)
     
     with tab3:
         st.subheader("Data Visualizations")
         
         # Time series visualization
-        if "Date Time" in filtered_df.columns and not filtered_df.is_empty():
+        if "Date Time" in filtered_df.columns and not filtered_df.empty:
             try:
-                # Prepare data with Polars
-                viz_df = filtered_df.with_columns([
-                    pl.col("Date Time").cast(pl.Datetime).dt.date().alias("Date")
-                ])
+                filtered_df["Date"] = pd.to_datetime(filtered_df["Date Time"]).dt.date
                 
                 # Submissions over time
-                date_counts = (viz_df
-                    .group_by("Date")
-                    .agg(pl.count().alias("Count"))
-                    .sort("Date")
-                    .to_pandas())
+                date_counts = filtered_df["Date"].value_counts().reset_index()
+                date_counts.columns = ["Date", "Count"]
+                date_counts = date_counts.sort_values("Date")
                 
                 fig1 = px.line(
                     date_counts, 
                     x="Date", 
                     y="Count", 
-                    title=f"EMA Submissions Over Time {'(All Users)' if selected_user == "All Users" else f'(User: {selected_user})'}"
+                    title=f"EMA Submissions Over Time {'(All Users)' if selected_user == 'All Users' else f'(User: {selected_user})'}"
                 )
                 st.plotly_chart(fig1, use_container_width=True)
                 
                 # If there are any numeric columns, create additional visualizations
-                numeric_cols = [col for col in viz_df.columns 
-                              if viz_df[col].dtype in [pl.Float32, pl.Float64, pl.Int32, pl.Int64]
+                numeric_cols = [col for col in filtered_df.columns 
+                              if pd.api.types.is_numeric_dtype(filtered_df[col])
                               and col not in ["User Id", "Date Time"]]
                 
                 if numeric_cols:
@@ -208,25 +186,19 @@ def display_fibro_ema_data(spreadsheet: Spreadsheet):
                     
                     if selected_metric:
                         # Daily average of selected metric
-                        daily_avg = (viz_df
-                            .group_by("Date")
-                            .agg(pl.mean(selected_metric).alias(selected_metric))
-                            .sort("Date")
-                            .to_pandas())
+                        daily_avg = filtered_df.groupby("Date")[selected_metric].mean().reset_index()
                         
                         fig2 = px.line(
                             daily_avg, 
                             x="Date", 
                             y=selected_metric,
-                            title=f"Daily Average {selected_metric} {'(All Users)' if selected_user == "All Users" else f'(User: {selected_user})'}"
+                            title=f"Daily Average {selected_metric} {'(All Users)' if selected_user == 'All Users' else f'(User: {selected_user})'}"
                         )
                         st.plotly_chart(fig2, use_container_width=True)
                         
                         # Distribution of selected metric
-                        # Convert to pandas for histogram (simpler with plotly)
-                        viz_pandas_df = viz_df.select(selected_metric).to_pandas()
                         fig3 = px.histogram(
-                            viz_pandas_df, 
+                            filtered_df, 
                             x=selected_metric,
                             title=f"Distribution of {selected_metric} Values"
                         )
