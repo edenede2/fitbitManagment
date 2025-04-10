@@ -16,12 +16,21 @@ def display_fibro_ema_data(spreadsheet: Spreadsheet):
     """
     st.header("Fibromyalgia EMA Data Visualization")
     
-    # Load data from the Google Sheet using Polars
+    # Load data from the Google Sheet using Polars with better error handling
     with st.spinner("Loading EMA data from Google Sheets..."):
         try:
-            # Use Polars engine
-            df = spreadsheet.get_sheet("for_analysis", "for_analysis").to_dataframe(engine="polars")
-            if df is not None and not df.is_empty():
+            # First get data as pandas to handle mixed types better
+            pandas_df = spreadsheet.get_sheet("for_analysis", "for_analysis").to_dataframe(engine="pandas")
+            
+            if pandas_df is not None and not pandas_df.empty:
+                # Clean data before converting to polars
+                # Replace empty strings with None in all object columns
+                for col in pandas_df.select_dtypes(include=['object']).columns:
+                    pandas_df[col] = pandas_df[col].replace('', None)
+                
+                # Convert to polars with explicit schema inference on all rows
+                df = pl.from_pandas(pandas_df)
+                
                 st.session_state.fibro_ema_data = df
                 st.success("EMA data loaded successfully!")
             else:
@@ -29,13 +38,22 @@ def display_fibro_ema_data(spreadsheet: Spreadsheet):
                 return
         except Exception as e:
             st.error(f"Error loading EMA data: {str(e)}")
+            st.exception(e)  # Show full traceback for debugging
             return
     
     # Get the data from session state
     df = st.session_state.fibro_ema_data
     
-    # Get unique user IDs for filtering
-    user_ids = sorted(df.select("User Id").unique().to_series().to_list())
+    # Get unique user IDs for filtering - handle potential None values
+    try:
+        if "User Id" in df.columns:
+            user_ids = sorted([id for id in df.select("User Id").unique().to_series().to_list() if id])
+        else:
+            st.warning("No 'User Id' column found in data")
+            user_ids = []
+    except Exception as e:
+        st.warning(f"Error processing User IDs: {str(e)}")
+        user_ids = []
     
     # User ID selection
     col1, col2 = st.columns([1, 3])
@@ -176,7 +194,7 @@ def display_fibro_ema_data(spreadsheet: Spreadsheet):
                     date_counts, 
                     x="Date", 
                     y="Count", 
-                    title=f"EMA Submissions Over Time {'(All Users)' if selected_user == 'All Users' else f'(User: {selected_user})'}"
+                    title=f"EMA Submissions Over Time {'(All Users)' if selected_user == "All Users" else f'(User: {selected_user})'}"
                 )
                 st.plotly_chart(fig1, use_container_width=True)
                 
@@ -200,7 +218,7 @@ def display_fibro_ema_data(spreadsheet: Spreadsheet):
                             daily_avg, 
                             x="Date", 
                             y=selected_metric,
-                            title=f"Daily Average {selected_metric} {'(All Users)' if selected_user == 'All Users' else f'(User: {selected_user})'}"
+                            title=f"Daily Average {selected_metric} {'(All Users)' if selected_user == "All Users" else f'(User: {selected_user})'}"
                         )
                         st.plotly_chart(fig2, use_container_width=True)
                         
