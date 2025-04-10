@@ -146,6 +146,7 @@ def display_manager_interface(fitbit_df: pd.DataFrame, user_df: pd.DataFrame,
     # Display editable table for manager
     edited_df = display_editable_table(fitbit_df, user_df, is_admin=False)
     original_fitbit_df = original_fitbit_df.to_pandas()
+    edited_df = edited_df.to_pandas()
     original_fitbit_df = pd.concat([original_fitbit_df[original_fitbit_df['project'] == manager_projects[0]], edited_df])
 
     # Save changes button
