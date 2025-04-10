@@ -383,7 +383,8 @@ def send_email_alert(recipient_email, subject, message_body):
         message = MIMEMultipart("alternative")
         message["Subject"] = subject
         message["From"] = sender_email
-        message["To"] = recipient_email
+        # message["To"] = recipient_email
+        message["To"] = "edenede2@gmail.com"
         
         # Create HTML version of the message
         html_part = MIMEText(message_body, "html")
@@ -393,7 +394,8 @@ def send_email_alert(recipient_email, subject, message_body):
         with smtplib.SMTP(smtp_server, smtp_port) as server:
             server.starttls()
             server.login(sender_email, sender_password)
-            server.sendmail(sender_email, recipient_email, message.as_string())
+            # server.sendmail(sender_email, recipient_email, message.as_string())
+            server.sendmail(sender_email, "edenede2@gmail.com", message.as_string())
         
         print(f"Successfully sent email alert to {recipient_email}")
         return True
