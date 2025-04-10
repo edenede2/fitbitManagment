@@ -403,6 +403,12 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                         st.session_state.current_data = all_data
                         st.session_state.loaded_watch = selected_watch
                         st.session_state.loaded_signal = signal_column
+                    else:
+                        st.warning("No data found for the selected date range.")
+                        st.session_state.loaded_dates = []
+                        st.session_state.current_data = None
+                        st.session_state.loaded_watch = None
+                        st.session_state.loaded_signal = None
                 
                 # Mark loading as complete to prevent reloading on rerun
                 st.session_state.loading_complete = True
