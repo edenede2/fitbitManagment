@@ -472,14 +472,17 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
             # Create a copy of the dataframe for display
             display_df = latest_df.clone()
             
-            # Format columns for display with concise time
+            # Format columns for display with concise time, safely handling NaT/None
             if 'lastSynced' in display_df.columns:
                 display_df = display_df.with_columns([
-                    pl.col('lastSynced').map_elements(
-                        lambda x: f"{time_status_indicator(x)} {format_time_ago_concise(x)}"
-                    ).alias('Last Sync')
+                    pl.col('lastSynced')
+                    .map_elements(lambda x: (
+                        "Never" 
+                        if x is None or pd.isna(x) 
+                        else f"{time_status_indicator(x)} {format_time_ago_concise(x)}"
+                    ))
+                    .alias('Last Sync')
                 ])
-            
             def safe_int_convert(val):
                 """Safely convert a value to int with error handling"""
                 try:
