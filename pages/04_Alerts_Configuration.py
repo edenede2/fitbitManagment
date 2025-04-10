@@ -18,7 +18,7 @@ if 'user_email' not in st.session_state:
 
 # Check role permissions (only Manager and Admin have access)
 user_role = st.session_state.get('user_role', 'Guest')
-if user_role not in ['Admin', 'manager']:
+if user_role not in ['Admin', 'Manager']:
     st.warning("You don't have permission to access this page.")
     st.stop()
 
