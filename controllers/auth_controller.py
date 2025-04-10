@@ -73,7 +73,7 @@ class AuthenticationController:
         try:
             if not self.fibro_spreadsheet:
                 # Use st.secrets to get the spreadsheet key
-                spreadsheet_key = st.secrets.get("fibro_spreadsheet_key", "")
+                spreadsheet_key = st.secrets.get("fibro_ema_sheet", "")
                 self.fibro_spreadsheet = Spreadsheet(name="Fibro EMA Database", api_key=spreadsheet_key)
                 GoogleSheetsAdapter.connect(self.fibro_spreadsheet)
             return self.fibro_spreadsheet
