@@ -27,7 +27,8 @@ user_project = st.session_state.get('user_project', 'None')
 # if not ((user_project == 'nova' and user_role == 'Manager') or user_role == 'Admin'):
 #     st.warning("You don't have permission to access this page.")
 #     st.stop()
-
+st.write(f"User Role: {user_role}")
+st.write(f"User Project: {user_project}")
 # Get data from session state
 user_email = st.session_state.user_email
 spreadsheet = st.session_state.get('spreadsheet', None)

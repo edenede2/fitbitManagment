@@ -17,8 +17,8 @@ from entity.Watch import Watch, WatchFactory
 from model.config import get_secrets
 from entity.AsyncSheetsManager import AsyncSheetsManager
 
-# Add a cache decorator for API calls
-@st.cache_data(ttl=300)  # Cache for 5 minutes
+# Increase cache time to reduce API calls
+@st.cache_data(ttl=1800)  # Cache for 30 minutes instead of 5
 def cached_get_watches(user_email, user_role, user_project):
     project_controller = ProjectController()
     if user_role == "Admin":
@@ -30,8 +30,23 @@ def cached_get_watches(user_email, user_role, user_project):
     else:
         return pd.DataFrame()
 
-# Cache watch data retrieval
-# @st.cache_data(ttl=600)  # Cache for 10 minutes
+# Add warm-up function for background prefetching
+def prefetch_watch_data(user_email, user_role, user_project):
+    """Prefetch watches data in the background to warm up cache"""
+    try:
+        # This will populate the cache without showing any errors to the user
+        project_controller = ProjectController()
+        if user_role == "Admin":
+            return project_controller.get_watches_for_project(user_project)
+        elif user_role == "Manager":
+            return project_controller.get_watches_for_project(user_project)
+        elif user_role == "Student":
+            return project_controller.get_watches_for_student(user_email)
+        return pd.DataFrame()
+    except Exception:
+        # Silent fail for background tasks
+        return pd.DataFrame()
+
 def fetch_watch_data(watch_name, signal_type, start_date, end_date, should_fetch=False):
     """
     Get data for a specific watch without using any Streamlit widgets.
@@ -160,6 +175,18 @@ def get_available_watches(user_email, user_role, user_project):
     Returns:
         DataFrame: DataFrame of available watches
     """
+    # Check if we need to use cache or have already warmed it up
+    cache_key = f"watches_cache_{user_email}_{user_role}_{user_project}"
+    if cache_key not in st.session_state:
+        st.session_state[cache_key] = False
+        # Start background prefetch after first load
+        import threading
+        threading.Thread(
+            target=prefetch_watch_data,
+            args=(user_email, user_role, user_project),
+            daemon=True
+        ).start()
+    
     # Start timing the operation
     start_time = time.time()
     
@@ -169,7 +196,13 @@ def get_available_watches(user_email, user_role, user_project):
         
         # Log the time taken
         elapsed_time = time.time() - start_time
-        st.info(f"Watches loaded in {elapsed_time:.2f} seconds")
+        
+        # Only display timing info first time or if it's slow
+        if not st.session_state[cache_key] or elapsed_time > 2.0:
+            st.info(f"Watches loaded in {elapsed_time:.2f} seconds")
+            
+        # Mark that we've used the cache successfully
+        st.session_state[cache_key] = True
         
         return watches_df
     except Exception as e:
@@ -211,6 +244,17 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
     st.title("Fitbit Watch Dashboard")
     st.markdown("---")
     
+    # Add option to debug slow performance
+    if st.checkbox("Show Performance Debug Info", value=False):
+        st.write("This will display information about slow operations.")
+        with st.expander("Project Controller Performance", expanded=True):
+            # Add placeholder for project controller debug info
+            if "controller_debug" not in st.session_state:
+                st.session_state.controller_debug = []
+            
+            for debug_msg in st.session_state.controller_debug:
+                st.text(debug_msg)
+    
     # Get available watches
     with st.spinner("Loading available watches..."):
         available_watches = get_available_watches(user_email, user_role, user_project)
@@ -219,9 +263,10 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
         st.warning("No watches available for your role and project")
         return
     
-    # Log total dashboard load time
+    # Log total dashboard load time only on initial load or if it's slow
     dashboard_load_time = time.time() - dashboard_start_time
-    st.info(f"Dashboard initialized in {dashboard_load_time:.2f} seconds")
+    if dashboard_load_time > 2.0:  # Only show timing info if loading is slow
+        st.info(f"Dashboard initialized in {dashboard_load_time:.2f} seconds")
     
     # Display watch selector in the main page (not sidebar)
     st.subheader("Select Watch")
@@ -242,14 +287,11 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
     # Display active status for the selected watch
     if selected_watch:
         watch_details = cached_get_watch_details(selected_watch)
-        # st.write(f"Selected Watch: {selected_watch}")
-        # st.write(f"Project: {watch_details}")
         if isinstance(watch_details.get('isActive'), str):
             # Convert string to boolean
             is_active = True if (watch_details.get('isActive') == 'TRUE') else False
         else:
             is_active = watch_details.get('isActive', False)
-        # is_active = True if (watch_details.get('isActive') == 'TRUE') else False
         active_status = "🟢 Active" if is_active else "🔴 Inactive"
         st.info(f"Watch Status: {active_status}")
         
@@ -571,9 +613,6 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                                 if watch_chat_key not in st.session_state:
                                     # Try to fetch existing messages for this watch
                                     try:
-                                        # sp = Spreadsheet(name="FitbitData",
-                                        #                 api_key=get_secrets().get('spreadsheet_key'))
-                                        # GoogleSheetsAdapter.connect(sp)
                                         student_sheet = sp.get_sheet("chats", sheet_type="chats")
                                         student_df = student_sheet.to_dataframe(engine='polars')
                                         
