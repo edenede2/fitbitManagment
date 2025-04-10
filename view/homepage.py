@@ -25,38 +25,41 @@ def display_homepage(user_email, user_role, user_project, spreadsheet: Spreadshe
     """
     Display the homepage with personalized content based on user's role and project
     """
-    st.title(congrats(user_name=user_email.split('@')[0], user_role=user_role))
-    st.write("Welcome to the Fitbit Management System dashboard.")
-    
-    # Display role-specific information
-    if user_role == "Admin":
-        st.info(f"You are logged in as an Administrator with access to all projects.")
-    elif user_role == "Manager":
-        st.info(f"You are logged in as a Manager for project: {user_project}")
-    elif user_role == "Student":
-        st.info(f"You are logged in as a Student assigned to project: {user_project}")
+    if user_email is None:
+        st.warning("Please go to the app page and come back or refresh the page.")
     else:
-        st.info(f"You are logged in as a Guest with limited access.")
-    
-    # Display project overview
-    st.subheader("Project Overview")
-    
-    # Add the Fitbit Log table
-    display_fitbit_log_table(user_email, user_role, user_project, spreadsheet)
-    
-    # Add any additional homepage content here
-    st.subheader("Quick Links")
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.write("**Dashboard**")
-        st.write("View detailed analytics and statistics.")
-    with col2:
-        st.write("**Fitbit Management**")
-        st.write("Manage Fitbit devices and assignments.")
-    with col3:
-        st.write("**Alerts Configuration**")
-        st.write("Configure alert thresholds and notifications.")
+        st.title(congrats(user_name=user_email.split('@')[0], user_role=user_role))
+        st.write("Welcome to the Fitbit Management System dashboard.")
+        
+        # Display role-specific information
+        if user_role == "Admin":
+            st.info(f"You are logged in as an Administrator with access to all projects.")
+        elif user_role == "Manager":
+            st.info(f"You are logged in as a Manager for project: {user_project}")
+        elif user_role == "Student":
+            st.info(f"You are logged in as a Student assigned to project: {user_project}")
+        else:
+            st.info(f"You are logged in as a Guest with limited access.")
+        
+        # Display project overview
+        st.subheader("Project Overview")
+        
+        # Add the Fitbit Log table
+        display_fitbit_log_table(user_email, user_role, user_project, spreadsheet)
+        
+        # Add any additional homepage content here
+        st.subheader("Quick Links")
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.write("**Dashboard**")
+            st.write("View detailed analytics and statistics.")
+        with col2:
+            st.write("**Fitbit Management**")
+            st.write("Manage Fitbit devices and assignments.")
+        with col3:
+            st.write("**Alerts Configuration**")
+            st.write("Configure alert thresholds and notifications.")
 
 def render_battery_gauge(battery_level):
     """Render a battery level as a colored progress bar"""
