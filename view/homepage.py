@@ -580,10 +580,10 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                 st.subheader("Complete Raw Data")
                 
                 # Display the raw data
-                st.dataframe(raw_df, use_container_width=True)
+                st.dataframe(fitbit_log_df, use_container_width=True)
                 
                 # Add download button for the raw data
-                csv = raw_df.write_csv().encode('utf-8')
+                csv = fitbit_log_df.write_csv().encode('utf-8')
                 st.download_button(
                     label="Download Raw Data as CSV",
                     data=csv,
