@@ -160,16 +160,40 @@ def get_available_watches(user_email, user_role, user_project):
     Returns:
         DataFrame: DataFrame of available watches
     """
+    # Start timing the operation
+    start_time = time.time()
+    
     # Use cached function to avoid hitting API limits
     try:
-        return cached_get_watches(user_email, user_role, user_project)
+        watches_df = cached_get_watches(user_email, user_role, user_project)
+        
+        # Log the time taken
+        elapsed_time = time.time() - start_time
+        st.info(f"Watches loaded in {elapsed_time:.2f} seconds")
+        
+        return watches_df
     except Exception as e:
-        st.error(f"Error getting watches: {e}")
-        # If we hit an API limit, wait and retry once
-        time.sleep(2)
-        try:
-            return cached_get_watches(user_email, user_role, user_project)
-        except:
+        elapsed_time = time.time() - start_time
+        st.error(f"Error getting watches after {elapsed_time:.2f} seconds: {e}")
+        
+        # If we need to retry, only wait if it's a rate limit error
+        if "rate limit" in str(e).lower() or "quota" in str(e).lower():
+            st.warning("API limit reached. Waiting to retry...")
+            time.sleep(2)
+            
+            # Retry with timing
+            retry_start = time.time()
+            try:
+                watches_df = cached_get_watches(user_email, user_role, user_project)
+                retry_elapsed = time.time() - retry_start
+                st.info(f"Retry succeeded in {retry_elapsed:.2f} seconds")
+                return watches_df
+            except Exception as retry_e:
+                retry_elapsed = time.time() - retry_start
+                st.error(f"Retry failed after {retry_elapsed:.2f} seconds: {retry_e}")
+                return pd.DataFrame()
+        else:
+            # For non-rate-limit errors, return empty frame immediately
             return pd.DataFrame()
 
 def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> None:
@@ -181,6 +205,9 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
         user_role (str): The role of the user (Admin, Manager, Student, Guest)
         user_project (str): The project the user is associated with
     """
+    # Time the entire dashboard loading process
+    dashboard_start_time = time.time()
+    
     st.title("Fitbit Watch Dashboard")
     st.markdown("---")
     
@@ -192,8 +219,13 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
         st.warning("No watches available for your role and project")
         return
     
+    # Log total dashboard load time
+    dashboard_load_time = time.time() - dashboard_start_time
+    st.info(f"Dashboard initialized in {dashboard_load_time:.2f} seconds")
+    
     # Display watch selector in the main page (not sidebar)
     st.subheader("Select Watch")
+    
     watch_names = available_watches['name'].tolist()
     
     # Initialize session state for selected watch if it doesn't exist
