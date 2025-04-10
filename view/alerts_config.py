@@ -65,7 +65,7 @@ def get_user_fitbit_config(spreadsheet:Spreadsheet, user_email, user_project):
         }
     
     if user_project == 'Admin':
-        watche_name_list = fitbit_sheet_df.select('watch').unique().to_series().to_list()
+        watche_name_list = config_df.select('watch').unique().to_series().to_list()
     else:
         watche_name_list = config_df.filter(pl.col('project') == user_project).select('watch').unique().to_series().to_list()
     
