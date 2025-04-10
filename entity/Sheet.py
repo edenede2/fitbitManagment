@@ -120,7 +120,7 @@ class SheetFactory:
             'suspicious_nums': SuspiciousNums,
             'student_fitbit': FitbitStudent,
             'chats': ChatsSheet,
-            'fibroEMA': FibroEMASheet,
+            'for_analysis': FibroEMASheet,
             'appsheet_config': AppSheetConfig,
             'generic': Sheet
         }
@@ -474,7 +474,7 @@ class GoogleSheetsAdapter:
             elif 'fibroema' in sheet_name.lower():
                 sheet_type = 'fibroEMA'
             elif 'for_analysis' in sheet_name.lower():
-                sheet_type = 'fibroEMA'
+                sheet_type = 'for_analysis'
             
             # Create and populate the sheet
             sheet = SheetFactory.create_sheet(sheet_type, sheet_name)
