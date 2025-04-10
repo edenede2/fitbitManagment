@@ -11,33 +11,67 @@ class GreetingService:
             "🌅 Good Morning, {}! Ready for a productive day?",
             "☕ Morning, {}! Hope you slept well.",
             "🌞 Rise and shine, {}! The day awaits.",
-            "🌄 Good Morning, {}! Let's make today count."
+            "🌄 Good Morning, {}! Let's make today count.",
+            "🌻 Hello, {}! A new day brings new opportunities.",
+            "🌼 Morning, {}! Time to seize the day.",
+            "🌞 Good Morning, {}! Hope you're feeling refreshed.",
+            "🌅 Morning, {}! Let's make today amazing."
         ]
         
         self.afternoon_greetings = [
             "🌤️ Good Afternoon, {}! How's your day going?",
             "🌞 Hello, {}! Hope your day is going well.",
             "👋 Afternoon, {}! Ready to tackle the rest of the day?",
-            "🌄 Good Afternoon, {}! Keep up the great work."
+            "🌄 Good Afternoon, {}! Keep up the great work.",
+            "🌻 Afternoon, {}! Hope you're having a productive day.",
+            "🌼 Hello, {}! How's the afternoon treating you?",
+            "🌤️ Good Afternoon, {}! Time for a quick break?",
+            "🌞 Afternoon, {}! Hope you're making progress.",
+            "🌤️ Good Afternoon, {}! How's the project coming along?",
+            "🌞 Afternoon, {}! Hope you're staying focused.",
         ]
         
         self.evening_greetings = [
             "🌙 Good Evening, {}! Winding down for the day?",
             "✨ Evening, {}! Hope you had a productive day.",
             "🌆 Good Evening, {}! Time to review today's progress.",
-            "🎑 Hello, {}! How was your day?"
+            "🎑 Hello, {}! How was your day?",
+            "🌌 Evening, {}! Hope you enjoyed your day.",
+            "🌙 Good Evening, {}! Time to relax and unwind.",
+            "🌜 Evening, {}! Hope you're enjoying your evening.",
+            "🌙 Good Evening, {}! Time to reflect on the day.",
+            "🌌 Evening, {}! How was your day?",
+            "🌜 Good Evening, {}! Hope you're ready to relax.",
+            "🌙 Evening, {}! Time to unwind and recharge.",
+            "🌜 Good Evening, {}! Hope you had a great day.",
+            "🌌 Evening, {}! How's your evening going?",
         ]
         
         self.weekend_greetings = [
             "🏖️ Happy Weekend, {}! Taking some time off?",
             "🎉 Weekend vibes, {}! Don't forget to recharge.",
-            "🌴 Hello, {}! Enjoying your weekend?"
+            "🌴 Hello, {}! Enjoying your weekend?",
+            "🌊 Weekend greetings, {}! Hope you're relaxing.",
+            "🌞 Weekend fun, {}! Time to unwind.",
+            "🍹 Hello, {}! Hope you're enjoying your weekend.",
+            "🏖️ Weekend cheers, {}! Time to relax.",
+            "🎉 Weekend joy, {}! Hope you're having fun.",
+            "🌴 Weekend bliss, {}! Enjoy your time off.",
+            "🌊 Weekend relaxation, {}! Hope you're enjoying.",
+            "🌞 Weekend happiness, {}! Time to recharge.",
+            "🍹 Weekend vibes, {}! Hope you're having a blast."
         ]
         
         self.role_specific_greetings = {
             "admin": [
                 "👑 Welcome back, {}! Your system is running smoothly.",
-                "🔧 Hello Administrator {}! Everything is under control."
+                "🔧 Hello Administrator {}! Everything is under control.",
+                "🛠️ Welcome, Admin {}! Your oversight is invaluable.",
+                "📊 Hello, {}! Your admin dashboard is ready.",
+                "🔍 Welcome, Admin {}! Your insights are crucial.",
+                "🛠️ Hello, {}! Your admin tools are ready for use.",
+                "📊 Welcome, Admin {}! Your system is performing well.",
+                
             ],
             "manager": [
                 "📊 Welcome, Manager {}! Your project data is ready for review.",
