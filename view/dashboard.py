@@ -271,7 +271,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
     # Display watch selector in the main page (not sidebar)
     st.subheader("Select Watch")
     
-    watch_names = available_watches['name'].tolist()
+    watch_names = sorted(available_watches['name'].tolist())
     
     # Initialize session state for selected watch if it doesn't exist
     if 'selected_watch' not in st.session_state:
