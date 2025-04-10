@@ -121,6 +121,7 @@ class SheetFactory:
             'student_fitbit': FitbitStudent,
             'chats': ChatsSheet,
             'fibroEMA': FibroEMASheet,
+            'appsheet_config': AppSheetConfig,
             'generic': Sheet
         }
         
@@ -145,6 +146,14 @@ class ProjectSheet(Sheet):
     schema: SheetSchema = field(default_factory=lambda: SheetSchema(
         columns=['id', 'name'],
         required_columns=['name']
+    ))
+
+@dataclass
+class AppSheetConfig(Sheet):
+    """Sheet for storing AppSheet configuration data"""
+    schema: SheetSchema = field(default_factory=lambda: SheetSchema(
+        columns=['email', 'user', 'missingThr'],
+        required_columns=['email', 'user']
     ))
 
 
@@ -383,7 +392,7 @@ class GoogleSheetsAdapter:
             sheets_names = [
                 "user", "project", "fitbit", "log", "bulldog", "EMA", "FitbitLog",
                 "fitbit_alerts_config", "qualtrics_alerts_config", "late_nums", "suspicious_nums",
-                "EMA", "student_fitbit", "chats", "for_analysis"
+                "EMA", "student_fitbit", "chats", "for_analysis", "appsheet_alerts_config"
             ]
             if sheet_name not in sheets_names:
                 continue

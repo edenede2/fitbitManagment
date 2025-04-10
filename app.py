@@ -30,6 +30,9 @@ def main():
             # Store spreadsheet in session state
             if 'spreadsheet' not in st.session_state:
                 st.session_state.spreadsheet = auth_controller.get_spreadsheet()
+
+            if 'fibro_spreadsheet' not in st.session_state:
+                st.session_state.fibro_spreadsheet = auth_controller.get_fibro_spreasheet()
             
             # Get user info - either from Streamlit auth or session state (for demo)
             if st.experimental_user.is_logged_in:
