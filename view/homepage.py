@@ -578,19 +578,30 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                 
                 # Show complete raw data from the sheet
                 st.subheader("Complete Raw Data")
-                
-                # Display the raw data
-                st.dataframe(fitbit_log_df, use_container_width=True)
-                
-                # Add download button for the raw data
-                csv = fitbit_log_df.write_csv().encode('utf-8')
-                st.download_button(
-                    label="Download Raw Data as CSV",
-                    data=csv,
-                    file_name=f"fitbit_log_data_{datetime.now().strftime('%Y%m%d')}.csv",
-                    mime="text/csv"
-                )
-            
+                if user_role == "Admin":
+                    # Show all data for Admin
+                    st.dataframe(fitbit_log_df, use_container_width=True)
+                    # Add download button for the raw data
+                    csv = fitbit_log_df.write_csv().encode('utf-8')
+                    st.download_button(
+                        label="Download Raw Data as CSV",
+                        data=csv,
+                        file_name=f"fitbit_log_data_{datetime.now().strftime('%Y%m%d')}.csv",
+                        mime="text/csv"
+                    )
+                else:
+                    # Show filtered data for others
+                    fitbit_log_df = fitbit_log_df.filter(pl.col('project') == user_project)
+                    st.dataframe(fitbit_log_df, use_container_width=True)
+                    # Add download button for the filtered data
+                    csv = fitbit_log_df.write_csv().encode('utf-8')
+                    st.download_button(
+                        label="Download Filtered Data as CSV",
+                        data=csv,
+                        file_name=f"fitbit_log_data_{user_project}_{datetime.now().strftime('%Y%m%d')}.csv",
+                        mime="text/csv"
+                    )
+
             # Add visualization section
             st.subheader("Visualizations")
             
