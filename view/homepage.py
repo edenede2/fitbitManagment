@@ -448,8 +448,13 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                         
                         with col2:
                             battery_val = row.get('lastBattaryVal', '')
-                            last_sync = format_time_ago(row.get('lastSynced'))
-                            sync_status = time_status_indicator(row.get('lastSynced'))
+                            if row.get('lastSynced') is None or pd.isna(row.get('lastSynced')):
+                                last_sync = "Never"
+                                sync_status = "❓"
+                            else:    
+                                last_sync = format_time_ago(row.get('lastSynced'))
+                                sync_status = time_status_indicator(row.get('lastSynced'))
+                            
                             
                             st.markdown(f"**Battery:** {render_battery_gauge(battery_val)}", unsafe_allow_html=True)
                             st.markdown(f"**Last Synced:** {sync_status} {last_sync}")
@@ -473,8 +478,13 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
             # Create a copy of the dataframe for display
             display_df = latest_df.clone()
             
+            # display_df = (
+            #     display_df
+            #     .with_columns(
+            #         pl
             # Format columns for display with concise time, safely handling NaT/None
             if 'lastSynced' in display_df.columns:
+                
                 display_df = display_df.with_columns([
                     pl.col('lastSynced')
                     .map_elements(lambda x: (
