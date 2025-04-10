@@ -96,17 +96,32 @@ def analyze_whatsapp_messages():
         # Get the existing suspicious and late number sheets to check for accepted entries
         existing_suspicious_nums = None
         existing_late_nums = None
+        existing_suspicious_nums_df = None
+        existing_late_nums_df = None
         
         try:
             if "suspicious_nums" in alert_spreadsheet.sheets:
                 existing_suspicious_nums = alert_spreadsheet.get_sheet("suspicious_nums", sheet_type="suspicious_nums")
                 existing_suspicious_nums_df = existing_suspicious_nums.to_dataframe(engine="polars")
+                # Ensure accepted column is string type
+                if 'accepted' in existing_suspicious_nums_df.columns:
+                    existing_suspicious_nums_df = existing_suspicious_nums_df.with_columns(
+                        pl.col('accepted').cast(pl.Utf8).alias('accepted')
+                    )
+                print(f"Loaded suspicious_nums sheet with schema: {existing_suspicious_nums_df.schema}")
             
             if "late_nums" in alert_spreadsheet.sheets:
                 existing_late_nums = alert_spreadsheet.get_sheet("late_nums", sheet_type="late_nums")
                 existing_late_nums_df = existing_late_nums.to_dataframe(engine="polars")
+                # Ensure accepted column is string type
+                if 'accepted' in existing_late_nums_df.columns:
+                    existing_late_nums_df = existing_late_nums_df.with_columns(
+                        pl.col('accepted').cast(pl.Utf8).alias('accepted')
+                    )
+                print(f"Loaded late_nums sheet with schema: {existing_late_nums_df.schema}")
         except Exception as e:
             print(f"Error retrieving existing number sheets: {e}")
+            print(traceback.format_exc())
         
         # Get threshold from qualtrics_alerts_config or use default
         hours_threshold = 48  # Default threshold
@@ -139,12 +154,17 @@ def analyze_whatsapp_messages():
             # Skip if this number is already accepted in existing late_nums
             should_skip = False
             if existing_late_nums_df is not None and not existing_late_nums_df.is_empty():
-                matches = existing_late_nums_df.filter(
-                    (pl.col('nums') == row['phone']) & 
-                    (pl.col('accepted').str.to_uppercase() == 'TRUE')
-                )
-                if not matches.is_empty():
-                    should_skip = True
+                try:
+                    # Safely filter with type handling
+                    matches = existing_late_nums_df.filter(
+                        (pl.col('nums').cast(pl.Utf8) == str(row['phone'])) & 
+                        (pl.col('accepted').cast(pl.Utf8).str.to_uppercase() == 'TRUE')
+                    )
+                    if not matches.is_empty():
+                        should_skip = True
+                except Exception as e:
+                    print(f"Error filtering late_nums: {e}")
+                    # Continue without filtering
             
             if not should_skip:
                 late_nums_data.append({
@@ -161,12 +181,17 @@ def analyze_whatsapp_messages():
             # Skip if this number is already accepted in existing suspicious_nums
             should_skip = False
             if existing_suspicious_nums_df is not None and not existing_suspicious_nums_df.is_empty():
-                matches = existing_suspicious_nums_df.filter(
-                    (pl.col('nums') == row['phone']) & 
-                    (pl.col('accepted').str.to_uppercase() == 'TRUE')
-                )
-                if not matches.is_empty():
-                    should_skip = True
+                try:
+                    # Safely filter with type handling
+                    matches = existing_suspicious_nums_df.filter(
+                        (pl.col('nums').cast(pl.Utf8) == str(row['phone'])) & 
+                        (pl.col('accepted').cast(pl.Utf8).str.to_uppercase() == 'TRUE')
+                    )
+                    if not matches.is_empty():
+                        should_skip = True
+                except Exception as e:
+                    print(f"Error filtering suspicious_nums: {e}")
+                    # Continue without filtering
             
             if not should_skip:
                 # Check if 'endDate' exists, otherwise use current time
@@ -383,8 +408,8 @@ def send_email_alert(recipient_email, subject, message_body):
         message = MIMEMultipart("alternative")
         message["Subject"] = subject
         message["From"] = sender_email
-        # message["To"] = recipient_email
-        message["To"] = "edenede2@gmail.com"
+        message["To"] = recipient_email
+        # message["To"] = "edenede2@gmail.com"
         
         # Create HTML version of the message
         html_part = MIMEText(message_body, "html")
@@ -394,8 +419,8 @@ def send_email_alert(recipient_email, subject, message_body):
         with smtplib.SMTP(smtp_server, smtp_port) as server:
             server.starttls()
             server.login(sender_email, sender_password)
-            # server.sendmail(sender_email, recipient_email, message.as_string())
-            server.sendmail(sender_email, "edenede2@gmail.com", message.as_string())
+            server.sendmail(sender_email, recipient_email, message.as_string())
+            # server.sendmail(sender_email, "edenede2@gmail.com", message.as_string())
         
         print(f"Successfully sent email alert to {recipient_email}")
         return True
