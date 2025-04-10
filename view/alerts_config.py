@@ -70,7 +70,7 @@ def get_user_fitbit_config(spreadsheet:Spreadsheet, user_email, user_project):
         watche_name_list = fitbit_sheet_df.filter(pl.col('project') == user_project).select('name').unique().to_series().to_list()
     
     # Return the first config for this user
-    return user_config.to_dicts()[0], watche_name_list
+    return user_config.to_dicts()[0], watche_name_list.sort()
 
 def get_user_qualtrics_config(spreadsheet:Spreadsheet, user_email):
     """Get Qualtrics configuration for the current user"""
