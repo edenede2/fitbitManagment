@@ -296,7 +296,7 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
     elif user_project in ['fibro', 'Admin']:
         tab1, tab2 = st.tabs(["Fitbit Alerts", "AppSheet Alerts"])
     else:
-        tab1, tab2 = st.tabs(["Fitbit Alerts", "Qualtrics Alerts"])
+        tab1, tab2 = st.tabs(["Fitbit Alerts", ""])
 
     # Tab 1: Fitbit Alerts Configuration
     with tab1:
@@ -372,36 +372,42 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
     
     # Tab 2: Qualtrics Alerts Configuration
     with tab2:
-
-        st.header("Qualtrics Alerts Configuration")
-        
-        # Get current configuration
-        qualtrics_config = get_user_qualtrics_config(spreadsheet, user_email)
-        
-        # Create form for editing configuration
-        with st.form("qualtrics_config_form"):
-            project = st.text_input("Project", value=qualtrics_config.get('project', ''))
+        if user_project == 'fibro':
+            appsheet_config(spreadsheet, user_email)
+        elif user_project == 'nova':
+            # Display AppSheet configuration
             
-            hours_thr = st.number_input("Hours Threshold for Late Responses", 
-                                      min_value=1, max_value=168,  # 1 hour to 1 week
-                                      value=int(qualtrics_config.get('hoursThr', 48)))
             
-            save_button = st.form_submit_button("Save Configuration")
+            st.header("Qualtrics Alerts Configuration")
             
-            if save_button:
-                # Prepare data for saving
-                config_data = {
-                    'hoursThr': hours_thr,
-                    'project': project,
-                    'manager': user_email
-                }
+            # Get current configuration
+            qualtrics_config = get_user_qualtrics_config(spreadsheet, user_email)
+            
+            # Create form for editing configuration
+            with st.form("qualtrics_config_form"):
+                project = st.text_input("Project", value=qualtrics_config.get('project', ''))
                 
-                # Save the configuration
-                if save_qualtrics_config(spreadsheet, config_data):
-                    st.success("Qualtrics alerts configuration saved successfully!")
-                else:
-                    st.error("Failed to save configuration. Please try again.")
-
+                hours_thr = st.number_input("Hours Threshold for Late Responses", 
+                                        min_value=1, max_value=168,  # 1 hour to 1 week
+                                        value=int(qualtrics_config.get('hoursThr', 48)))
+                
+                save_button = st.form_submit_button("Save Configuration")
+                
+                if save_button:
+                    # Prepare data for saving
+                    config_data = {
+                        'hoursThr': hours_thr,
+                        'project': project,
+                        'manager': user_email
+                    }
+                    
+                    # Save the configuration
+                    if save_qualtrics_config(spreadsheet, config_data):
+                        st.success("Qualtrics alerts configuration saved successfully!")
+                    else:
+                        st.error("Failed to save configuration. Please try again.")
+        else:
+            st.warning("You don't have permission to access this page.")
 # # Run the page when this file is executed
 # if __name__ == "__main__":
 #     alerts_config_page(
