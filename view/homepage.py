@@ -288,82 +288,21 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                 st.warning("No Fitbit log data available.")
                 return
             
-            # Convert to DataFrame
-            # df = fitbit_log_sheet.to_dataframe()
-            
-            # Store original raw data before processing for display in expander
-            raw_df = fitbit_log_df.clone()
-            
-            # Add debugging info for lastSynced column
-            # st.write("Debug - Original date formats in lastSynced column:")
-            # if 'lastSynced' in df.columns:
-            #     unique_date_formats = df['lastSynced'].dropna().unique()[:5]  # Show first 5 unique values
-                # st.code(str(unique_date_formats))
-            
-            # Define datetime formats - prioritize the confirmed correct format
-            primary_format = '%Y-%m-%dT%H:%M:%S.%f'  # ISO format with microseconds (correct format)
-            fallback_formats = [
-                '%Y-%m-%dT%H:%M:%S',     # ISO format without microseconds
-                '%Y-%m-%d %H:%M:%S'      # Standard datetime format
-            ]
-            
-            # Convert datetime columns using the correct format first
-            datetime_cols = ['lastCheck', 'lastSynced', 'lastBattary', 'lastHR', 
-                            'lastSleepStartDateTime', 'lastSleepEndDateTime', 'lastSteps']
-            
-            for col in datetime_cols:
-                if col in fitbit_log_df.columns:
-                    # First try the primary format which we know is correct
-                    try:
-                        with warnings.catch_warnings():
-                            warnings.simplefilter("ignore")
-                            # df[col] = pd.to_datetime(df[col], format=primary_format, errors='coerce')
-                            fitbit_log_df = fitbit_log_df.with_columns(
-                                pl.col(col).cast(pl.DateTime, strict=False)
-                            )
-                    except Exception:
-                        pass
-                    
-                    # If we still have NaN values, try the fallback formats
-                    # if df[col].isna().any():
-                    # if fitbit_log_df[col].isna().any():
-                    #     for fmt in fallback_formats:
-                    #         try:
-                    #             # Create a temporary series for the NaN values
-                    #             mask = df[col].isna()
-                    #             if mask.any():
-                    #                 temp = pd.to_datetime(df.loc[mask, col], format=fmt, errors='coerce')
-                    #                 # Update only the rows that were successfully parsed
-                    #                 df.loc[mask & ~temp.isna(), col] = temp.dropna()
-                    #         except Exception:
-                    #             continue
-                    
-                    # As a last resort, try the flexible parser for any remaining NaNs
-                    # if df[col].isna().any():
-                    #     try:
-                    #         mask = df[col].isna()
-                    #         with warnings.catch_warnings():
-                    #             warnings.simplefilter("ignore")
-                    #             temp = pd.to_datetime(df.loc[mask, col], errors='coerce')
-                    #             df.loc[mask & ~temp.isna(), col] = temp.dropna()
-                    #     except Exception as e:
-                    #         st.warning(f"Error parsing remaining {col} values: {str(e)}")
-            
-            # After parsing, check if lastSynced column has valid dates
-            # if 'lastSynced' in fitbit_log_df.columns:
-            #     valid_dates = df['lastSynced'].notna().sum()
-            #     valid_dates = fitbit_log_df
-            #     total_rows = len(df)
-            #     # st.write(f"Successfully parsed {valid_dates} out of {total_rows} dates in lastSynced column")
-                
-            #     # If we have very few valid dates, try the original string values for display
-            #     if valid_dates < total_rows * 0.5:  # If less than 50% parsed successfully
-            #         st.warning("Poor date parsing rate. Using original string values for lastSynced.")
-            #         df['lastSynced'] = raw_df['lastSynced']  # Restore original values
+            # 1) Fill null and empty "lastSynced" with a placeholder date
+            fitbit_log_df = fitbit_log_df.with_column(
+                pl.when(pl.col('lastSynced').is_null() | (pl.col('lastSynced') == ''))
+                .then(pl.lit("2000-01-01 00:00:00"))
+                .otherwise(pl.col('lastSynced'))
+                .alias('lastSynced')
+            )
+
+            # Cast to datetime after inserting placeholder
+            fitbit_log_df = fitbit_log_df.with_column(
+                pl.col('lastSynced').cast(pl.Datetime, strict=False)
+            )
             
             # Sort by lastCheck (most recent first)
             if 'lastCheck' in fitbit_log_df.columns:
-                # df = df.sort_values('lastCheck', ascending=False)
                 fitbit_log_df = fitbit_log_df.sort('lastCheck', descending=True)
             
             # Add student assignment and watch status information
@@ -429,7 +368,6 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                 st.metric("Low Battery", f"{low_battery}")
             with col4:
                 # Count watches not synced in last 24 hours
-                # Use Python's datetime.now() instead of pl.now() which doesn't exist
                 not_synced = latest_df.filter(
                     pl.col('lastSynced').cast(pl.Datetime, strict=False) < (datetime.now() - timedelta(hours=24))
                 ).height
@@ -478,18 +416,13 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
             # Create a copy of the dataframe for display
             display_df = latest_df.clone()
             
-            # display_df = (
-            #     display_df
-            #     .with_columns(
-            #         pl
-            # Format columns for display with concise time, safely handling NaT/None
+            # 2) In the display DataFrame, show "No data" if value is the placeholder date
             if 'lastSynced' in display_df.columns:
-                
                 display_df = display_df.with_columns([
                     pl.col('lastSynced')
                     .map_elements(lambda x: (
-                        "Never"
-                        if x is None or pd.isna(x) or x == pd.NaT or str(x) in ("NaT","nat")
+                        "No data"
+                        if str(x).startswith("2000-01-01")
                         else f"{time_status_indicator(x)} {format_time_ago_concise(x)}"
                     ), return_dtype=pl.Utf8)
                     .alias('Last Sync')
