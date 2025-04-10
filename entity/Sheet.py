@@ -828,7 +828,7 @@ class ServerLogFile:
     def get_all_keys_as_string(self):
         return [str(key) for key in self.__dict__.keys()]
     
-    def update_fitbits_log(self, fitbit_data: pl.DataFrame) -> bool:
+    def update_fitbits_log(self, fitbit_data: pl.DataFrame, reset_total_for_watches=None) -> bool:
         """
         Updates the Fitbit log files and sheets.
         - CSV file: Always append (full history)
@@ -837,7 +837,9 @@ class ServerLogFile:
         
         Args:
             fitbit_data (pl.DataFrame): DataFrame containing the watch data.
-            
+            reset_total_for_watches (list, optional): List of watch IDs that became inactive
+                and should have their total failures reset.
+                
         Returns:
             bool: True if update succeeded, False otherwise
         """
@@ -858,6 +860,9 @@ class ServerLogFile:
             "CurrentFailedSleep", "TotalFailedSleep", "CurrentFailedSteps", "TotalFailedSteps",
             "CurrentFailedBattary", "TotalFailedBattary", "ID"
         ]
+        
+        # Convert reset_total_for_watches to a set for faster lookups
+        reset_watches = set(reset_total_for_watches or [])
         
         try:
             # Initialize or load existing data
@@ -881,13 +886,29 @@ class ServerLogFile:
             else:
                 existing_df = pl.DataFrame({col: [] for col in expected_columns})
             
+            # Get previous log entries to keep track of failure counters
+            # Create a map of watch ID to most recent log entry
+            previous_log_entries = {}
+            if not existing_df.is_empty():
+                # Get the most recent entry for each watch
+                for watch_id in existing_df.select("ID").unique().to_series():
+                    watch_entries = existing_df.filter(pl.col("ID") == watch_id)
+                    # Sort by lastCheck to get the most recent entry
+                    if "lastCheck" in watch_entries.columns:
+                        watch_entries = watch_entries.sort(pl.col("lastCheck"), descending=True)
+                    # Get the first (most recent) entry as a dictionary
+                    if not watch_entries.is_empty():
+                        previous_log_entries[watch_id] = watch_entries.row(0, named=True)
+            
             # Process each row from the Fitbit data
             new_log_entries = []
             latest_entries_by_watch = {}  # Dictionary to store latest entry per watch
             
             for row in fitbit_data.iter_rows(named=True):
-                # Create watch ID for matching
-                watch_id = f"{row.get('project', '')}-{row.get('name', '')}"
+                # Create watch ID for matching - try to use the same logic as in hourly_data_collection
+                watch_id = str(row.get('id', row.get('deviceId', '')))
+                if not watch_id and 'project' in row and 'name' in row:
+                    watch_id = f"{row.get('project', '')}-{row.get('name', '')}"
                 
                 # Check if watch is active
                 is_active = str(row.get('isActive', '')).upper() != 'FALSE'
@@ -928,7 +949,69 @@ class ServerLogFile:
                     print(f"Error creating/updating watch {row.get('name', '')} via API: {e}")
                     # Continue with existing data
                 
-                # Build the log entry
+                # Get previous log entry if available to keep track of failure counters
+                prev_entry = previous_log_entries.get(watch_id, {})
+                
+                # Initialize failure counters with previous values or 0
+                current_failed_sync = int(prev_entry.get("CurrentFailedSync", 0) or 0)
+                total_failed_sync = int(prev_entry.get("TotalFailedSync", 0) or 0)
+                current_failed_hr = int(prev_entry.get("CurrentFailedHR", 0) or 0)
+                total_failed_hr = int(prev_entry.get("TotalFailedHR", 0) or 0)
+                current_failed_sleep = int(prev_entry.get("CurrentFailedSleep", 0) or 0)
+                total_failed_sleep = int(prev_entry.get("TotalFailedSleep", 0) or 0)
+                current_failed_steps = int(prev_entry.get("CurrentFailedSteps", 0) or 0)
+                total_failed_steps = int(prev_entry.get("TotalFailedSteps", 0) or 0)
+                current_failed_battery = int(prev_entry.get("CurrentFailedBattary", 0) or 0)
+                total_failed_battery = int(prev_entry.get("TotalFailedBattary", 0) or 0)
+                
+                # Reset total failures if this watch is in the reset list
+                if watch_id in reset_watches:
+                    print(f"Resetting total failure counters for watch {row.get('name', '')} (ID: {watch_id})")
+                    total_failed_sync = 0
+                    total_failed_hr = 0
+                    total_failed_sleep = 0
+                    total_failed_steps = 0
+                    total_failed_battery = 0
+                
+                # Track success/failure for each data type
+                sync_success = bool(row.get("syncDate"))
+                hr_success = bool(row.get("HR"))
+                sleep_success = bool(row.get("sleep_start"))
+                steps_success = bool(row.get("steps"))
+                battery_success = bool(row.get("battery"))
+                
+                # Update failure counters based on success/failure
+                if sync_success:
+                    current_failed_sync = 0  # Reset current count on success
+                else:
+                    current_failed_sync += 1
+                    total_failed_sync += 1
+                
+                if hr_success:
+                    current_failed_hr = 0  # Reset current count on success
+                else:
+                    current_failed_hr += 1
+                    total_failed_hr += 1
+                
+                if sleep_success:
+                    current_failed_sleep = 0  # Reset current count on success
+                else:
+                    current_failed_sleep += 1
+                    total_failed_sleep += 1
+                
+                if steps_success:
+                    current_failed_steps = 0  # Reset current count on success
+                else:
+                    current_failed_steps += 1
+                    total_failed_steps += 1
+                
+                if battery_success:
+                    current_failed_battery = 0  # Reset current count on success
+                else:
+                    current_failed_battery += 1
+                    total_failed_battery += 1
+                
+                # Build the log entry with updated failure counters
                 log_entry = {
                     "project": row.get("project", ""),
                     "watchName": row.get("name", ""),
@@ -944,16 +1027,16 @@ class ServerLogFile:
                     "lastHRSeq": self._calculate_hr_sequence(row),
                     "lastSleepDur": row.get("sleep_duration", ""),
                     "lastStepsVal": row.get("steps", ""),
-                    "CurrentFailedSync": 0,  
-                    "TotalFailedSync": 0,
-                    "CurrentFailedHR": 0,
-                    "TotalFailedHR": 0,
-                    "CurrentFailedSleep": 0,
-                    "TotalFailedSleep": 0,
-                    "CurrentFailedSteps": 0,
-                    "TotalFailedSteps": 0,
-                    "CurrentFailedBattary": 0,
-                    "TotalFailedBattary": 0,
+                    "CurrentFailedSync": current_failed_sync,
+                    "TotalFailedSync": total_failed_sync,
+                    "CurrentFailedHR": current_failed_hr,
+                    "TotalFailedHR": total_failed_hr,
+                    "CurrentFailedSleep": current_failed_sleep,
+                    "TotalFailedSleep": total_failed_sleep,
+                    "CurrentFailedSteps": current_failed_steps,
+                    "TotalFailedSteps": total_failed_steps,
+                    "CurrentFailedBattary": current_failed_battery,
+                    "TotalFailedBattary": total_failed_battery,
                     "ID": watch_id
                 }
                 
@@ -974,16 +1057,6 @@ class ServerLogFile:
                     
                     # Clear the current content (replace strategy)
                     worksheet.clear()
-                    
-                    # Define the expected column order
-                    expected_columns = [
-                        "project", "watchName", "lastCheck", "lastSynced", "lastBattary", 
-                        "lastHR", "lastSleepStartDateTime", "lastSleepEndDateTime", "lastSteps", 
-                        "lastBattaryVal", "lastHRVal", "lastHRSeq", "lastSleepDur", "lastStepsVal",
-                        "CurrentFailedSync", "TotalFailedSync", "CurrentFailedHR", "TotalFailedHR",
-                        "CurrentFailedSleep", "TotalFailedSleep", "CurrentFailedSteps", "TotalFailedSteps",
-                        "CurrentFailedBattary", "TotalFailedBattary", "ID"
-                    ]
                     
                     # Add headers as the first row
                     worksheet.append_row(expected_columns)
@@ -1093,7 +1166,7 @@ class ServerLogFile:
             except Exception as e:
                 print(f"Error updating FitbitLog sheet: {e}")
                 print(f"Error details: {traceback.format_exc()}")
-            
+                
             return True
         except Exception as e:
             print(f"Error in update_fitbits_log: {e}")

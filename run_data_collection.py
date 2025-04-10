@@ -7,6 +7,7 @@ import os
 import traceback
 import polars as pl
 import pandas as pd  # Add explicit pandas import
+import json  # Add import for watch status tracking
 
 import smtplib
 from email.mime.text import MIMEText
@@ -20,6 +21,48 @@ if project_root not in sys.path:
 from entity.Sheet import Spreadsheet, GoogleSheetsAdapter, ServerLogFile, SheetFactory
 from entity.Watch import Watch, WatchFactory
 from dotenv import load_dotenv
+
+def get_watch_status_history():
+    """
+    Load watch status history from a local JSON file.
+    This tracks which watches were active in previous runs.
+    
+    Returns:
+        dict: Dictionary mapping watch IDs to their previous status
+    """
+    status_file = Path(project_root) / "data" / "watch_status_history.json"
+    
+    if status_file.exists():
+        try:
+            with open(status_file, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Error reading watch status file: {e}")
+            return {}
+    else:
+        return {}
+
+def save_watch_status_history(status_data):
+    """
+    Save watch status history to a local JSON file.
+    
+    Args:
+        status_data (dict): Dictionary mapping watch IDs to their status
+    """
+    status_file = Path(project_root) / "data" / "watch_status_history.json"
+    
+    # Create directory if it doesn't exist
+    status_file.parent.mkdir(parents=True, exist_ok=True)
+    
+    try:
+        with open(status_file, 'w') as f:
+            json.dump(status_data, f)
+        print(f"Watch status history saved to {status_file}")
+        return True
+    except Exception as e:
+        print(f"Error saving watch status file: {e}")
+        return False
+
 def analyze_whatsapp_messages():
     """
     Analyzes WhatsApp messages to find late responses and suspicious numbers.
@@ -837,16 +880,55 @@ def hourly_data_collection():
         spreadsheet = Spreadsheet(name="FitbitData", api_key=spreadsheet_key)
         GoogleSheetsAdapter.connect(spreadsheet)
         
-        # Step 1: Get watch data
+        # Step 1: Get watch data and previous status history
         watch_data = get_watch_details()
+        previous_status = get_watch_status_history()
         
         if not watch_data.is_empty():
+            # Create current status mapping
+            current_status = {}
+            
+            # We need a unique identifier for each watch to track status
+            # First check if 'id' column exists, otherwise use a combination of project and watchName
+            id_column = 'id' if 'id' in watch_data.columns else 'deviceId'
+            
+            # Map of watch ID to activity status
+            for row in watch_data.iter_rows(named=True):
+                watch_id = str(row.get(id_column, ''))
+                if not watch_id and 'project' in watch_data.columns and 'name' in watch_data.columns:
+                    watch_id = f"{row.get('project', '')}-{row.get('name', '')}"
+                
+                watch_name = row.get('name', row.get('watchName', ''))
+                is_active = str(row.get('isActive', '')).upper() != 'FALSE'
+                
+                current_status[watch_id] = {
+                    'active': is_active,
+                    'name': watch_name
+                }
+            
+            # Identify watches that became inactive since last run
+            newly_inactive_watches = []
+            for watch_id, status in previous_status.items():
+                # If watch was active before but is now inactive or not present
+                if status.get('active', False) and (
+                    watch_id not in current_status or not current_status[watch_id].get('active', False)
+                ):
+                    newly_inactive_watches.append(watch_id)
+            
+            if newly_inactive_watches:
+                print(f"Detected {len(newly_inactive_watches)} watches that became inactive")
+                for watch_id in newly_inactive_watches:
+                    print(f"Watch {previous_status[watch_id].get('name', watch_id)} became inactive - will reset failure counters")
+            
             # Save to CSV for historical tracking
             save_to_csv(watch_data)
             
-            # Update log using ServerLogFile
+            # Update log using ServerLogFile - passing inactive watches to reset their counters
             log_file = ServerLogFile()
-            result = log_file.update_fitbits_log(watch_data)
+            result = log_file.update_fitbits_log(watch_data, reset_total_for_watches=newly_inactive_watches)
+            
+            # Save the current status for the next run
+            save_watch_status_history(current_status)
             
             if result:
                 print(f"[{datetime.datetime.now()}] Successfully updated log data")
