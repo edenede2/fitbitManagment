@@ -130,9 +130,9 @@ def display_admin_interface(fitbit_df: pl.DataFrame, user_df: pl.DataFrame,
     if st.button("Save Changes"):
         save_changes(edited_df, fitbit_sheet, spreadsheet)
 
-def display_manager_interface(fitbit_df: pl.DataFrame, user_df: pd.DataFrame, 
+def display_manager_interface(fitbit_df: pd.DataFrame, user_df: pd.DataFrame, 
                              fitbit_sheet: Any, spreadsheet: Spreadsheet, 
-                             manager_projects: List[str], original_fitbit_df: pd.DataFrame) -> None:
+                             manager_projects: List[str], original_fitbit_df: pl.DataFrame) -> None:
     """Display manager interface with limited control over project devices."""
     st.subheader("Manager View - Your Project's Fitbit Devices")
     
@@ -145,9 +145,9 @@ def display_manager_interface(fitbit_df: pl.DataFrame, user_df: pd.DataFrame,
 
     # Display editable table for manager
     edited_df = display_editable_table(fitbit_df, user_df, is_admin=False)
-    
+    original_fitbit_df = original_fitbit_df.to_pandas()
     original_fitbit_df = pd.concat([original_fitbit_df[original_fitbit_df['project'] == manager_projects[0]], edited_df])
-    
+
     # Save changes button
     if st.button("Save Changes"):
         save_changes(original_fitbit_df, fitbit_sheet, spreadsheet)
