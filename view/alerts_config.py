@@ -63,7 +63,7 @@ def get_user_fitbit_config(spreadsheet:Spreadsheet, user_email, user_project):
             'watch': '',
             'endDate': date.today() + timedelta(days=30)
         }
-    watche_name_list = config_df.filter(pl.col('project') == user_project).select('watch').unique().to_list()
+    watche_name_list = config_df.filter(pl.col('project') == user_project).select('watch').unique().to_series().to_list()
     
     # Return the first config for this user
     return user_config.to_dicts()[0], watche_name_list
