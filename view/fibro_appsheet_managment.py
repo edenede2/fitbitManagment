@@ -20,7 +20,7 @@ def display_fibro_ema_data(spreadsheet: Spreadsheet):
     with st.spinner("Loading EMA data from Google Sheets..."):
         try:
             # Use Polars engine
-            df = spreadsheet.get_sheet("for_analysis", "fibroEMA").to_dataframe(engine="polars")
+            df = spreadsheet.get_sheet("fibroEMA", "fibroEMA").to_dataframe(engine="polars")
             if df is not None and not df.is_empty():
                 st.session_state.fibro_ema_data = df
                 st.success("EMA data loaded successfully!")
