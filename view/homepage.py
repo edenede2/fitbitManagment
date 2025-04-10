@@ -627,17 +627,19 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                 for col in ['lastCheck', 'lastSynced']:
                     if col in detail_df.columns:
                         try:
-                            # Handle NaT values before formatting with strftime
-                            detail_df = detail_df.with_columns(
+                            # Safer approach to handle NaT values - avoid strftime on null values
+                            detail_df = detail_df.with_columns([
                                 pl.when(pl.col(col).is_null())
                                 .then(pl.lit("N/A"))
-                                .otherwise(pl.col(col).dt.strftime("%Y-%m-%d %H:%M"))
+                                .otherwise(
+                                    # Convert directly to string without using strftime
+                                    pl.col(col).cast(pl.Utf8)
+                                )
                                 .alias(col)
-                            )
+                            ])
                         except Exception as e:
                             # If formatting fails, keep as is
                             pass
-                            # st.warning(f"Could not format {col} as datetime: {str(e)}")
                 
                 # Display as dataframe
                 st.dataframe(detail_df, use_container_width=True)
