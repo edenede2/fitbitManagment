@@ -366,12 +366,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                     pl.col('lastBattaryVal').cast(pl.Utf8).str.replace('%', '').cast(pl.Float64, strict=False) < 20
                 ))
                 st.metric("Low Battery", f"{low_battery}")
-            with col4:
-                # Count watches not synced in last 24 hours
-                not_synced = latest_df.filter(
-                    pl.col('lastSynced').cast(pl.Datetime, strict=False) < (datetime.now() - timedelta(hours=24))
-                ).height
-                st.metric("Not Synced (24h)", f"{not_synced}")
+
             
             # For students, show their assigned watch first
             if user_role.lower() == "student":
@@ -531,6 +526,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
             else:
                 assigned_watches = []
             
+            display_df = display_df.filter(pl.col('Last Sync').is_not_null())
             # Display using st.dataframe with column config
             st.dataframe(
                 display_df[display_columns],
