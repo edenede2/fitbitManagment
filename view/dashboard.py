@@ -417,16 +417,25 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
             
             # Display the loaded data after loading is complete
             if st.session_state.loading_complete and "loaded_watch" in st.session_state:
-                # Check if the loaded watch matches the selected watch
-                if st.session_state.loaded_watch != selected_watch:
-                    st.warning("Data loaded for a different watch. Please reload.")
+                # If there's no data, show a warning
+                if st.session_state.current_data is None or st.session_state.current_data.empty:
+                    st.warning("No data loaded. Please try again.")
                     st.session_state.loading_complete = False
                     st.session_state.loaded_dates = []
                     st.session_state.current_data = None
                     st.session_state.loaded_watch = None
                     st.session_state.loaded_signal = None
-                    st.rerun()
-            if st.session_state.loading_complete and st.session_state.loaded_watch == selected_watch:
+                    st.session_state.load_data_button = False
+                elif st.session_state.loaded_watch != selected_watch:
+                    st.warning("Data loaded for a different watch. Please select the correct watch and run again.")
+                    st.session_state.loading_complete = False
+                    st.session_state.loaded_dates = []
+                    st.session_state.current_data = None
+                    st.session_state.loaded_watch = None
+                    st.session_state.loaded_signal = None
+                    st.session_state.load_data_button = False
+
+            elif st.session_state.loading_complete and st.session_state.loaded_watch == selected_watch:
                 st.success(f"Data loaded successfully for {len(st.session_state.loaded_dates)} dates")
                 
                 # Display data for each date in expanders
