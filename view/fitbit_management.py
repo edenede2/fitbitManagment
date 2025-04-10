@@ -147,7 +147,7 @@ def display_manager_interface(fitbit_df: pd.DataFrame, user_df: pd.DataFrame,
     edited_df = display_editable_table(fitbit_df, user_df, is_admin=False)
     original_fitbit_df = original_fitbit_df.to_pandas()
     edited_df = edited_df.to_pandas()
-    original_fitbit_df = pd.concat([original_fitbit_df[original_fitbit_df['project'] == manager_projects[0]], edited_df])
+    original_fitbit_df = pd.concat([original_fitbit_df[original_fitbit_df['project'] != manager_projects[0]], edited_df])
 
     # Save changes button
     if st.button("Save Changes"):
@@ -223,7 +223,7 @@ def display_editable_table(fitbit_df: pl.DataFrame, user_df: pl.DataFrame, is_ad
 def save_changes(edited_df: pl.DataFrame, fitbit_sheet: Any, spreadsheet: Spreadsheet) -> None:
     """Save changes made to the Fitbit devices table."""
     try:
-        st.warning("⚠️ Please note: Changes may take 2-3 minutes to fully update in the cloud.")
+        st.warning("⚠️ Please note: Changes may take 2-3 minutes to fully update in the cloud. Meanwhile, you can continue using the app.")
         # Update sheet data with edited DataFrame
         spreadsheet.update_sheet(
             "fitbit",
