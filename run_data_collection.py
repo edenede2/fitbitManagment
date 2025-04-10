@@ -403,13 +403,77 @@ def send_email_alert(recipient_email, subject, message_body):
         print(traceback.format_exc())
         return False
 
-def check_fitbit_alerts(log_data, config_data):
+def is_end_date_passed(end_date_str):
+    """
+    Check if the given end date has passed.
+    
+    Args:
+        end_date_str: End date string in various possible formats
+        
+    Returns:
+        bool: True if end date has passed or cannot be parsed, False otherwise
+    """
+    if not end_date_str:
+        # No end date means it never expires
+        return False
+        
+    current_date = datetime.datetime.now().date()
+    
+    # Try different date formats
+    for date_format in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y"):
+        try:
+            end_date = datetime.datetime.strptime(end_date_str, date_format).date()
+            # Return True if current date is past the end date
+            return current_date > end_date
+        except ValueError:
+            continue
+    
+    # If we couldn't parse the date, log a warning and assume it's not passed
+    print(f"Warning: Could not parse end date '{end_date_str}'")
+    return False
+
+def get_student_email_for_watch(fitbit_data, watch_name):
+    """
+    Get student email for a specific watch if available.
+    
+    Args:
+        fitbit_data: DataFrame containing fitbit data
+        watch_name: Name of the watch to find student email for
+        
+    Returns:
+        str: Student email or None if not found
+    """
+    if fitbit_data.is_empty():
+        return None
+        
+    # Make sure both required columns exist
+    if 'name' not in fitbit_data.columns or 'currentStudent' not in fitbit_data.columns:
+        return None
+    
+    # Find the watch in the data
+    matching_watches = fitbit_data.filter(pl.col('name') == watch_name)
+    
+    if matching_watches.is_empty():
+        return None
+    
+    # Get the student email from the first match
+    student_email = matching_watches.select('currentStudent').row(0)[0]
+    
+    # Only return if there's an actual value
+    if student_email and str(student_email).strip():
+        return str(student_email).strip()
+    
+    return None
+
+def check_fitbit_alerts(log_data, config_data, fitbit_data=None):
     """
     Check Fitbit data against alert thresholds and send email alerts.
+    Only processes the most recent log entry for each watch.
     
     Args:
         log_data: DataFrame containing Fitbit log data
         config_data: DataFrame containing alert configuration
+        fitbit_data: Optional DataFrame containing Fitbit device data with student emails
         
     Returns:
         dict: Summary of alerts sent
@@ -422,221 +486,284 @@ def check_fitbit_alerts(log_data, config_data):
             print("No data available for Fitbit alerts check")
             return alerts_sent
         
-        # Group data by project
-        project_configs = {}
-        for row in config_data.iter_rows(named=True):
-            project = row.get('project', '')
+        # Current date for checking end dates
+        current_date = datetime.datetime.now().date()
+        
+        # Get most recent log entry for each watch
+        # First ensure lastCheck is properly formatted as datetime for sorting
+        try:
+            log_data = log_data.with_columns(
+                pl.col('lastCheck').str.to_datetime('%Y-%m-%d %H:%M:%S', strict=False)
+            )
+        except Exception as e:
+            print(f"Warning: Could not convert lastCheck to datetime: {e}")
+            # If conversion fails, keep original format
+        
+        # Group by watchName and get the most recent entry for each watch
+        print("Finding most recent log entry for each watch...")
+        
+        # Create a dictionary to store the most recent entry for each watch
+        most_recent_logs = {}
+        watch_names = log_data.get_column('watchName').unique()
+        
+        for watch_name in watch_names:
+            # Filter logs for this watch
+            watch_logs = log_data.filter(pl.col('watchName') == watch_name)
+            
+            # Sort by lastCheck in descending order
+            if 'lastCheck' in watch_logs.columns:
+                try:
+                    watch_logs = watch_logs.sort('lastCheck', descending=True)
+                except:
+                    # If sorting fails, try other approaches
+                    try:
+                        # Try converting to string first
+                        watch_logs = watch_logs.with_columns(
+                            pl.col('lastCheck').cast(pl.Utf8)
+                        ).sort('lastCheck', descending=True)
+                    except:
+                        print(f"Warning: Could not sort logs by lastCheck for watch {watch_name}")
+            
+            # Get the first (most recent) row
+            if not watch_logs.is_empty():
+                most_recent_logs[watch_name] = watch_logs.row(0, named=True)
+        
+        print(f"Found most recent log entries for {len(most_recent_logs)} watches")
+        
+        # Process only the most recent log entry for each watch
+        for watch_name, log_row in most_recent_logs.items():
+            project = log_row.get('project', '')
+            
             if not project:
                 continue
                 
-            # Store config for this project
-            project_configs[project] = {
-                'currentSyncThr': int(row.get('currentSyncThr', 0) or 0),
-                'totalSyncThr': int(row.get('totalSyncThr', 0) or 0),
-                'currentHrThr': int(row.get('currentHrThr', 0) or 0),
-                'totalHrThr': int(row.get('totalHrThr', 0) or 0),
-                'currentSleepThr': int(row.get('currentSleepThr', 0) or 0),
-                'totalSleepThr': int(row.get('totalSleepThr', 0) or 0),
-                'currentStepsThr': int(row.get('currentStepsThr', 0) or 0),
-                'totalStepsThr': int(row.get('totalStepsThr', 0) or 0),
-                'batteryThr': int(row.get('batteryThr', 0) or 0),
-                'manager': row.get('manager', '')
-            }
-        
-        # Process log data by project
-        for project in project_configs:
-            config = project_configs[project]
-            manager_email = config['manager']
+            # Find the most specific configuration for this watch
+            watch_specific_config = None
+            project_config = None
             
-            if not manager_email:
-                print(f"No manager email configured for project: {project}")
+            for config_row in config_data.iter_rows(named=True):
+                if config_row.get('project', '') != project:
+                    continue
+                    
+                # Check if end date has passed
+                end_date = config_row.get('endDate', '')
+                if is_end_date_passed(end_date):
+                    continue
+                
+                # Check if this config is specific to this watch
+                config_watch = config_row.get('watch', '')
+                if config_watch and config_watch == watch_name:
+                    # This is a watch-specific config
+                    watch_specific_config = config_row
+                    break  # Use this configuration and stop looking
+                elif not config_watch:
+                    # This is a project-wide config - save it but keep looking for watch-specific
+                    project_config = config_row
+            
+            # Use watch-specific config if available, otherwise use project config
+            config = watch_specific_config or project_config
+            if not config:
                 continue
                 
-            # Filter log data for this project
-            project_logs = log_data.filter(pl.col('project') == project)
+            # Get thresholds from config
+            current_sync_thr = int(config.get('currentSyncThr', 0) or 0)
+            total_sync_thr = int(config.get('totalSyncThr', 0) or 0)
+            current_hr_thr = int(config.get('currentHrThr', 0) or 0)
+            total_hr_thr = int(config.get('totalHrThr', 0) or 0)
+            current_sleep_thr = int(config.get('currentSleepThr', 0) or 0)
+            total_sleep_thr = int(config.get('totalSleepThr', 0) or 0)
+            current_steps_thr = int(config.get('currentStepsThr', 0) or 0)
+            total_steps_thr = int(config.get('totalStepsThr', 0) or 0)
+            battery_thr = int(config.get('batteryThr', 0) or 0)
             
-            if project_logs.is_empty():
-                print(f"No log data for project: {project}")
-                continue
-                
-            # Collect failed watches by category
-            sync_failures = project_logs.filter(pl.col('CurrentFailedSync') >= config['currentSyncThr'])
-            hr_failures = project_logs.filter(pl.col('CurrentFailedHR') >= config['currentHrThr'])
-            sleep_failures = project_logs.filter(pl.col('CurrentFailedSleep') >= config['currentSleepThr'])
-            steps_failures = project_logs.filter(pl.col('CurrentFailedSteps') >= config['currentStepsThr'])
+            # Check if any threshold has been exceeded
+            alert_needed = False
             
-            # Check total failures as well
-            total_sync_failures = project_logs.filter(pl.col('TotalFailedSync') >= config['totalSyncThr'])
-            total_hr_failures = project_logs.filter(pl.col('TotalFailedHR') >= config['totalHrThr'])
-            total_sleep_failures = project_logs.filter(pl.col('TotalFailedSleep') >= config['totalSleepThr'])
-            total_steps_failures = project_logs.filter(pl.col('TotalFailedSteps') >= config['totalStepsThr'])
+            if current_sync_thr > 0 and int(log_row.get('CurrentFailedSync', 0) or 0) >= current_sync_thr:
+                alert_needed = True
+            elif total_sync_thr > 0 and int(log_row.get('TotalFailedSync', 0) or 0) >= total_sync_thr:
+                alert_needed = True
+            elif current_hr_thr > 0 and int(log_row.get('CurrentFailedHR', 0) or 0) >= current_hr_thr:
+                alert_needed = True
+            elif total_hr_thr > 0 and int(log_row.get('TotalFailedHR', 0) or 0) >= total_hr_thr:
+                alert_needed = True
+            elif current_sleep_thr > 0 and int(log_row.get('CurrentFailedSleep', 0) or 0) >= current_sleep_thr:
+                alert_needed = True
+            elif total_sleep_thr > 0 and int(log_row.get('TotalFailedSleep', 0) or 0) >= total_sleep_thr:
+                alert_needed = True
+            elif current_steps_thr > 0 and int(log_row.get('CurrentFailedSteps', 0) or 0) >= current_steps_thr:
+                alert_needed = True
+            elif total_steps_thr > 0 and int(log_row.get('TotalFailedSteps', 0) or 0) >= total_steps_thr:
+                alert_needed = True
             
             # Check battery level if available
-            battery_failures = project_logs.filter(
-                (pl.col('lastBattaryVal').cast(pl.Float32, strict=False) <= config['batteryThr'])
-            )
+            if battery_thr > 0 and log_row.get('lastBattaryVal', ''):
+                try:
+                    battery_level = int(log_row.get('lastBattaryVal', 100))
+                    if battery_level <= battery_thr:
+                        alert_needed = True
+                except (ValueError, TypeError):
+                    pass  # Skip battery check if value cannot be converted
             
-            # Only send alert if there are failures
-            if (sync_failures.height > 0 or hr_failures.height > 0 or 
-                sleep_failures.height > 0 or steps_failures.height > 0 or
-                total_sync_failures.height > 0 or total_hr_failures.height > 0 or
-                total_sleep_failures.height > 0 or total_steps_failures.height > 0 or
-                battery_failures.height > 0):
+            if alert_needed:
+                # The rest of the function remains the same
+                # Determine recipients
+                recipients = []
                 
-                # Create HTML report
-                html = f"""
-                <html>
-                <head>
-                    <style>
-                        body {{ font-family: Arial, sans-serif; line-height: 1.6; }}
-                        .alert {{ color: #D8000C; background-color: #FFD2D2; padding: 10px; margin-bottom: 15px; }}
-                        table {{ border-collapse: collapse; width: 100%; }}
-                        th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-                        th {{ background-color: #f2f2f2; }}
-                        tr:nth-child(even) {{ background-color: #f9f9f9; }}
-                    </style>
-                </head>
-                <body>
-                    <h2>Fitbit Alert: Project {project}</h2>
-                    <p>The following watches have exceeded failure thresholds:</p>
-                """
+                # First check if config has an email, otherwise use manager
+                config_email = config.get('email', '')
+                if config_email and config_email.strip():
+                    recipients.append(config_email.strip())
+                else:
+                    manager_email = config.get('manager', '')
+                    if manager_email and manager_email.strip():
+                        recipients.append(manager_email.strip())
                 
-                # Add sections for each type of failure
-                if sync_failures.height > 0:
-                    html += f"""
-                    <h3>Sync Failures (Current consecutive failures ≥ {config['currentSyncThr']})</h3>
-                    <table>
-                        <tr>
-                            <th>Watch Name</th>
-                            <th>Consecutive Failures</th>
-                            <th>Total Failures</th>
-                            <th>Last Synced</th>
-                        </tr>
+                # Add student email if available
+                student_email = None
+                if fitbit_data is not None:
+                    student_email = get_student_email_for_watch(fitbit_data, watch_name)
+                    if student_email:
+                        recipients.append(student_email)
+                
+                # Only proceed if we have recipients
+                if recipients:
+                    # Create alert message
+                    html = f"""
+                    <html>
+                    <head>
+                        <style>
+                            body {{ font-family: Arial, sans-serif; line-height: 1.6; }}
+                            .alert {{ color: #D8000C; background-color: #FFD2D2; padding: 10px; margin-bottom: 15px; }}
+                            table {{ border-collapse: collapse; width: 100%; }}
+                            th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+                            th {{ background-color: #f2f2f2; }}
+                            tr:nth-child(even) {{ background-color: #f9f9f9; }}
+                        </style>
+                    </head>
+                    <body>
+                        <h2>Fitbit Alert: Watch {watch_name}</h2>
+                        <p>The following watch has exceeded failure thresholds:</p>
+                        
+                        <table>
+                            <tr>
+                                <th>Watch Name</th>
+                                <th>Project</th>
+                                <th>Last Check</th>
+                                <th>Last Sync</th>
+                            </tr>
+                            <tr>
+                                <td>{watch_name}</td>
+                                <td>{project}</td>
+                                <td>{log_row.get('lastCheck', 'Unknown')}</td>
+                                <td>{log_row.get('lastSynced', 'Unknown')}</td>
+                            </tr>
+                        </table>
+                        
+                        <h3>Alert Details</h3>
+                        <table>
+                            <tr>
+                                <th>Metric</th>
+                                <th>Current Failures</th>
+                                <th>Total Failures</th>
+                                <th>Threshold (Current/Total)</th>
+                                <th>Last Value</th>
+                            </tr>
                     """
-                    for row in sync_failures.iter_rows(named=True):
+                    
+                    # Add sync information
+                    if current_sync_thr > 0 or total_sync_thr > 0:
                         html += f"""
                         <tr>
-                            <td>{row['watchName']}</td>
-                            <td>{row['CurrentFailedSync']}</td>
-                            <td>{row['TotalFailedSync']}</td>
-                            <td>{row['lastSynced']}</td>
+                            <td>Sync</td>
+                            <td>{log_row.get('CurrentFailedSync', 0)}</td>
+                            <td>{log_row.get('TotalFailedSync', 0)}</td>
+                            <td>{current_sync_thr}/{total_sync_thr}</td>
+                            <td>{log_row.get('lastSynced', 'Unknown')}</td>
                         </tr>
                         """
-                    html += "</table>"
-                
-                # Add similar sections for other failure types
-                # Heart rate failures
-                if hr_failures.height > 0:
-                    html += f"""
-                    <h3>Heart Rate Failures (Current consecutive failures ≥ {config['currentHrThr']})</h3>
-                    <table>
-                        <tr>
-                            <th>Watch Name</th>
-                            <th>Consecutive Failures</th>
-                            <th>Total Failures</th>
-                            <th>Last HR</th>
-                        </tr>
-                    """
-                    for row in hr_failures.iter_rows(named=True):
+                    
+                    # Add HR information
+                    if current_hr_thr > 0 or total_hr_thr > 0:
                         html += f"""
                         <tr>
-                            <td>{row['watchName']}</td>
-                            <td>{row['CurrentFailedHR']}</td>
-                            <td>{row['TotalFailedHR']}</td>
-                            <td>{row['lastHRVal']}</td>
+                            <td>Heart Rate</td>
+                            <td>{log_row.get('CurrentFailedHR', 0)}</td>
+                            <td>{log_row.get('TotalFailedHR', 0)}</td>
+                            <td>{current_hr_thr}/{total_hr_thr}</td>
+                            <td>{log_row.get('lastHRVal', 'Unknown')}</td>
                         </tr>
                         """
-                    html += "</table>"
-                
-                # Sleep failures
-                if sleep_failures.height > 0:
-                    html += f"""
-                    <h3>Sleep Failures (Current consecutive failures ≥ {config['currentSleepThr']})</h3>
-                    <table>
-                        <tr>
-                            <th>Watch Name</th>
-                            <th>Consecutive Failures</th>
-                            <th>Total Failures</th>
-                            <th>Last Sleep</th>
-                        </tr>
-                    """
-                    for row in sleep_failures.iter_rows(named=True):
+                    
+                    # Add Sleep information
+                    if current_sleep_thr > 0 or total_sleep_thr > 0:
                         html += f"""
                         <tr>
-                            <td>{row['watchName']}</td>
-                            <td>{row['CurrentFailedSleep']}</td>
-                            <td>{row['TotalFailedSleep']}</td>
-                            <td>{row['lastSleepStartDateTime']}</td>
+                            <td>Sleep</td>
+                            <td>{log_row.get('CurrentFailedSleep', 0)}</td>
+                            <td>{log_row.get('TotalFailedSleep', 0)}</td>
+                            <td>{current_sleep_thr}/{total_sleep_thr}</td>
+                            <td>{log_row.get('lastSleepDur', 'Unknown')}</td>
                         </tr>
                         """
-                    html += "</table>"
-                
-                # Steps failures
-                if steps_failures.height > 0:
-                    html += f"""
-                    <h3>Steps Failures (Current consecutive failures ≥ {config['currentStepsThr']})</h3>
-                    <table>
-                        <tr>
-                            <th>Watch Name</th>
-                            <th>Consecutive Failures</th>
-                            <th>Total Failures</th>
-                            <th>Last Steps</th>
-                        </tr>
-                    """
-                    for row in steps_failures.iter_rows(named=True):
+                    
+                    # Add Steps information
+                    if current_steps_thr > 0 or total_steps_thr > 0:
                         html += f"""
                         <tr>
-                            <td>{row['watchName']}</td>
-                            <td>{row['CurrentFailedSteps']}</td>
-                            <td>{row['TotalFailedSteps']}</td>
-                            <td>{row['lastStepsVal']}</td>
+                            <td>Steps</td>
+                            <td>{log_row.get('CurrentFailedSteps', 0)}</td>
+                            <td>{log_row.get('TotalFailedSteps', 0)}</td>
+                            <td>{current_steps_thr}/{total_steps_thr}</td>
+                            <td>{log_row.get('lastStepsVal', 'Unknown')}</td>
                         </tr>
                         """
-                    html += "</table>"
-                
-                # Battery warnings
-                if battery_failures.height > 0:
-                    html += f"""
-                    <h3>Battery Warnings (Level ≤ {config['batteryThr']}%)</h3>
-                    <table>
-                        <tr>
-                            <th>Watch Name</th>
-                            <th>Battery Level</th>
-                            <th>Last Check</th>
-                        </tr>
-                    """
-                    for row in battery_failures.iter_rows(named=True):
+                    
+                    # Add Battery information
+                    if battery_thr > 0:
                         html += f"""
                         <tr>
-                            <td>{row['watchName']}</td>
-                            <td>{row['lastBattaryVal']}%</td>
-                            <td>{row['lastBattary']}</td>
+                            <td>Battery</td>
+                            <td>N/A</td>
+                            <td>N/A</td>
+                            <td>{battery_thr}%</td>
+                            <td>{log_row.get('lastBattaryVal', 'Unknown')}%</td>
                         </tr>
                         """
-                    html += "</table>"
-                
-                # Close HTML
-                html += """
-                    <p>This is an automated alert from the Fitbit Management System.</p>
-                </body>
-                </html>
-                """
-                
-                # Send the email
-                subject = f"Fitbit Alert: Project {project} has {sync_failures.height + hr_failures.height + sleep_failures.height + steps_failures.height + battery_failures.height} issues"
-                result = send_email_alert(manager_email, subject, html)
-                
-                # Track results
-                if result:
-                    alerts_sent[project] = {
-                        'manager': manager_email,
-                        'sync_failures': sync_failures.height,
-                        'hr_failures': hr_failures.height,
-                        'sleep_failures': sleep_failures.height,
-                        'steps_failures': steps_failures.height,
-                        'battery_failures': battery_failures.height,
-                        'total_failures': sync_failures.height + hr_failures.height + sleep_failures.height + steps_failures.height + battery_failures.height
-                    }
+                    
+                    # Close the HTML
+                    html += """
+                        </table>
+                        
+                        <p>This is an automated alert from the Fitbit Management System.</p>
+                    </body>
+                    </html>
+                    """
+                    
+                    # Send the email
+                    subject = f"Fitbit Alert: Watch {watch_name} in Project {project}"
+                    result = send_email_alert(", ".join(recipients), subject, html)
+                    
+                    # Track results
+                    if result:
+                        if project not in alerts_sent:
+                            alerts_sent[project] = {
+                                'watches': [],
+                                'recipients': [],
+                                'count': 0
+                            }
+                            
+                        alerts_sent[project]['watches'].append(watch_name)
+                        alerts_sent[project]['recipients'] = list(set(alerts_sent[project]['recipients'] + recipients))
+                        alerts_sent[project]['count'] += 1
+                        
+                        print(f"Sent alert for watch {watch_name} to {', '.join(recipients)}")
+        
+        # Summarize alerts sent
+        if alerts_sent:
+            print("Alert summary:")
+            for project, details in alerts_sent.items():
+                print(f"  Project {project}: {details['count']} alerts sent to {len(details['recipients'])} recipients")
         
         return alerts_sent
         
@@ -954,12 +1081,14 @@ def hourly_data_collection():
         # Step 2: Run WhatsApp message analysis
         suspicious_nums_data = analyze_whatsapp_messages()
         
-        # Step 3: Get alert configurations
+        # Step 3: Get alert configurations and fitbit data
         fitbit_config_sheet = spreadsheet.get_sheet("fitbit_alerts_config", sheet_type="fitbit_alerts_config")
         qualtrics_config_sheet = spreadsheet.get_sheet("qualtrics_alerts_config", sheet_type="qualtrics_alerts_config")
+        fitbit_sheet = spreadsheet.get_sheet("fitbit", sheet_type="fitbit")  # Get fitbit sheet for student emails
         
         fitbit_config_data = fitbit_config_sheet.to_dataframe(engine="polars")
         qualtrics_config_data = qualtrics_config_sheet.to_dataframe(engine="polars")
+        fitbit_data = fitbit_sheet.to_dataframe(engine="polars")
         
         # Create a unified manager email mapping for all projects
         # Priority: use fitbit config emails as primary source if available
@@ -987,7 +1116,7 @@ def hourly_data_collection():
         log_sheet = spreadsheet.get_sheet("FitbitLog", sheet_type="log")
         log_data = log_sheet.to_dataframe(engine="polars")
         
-        # Step 5: Check alerts and send emails
+        # Step 5: Check alerts and send emails - passing fitbit_data for student emails
         if not log_data.is_empty() and not fitbit_config_data.is_empty():
             # Update manager emails in config before sending alerts to ensure consistency
             for i in range(len(fitbit_config_data)):
@@ -1000,10 +1129,10 @@ def hourly_data_collection():
                         .alias('manager')
                     )
             
-            fitbit_alerts = check_fitbit_alerts(log_data, fitbit_config_data)
+            fitbit_alerts = check_fitbit_alerts(log_data, fitbit_config_data, fitbit_data)
             
             if fitbit_alerts:
-                print(f"Sent Fitbit alerts to {len(fitbit_alerts)} managers")
+                print(f"Sent Fitbit alerts for {len(fitbit_alerts)} projects")
             else:
                 print("No Fitbit alerts sent")
         
