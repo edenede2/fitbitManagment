@@ -17,11 +17,11 @@ def display_fibro_ema_data(spreadsheet: Spreadsheet):
     st.header("Fibromyalgia EMA Data Visualization")
     
     # Load data from the Google Sheet using Polars with better error handling
-    with st.spinner("Loading EMA data from Google Sheets..."):
+    with st.spinner("Loading EMA data from Google Sheets...",show_time=True):
         try:
             # First get data as pandas to handle mixed types better
             pandas_df = spreadsheet.get_sheet("for_analysis", "for_analysis").to_dataframe(engine="pandas")
-            
+            st.write(f"Loaded {pandas_df}")
             if pandas_df is not None and not pandas_df.empty:
                 # Handle mixed types issues before converting to polars
                 # First, detect object columns that might contain mixed types
