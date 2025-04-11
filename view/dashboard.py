@@ -249,7 +249,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
             # Debug what watches exist
             watch_in_sheet = row["name"]
             watch_project = row["project"]
-            st.write(f"Watch in sheet: {watch_in_sheet}, Project: {watch_project}")
+            st.write(f"user_project in sheet: {user_project}, Project: {watch_project}")
             if user_project != watch_project:
                 continue
                     
