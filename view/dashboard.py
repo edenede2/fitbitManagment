@@ -258,7 +258,6 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
     with st.spinner("Loading available watches..."):
         if 'available_watches' not in st.session_state:
             st.session_state.available_watches = get_available_watches(user_email, user_role, user_project)
-        # available_watches = get_available_watches(user_email, user_role, user_project)
     
         if st.session_state.available_watches.empty:
             st.warning("No watches available for your role and project")
@@ -294,7 +293,6 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
 
         if st.session_state.selected_watch not in st.session_state.watch_details:
             st.session_state.watch_details[st.session_state.selected_watch] = cached_get_watch_details(st.session_state.selected_watch)
-        # watch_details = cached_get_watch_details(st.session_state.selected_watch)
         if isinstance(st.session_state.watch_details[st.session_state.selected_watch].get('isActive'), str):
             # Convert string to boolean
             is_active = True if (st.session_state.watch_details[st.session_state.selected_watch].get('isActive') == 'TRUE') else False
@@ -326,9 +324,21 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                     max_value=datetime.datetime.now()
                 )
             
+            # Track previous selections to detect changes
+            if 'prev_watch' not in st.session_state:
+                st.session_state.prev_watch = st.session_state.selected_watch
+            if 'prev_start_date' not in st.session_state:
+                st.session_state.prev_start_date = start_date
+            if 'prev_end_date' not in st.session_state:
+                st.session_state.prev_end_date = end_date
+            
             # Signal selector
             signal_options = ["Heart Rate", "Steps", "Sleep"]
             selected_signal = st.selectbox("Select Signal Type", signal_options)
+            
+            # Track previous signal selection
+            if 'prev_signal' not in st.session_state:
+                st.session_state.prev_signal = selected_signal
             
             # Map selected signal to data column
             signal_map = {
@@ -346,7 +356,36 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                 st.session_state.loading_complete = False
             if "loaded_dates" not in st.session_state:
                 st.session_state.loaded_dates = []
+            
+            # Check for changes in selection that should reset the load button state
+            selection_changed = (st.session_state.prev_watch != st.session_state.selected_watch or 
+                                st.session_state.prev_start_date != start_date or 
+                                st.session_state.prev_end_date != end_date or
+                                st.session_state.prev_signal != selected_signal)
+            
+            if selection_changed:
+                if st.session_state.load_data_button:
+                    st.session_state.load_data_button = False
+                    st.session_state.loading_complete = False
+                    st.session_state.loaded_dates = []
+                    st.session_state.current_data = None
+                    st.session_state.loaded_watch = None
+                    st.session_state.loaded_signal = None
                 
+                # Update previous selections
+                st.session_state.prev_watch = st.session_state.selected_watch
+                st.session_state.prev_start_date = start_date
+                st.session_state.prev_end_date = end_date
+                st.session_state.prev_signal = selected_signal
+            
+            # Show debugging info in an expander
+            with st.expander("Debug Info", expanded=False):
+                st.write("Button state:", st.session_state.load_data_button)
+                st.write("Loading complete:", st.session_state.loading_complete)
+                st.write("Selected watch:", st.session_state.selected_watch)
+                st.write("Selected signal:", signal_column)
+                st.write("Selection changed:", selection_changed)
+            
             # Create a button that triggers loading
             load_button_clicked = st.button("Load Data")
             
@@ -354,13 +393,6 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
             if load_button_clicked:
                 st.session_state.load_data_button = True
                 
-            # Show debugging info in an expander
-            with st.expander("Debug Info", expanded=False):
-                st.write("Button state:", st.session_state.load_data_button)
-                st.write("Loading complete:", st.session_state.loading_complete)
-                st.write("Selected watch:", st.session_state.selected_watch)
-                st.write("Selected signal:", signal_column)
-            
             # Process data when button is clicked but loading is not complete
             if st.session_state.load_data_button and not st.session_state.loading_complete:
                 # Calculate date range
@@ -500,8 +532,6 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                     st.session_state.watch_details = {}
                 if st.session_state.selected_watch not in st.session_state.watch_details:
                     st.session_state.watch_details[st.session_state.selected_watch] = cached_get_watch_details(st.session_state.selected_watch)
-                # Fetch watch details from cache
-                # watch_details = cached_get_watch_details(st.session_state.selected_watch)
                 
                 # Create Watch object and update with latest information from API only when refresh is clicked
                 if st.session_state.watch_details[st.session_state.selected_watch]:
