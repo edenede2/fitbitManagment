@@ -10,6 +10,7 @@ import os
 import time
 import functools
 from datetime import timedelta
+import re
 
 from controllers.project_controller import ProjectController
 from entity.Sheet import Spreadsheet, GoogleSheetsAdapter
@@ -244,7 +245,8 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
         df = sp.get_sheet("fitbit", sheet_type="fitbit").to_dataframe("polars")
         dict_details_by_name = {}
         for row in df.iter_rows(named=True):
-            watch_name = row["name"] if (row["name"].startswith(f"{user_project}") or user_role == "Admin")  else None
+            watch_name = row["name"] if (re.search(f"^{user_project}", row["name"])
+                                          or user_role == "Admin")  else None
             if watch_name:
                 dict_details_by_name[watch_name] = row
         st.session_state.fitbit_watches = dict_details_by_name
