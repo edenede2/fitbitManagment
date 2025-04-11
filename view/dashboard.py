@@ -158,7 +158,6 @@ def fetch_watch_data(watch_name, signal_type, start_date, end_date, should_fetch
         return pd.DataFrame()
 
 # Add a cache decorator for watch details
-# @st.cache_data(ttl=300)  # Cache for 5 minutes
 def cached_get_watch_details(watch_name):
     project_controller = ProjectController()
     return project_controller.get_watch_details(watch_name)
