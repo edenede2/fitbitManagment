@@ -284,11 +284,17 @@ def appsheet_config(spreadsheet:Spreadsheet,user_email):
             if user not in fitbit_active_users['user'].to_list():
                 st.warning("This user is inactive. You cannot edit their configuration.")
             else:
-                appsheet_config = appsheet_config.filter(pl.col('user') == user)
+                # Check if appsheet_config is a DataFrame or dict
+                if isinstance(appsheet_config, pl.DataFrame):
+                    user_config = appsheet_config.filter(pl.col('user') == user)
+                    missing_thr_value = user_config.get('missingThr', 3) if not user_config.is_empty() else 3
+                else:
+                    # It's a dictionary
+                    missing_thr_value = appsheet_config.get('missingThr', 3)
 
                 missing_thr = st.number_input("Missing Data Threshold",
                                             min_value=1, max_value=100,  # 1 hour to 1 week
-                                            value=int(appsheet_config.get('missingThr', 3)))
+                                            value=int(missing_thr_value))
                 save_button = st.form_submit_button("Save Configuration")
                 if save_button:
                     # Prepare data for saving
