@@ -248,12 +248,12 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
         for row in df.iter_rows(named=True):
             # Debug what watches exist
             watch_in_sheet = row["name"]
-            match_found = re.search(f"^{user_project}", watch_in_sheet, re.IGNORECASE)
-            
-            watch_name = watch_in_sheet if (match_found or user_role == "Admin") else None
-            
-            if watch_name:
-                dict_details_by_name[watch_name] = row
+            watch_project = row["project"]
+            if user_project != watch_project:
+                continue
+                    
+            if watch_in_sheet:
+                dict_details_by_name[watch_in_sheet] = row
         st.session_state.fitbit_watches = dict_details_by_name
     if "selected_watch" not in st.session_state:
         # Fix: dict_keys is not subscriptable, convert to list first or use next(iter())
