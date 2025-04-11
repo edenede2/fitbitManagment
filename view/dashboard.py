@@ -18,7 +18,7 @@ from model.config import get_secrets
 from entity.AsyncSheetsManager import AsyncSheetsManager
 
 # Increase cache time to reduce API calls
-@st.cache_data(ttl=1800)  # Cache for 30 minutes instead of 5
+# @st.cache_data(ttl=1800)  # Cache for 30 minutes instead of 5
 def cached_get_watches(user_email, user_role, user_project):
     project_controller = ProjectController()
     if user_role == "Admin":
@@ -158,7 +158,7 @@ def fetch_watch_data(watch_name, signal_type, start_date, end_date, should_fetch
         return pd.DataFrame()
 
 # Add a cache decorator for watch details
-@st.cache_data(ttl=300)  # Cache for 5 minutes
+# @st.cache_data(ttl=300)  # Cache for 5 minutes
 def cached_get_watch_details(watch_name):
     project_controller = ProjectController()
     return project_controller.get_watch_details(watch_name)
