@@ -240,12 +240,13 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
     """
     # Time the entire dashboard loading process
     dashboard_start_time = time.time()
-    
+    st.write(f"User role: {user_role}")
+    st.write(f"User project: {user_project}")
     if "fitbit_watches" not in st.session_state:
         df = sp.get_sheet("fitbit", sheet_type="fitbit").to_dataframe("polars")
         dict_details_by_name = {}
         for row in df.iter_rows(named=True):
-            watch_name = row["name"] if (re.search(f"^{user_project}", row["name"])
+            watch_name = row["name"] if (re.search(f"{user_project}", row["name"])
                                           or user_role == "Admin")  else None
             if watch_name:
                 dict_details_by_name[watch_name] = row
