@@ -866,16 +866,43 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
                 """
             # Add a reference to the legacy dashboard website and the new one for better tracking
             html += """
-                <p>For more details, please visit the old dashboard: <a href="https://old-dashboard.example.com">Old Dashboard</a></p>
-                <p>Or check the new dashboard: <a href="https://new-dashboard.example.com">New Dashboard</a></p>
-                <p>Note: The old dashboard is being phased out, please use the new one for future reference.</p>
-                <p>For any questions, please contact the project manager,</p>
-                <p>or the Fitbit Management System administrator in the address below:</p>
-                <p>Eden Eldar</p>
-                <p>edenede2@gmail.com</p>
-                <p>Thank you!</p>
+                <div style="margin-top: 20px; padding: 15px; background-color: #f5f5f5; border-radius: 5px; border-left: 4px solid #4CAF50;">
+                    <h3 style="margin-top: 0; color: #2e7d32;">Access Your Dashboards</h3>
+                    <p>For detailed monitoring, please visit one of our dashboards:</p>
+                    
+                    <div style="display: flex; margin: 20px 0;">
+                        <a href="https://fitbitmanagment.streamlit.app/Dashboard" 
+                           style="display: inline-block; background-color: #2196F3; color: white; padding: 10px 20px; 
+                                  text-decoration: none; border-radius: 4px; margin-right: 15px; font-weight: bold;">
+                           ↗️ New Dashboard
+                        </a>
+                        
+                        <a href="https://fitbitestapipy.streamlit.app/" 
+                           style="display: inline-block; background-color: #757575; color: white; padding: 10px 20px; 
+                                  text-decoration: none; border-radius: 4px; font-weight: bold;">
+                           ↗️ Legacy Dashboard
+                        </a>
+                    </div>
+                    
+                    <p><em>Note: The legacy dashboard is being phased out. Please use the new dashboard for future reference.</em></p>
+                </div>
+                
+                <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd;">
+                    <p>For any questions, please contact the project manager or the system administrator:</p>
+                    
+                    <div style="margin-top: 15px; font-style: italic;">
+                        <p style="margin: 0; font-weight: bold;">Eden Eldar</p>
+                        <p style="margin: 0; color: #0277bd;">
+                            <a href="mailto:edenede2@gmail.com" style="color: #0277bd; text-decoration: none;">
+                                edenede2@gmail.com
+                            </a>
+                        </p>
+                    </div>
+                    
+                    <p style="margin-top: 15px;">Thank you!</p>
+                </div>
             """
-            
+
             #  Close the HTML
             html += """
                 <p>This is an automated alert from the Fitbit Management System.</p>
