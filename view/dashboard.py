@@ -244,8 +244,9 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
         df = sp.get_sheet("fitbit", sheet_type="fitbit").to_dataframe("polars")
         dict_details_by_name = {}
         for row in df.iter_rows(named=True):
-            watch_name = row["name"]
-            dict_details_by_name[watch_name] = row
+            watch_name = row["name"] if row["name"].startswith(f"{user_project}")  else None
+            if watch_name:
+                dict_details_by_name[watch_name] = row
         st.session_state.fitbit_watches = dict_details_by_name
     if "selected_watch" not in st.session_state:
         # Fix: dict_keys is not subscriptable, convert to list first or use next(iter())
