@@ -40,7 +40,7 @@ def main():
                 user_project = st.secrets.get(user_email.split('@')[0], 'None')
                 if user_project is not None:
                     user_project = user_project.split(',')[0]
-                user_role = st.session_state.get(user_email.split('@')[0], 'Guest')
+                user_role = st.secrets.get(user_email.split('@')[0], 'Guest')
                 if user_role != 'Guest':
                     user_role = user_role.split(',')[1].strip()
 
