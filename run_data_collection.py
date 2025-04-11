@@ -864,8 +864,19 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
                     </table>
                 </div>
                 """
+            # Add a reference to the legacy dashboard website and the new one for better tracking
+            html += """
+                <p>For more details, please visit the old dashboard: <a href="https://old-dashboard.example.com">Old Dashboard</a></p>
+                <p>Or check the new dashboard: <a href="https://new-dashboard.example.com">New Dashboard</a></p>
+                <p>Note: The old dashboard is being phased out, please use the new one for future reference.</p>
+                <p>For any questions, please contact the project manager,</p>
+                <p>or the Fitbit Management System administrator in the address below:</p>
+                <p>Eden Eldar</p>
+                <p>edenede2@gmail.com</p>
+                <p>Thank you!</p>
+            """
             
-            # Close the HTML
+            #  Close the HTML
             html += """
                 <p>This is an automated alert from the Fitbit Management System.</p>
             </body>
