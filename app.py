@@ -63,11 +63,12 @@ def main():
             # Add page descriptions
             st.sidebar.markdown("## App Pages")
             st.sidebar.markdown("""
-            - **Dashboard**: Overview of Fitbit activity and stats
-            - **User Management**: Manage user accounts and permissions
-            - **Device Tracking**: Monitor Fitbit devices and sync status
-            - **Data Analysis**: Analyze collected health and activity data
-            - **Reports**: Generate and export reports
+            - **Homepage**: Overview of the active users and their projects
+            - **Dashboard**: Overview of Fitbit activity and device stats
+            - **Fitbit Management**: Manage Fitbit devices 
+            - **Alerts Configuration**: Configure alerts for devices and EMA
+            - **NOVA Qualtrics Management**: Manage buldog and Qualtrics data
+            - **APPSHEET Management**: Manage AppSheet data
             """)
             
             # Add support information
