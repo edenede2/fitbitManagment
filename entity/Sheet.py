@@ -387,6 +387,133 @@ class GoogleSheetsAdapter:
     """Adapter for connecting entity layer Spreadsheet with Google Sheets API"""
     
     @staticmethod
+    def get_all_reords(spreadsheet: Spreadsheet, name: str) -> Sheet:
+        """Get a sheet by name from the entity layer"""
+        sheets_api = SheetsAPI.get_instance()
+        google_spreadsheet = sheets_api.open_spreadsheet(spreadsheet.api_key)
+        try:
+            worksheet = google_spreadsheet.worksheet(name)
+            records = worksheet.get_all_records()
+        except gspread.exceptions.WorksheetNotFound:
+            print(f"Worksheet {name} not found in spreadsheet {spreadsheet.name}")
+            records = []
+        return records
+    
+    @staticmethod
+    def get_row(spreadsheet: Spreadsheet, name: str, *keys, **row) -> Optional[dict]:
+        """Get a row from a sheet by keys"""
+        sheet_api = SheetsAPI.get_instance()
+        google_spreadsheet = sheet_api.open_spreadsheet(spreadsheet.api_key)
+        try:
+            worksheet = google_spreadsheet.worksheet(name)
+            records = worksheet.get_all_records()
+            for record in records:
+                if all(record.get(key) == row[key] for key in keys):
+                    return record
+        except gspread.exceptions.WorksheetNotFound:
+            print(f"Worksheet {name} not found in spreadsheet {spreadsheet.name}")
+    
+    @staticmethod
+    def get_rows(spreadsheet: Spreadsheet, name: str, *keys, **row) -> List[dict]:
+        """Get rows from a sheet by keys"""
+        sheet_api = SheetsAPI.get_instance()
+        google_spreadsheet = sheet_api.open_spreadsheet(spreadsheet.api_key)
+        try:
+            worksheet = google_spreadsheet.worksheet(name)
+            records = worksheet.get_all_records()
+            result = []
+            for record in records:
+                if all(record.get(key) == row[key] for key in keys):
+                    result.append(record)
+            return result
+        except gspread.exceptions.WorksheetNotFound:
+            print(f"Worksheet {name} not found in spreadsheet {spreadsheet.name}")
+            return []
+    
+    @staticmethod
+    def update_row(spreadsheet: Spreadsheet, name: str, **on) -> None:
+        """Update a row in a sheet by ID. on is a dictionary of column names and values"""
+        sheet_api = SheetsAPI.get_instance()
+        google_spreadsheet = sheet_api.open_spreadsheet(spreadsheet.api_key)
+        try:
+            worksheet = google_spreadsheet.worksheet(name)
+            records = worksheet.get_all_records()
+            for record in records:
+                if all(record.get(key) == on[key] for key in on):
+                    # Update the record with new values
+                    for key, value in on.items():
+                        worksheet.update_cell(record['row'], record['col'], value)
+                    break
+        except gspread.exceptions.WorksheetNotFound:
+            print(f"Worksheet {name} not found in spreadsheet {spreadsheet.name}")
+            return None
+        except Exception as e:
+            print(f"Error updating row in {name}: {e}")
+            return None
+    @staticmethod
+    def update_rows(spreadsheet: Spreadsheet, name: str, **on) -> None:
+        """Update rows in a sheet by ID. on is a dictionary of column names and values"""
+        sheet_api = SheetsAPI.get_instance()
+        google_spreadsheet = sheet_api.open_spreadsheet(spreadsheet.api_key)
+        try:
+            worksheet = google_spreadsheet.worksheet(name)
+            records = worksheet.get_all_records()
+            for record in records:
+                if all(record.get(key) == on[key] for key in on):
+                    # Update the record with new values
+                    for key, value in on.items():
+                        worksheet.update_cell(record['row'], record['col'], value)
+        except gspread.exceptions.WorksheetNotFound:
+            print(f"Worksheet {name} not found in spreadsheet {spreadsheet.name}")
+            return None
+        except Exception as e:
+            print(f"Error updating row in {name}: {e}")
+            return None
+        return None
+    
+    @staticmethod
+    def append_rows(spreadsheet: Spreadsheet, name: str, data: List[dict]) -> None:
+        """Append rows to a sheet"""
+        sheet_api = SheetsAPI.get_instance()
+        google_spreadsheet = sheet_api.open_spreadsheet(spreadsheet.api_key)
+        try:
+            worksheet = google_spreadsheet.worksheet(name)
+            for record in data:
+                worksheet.append_row(list(record.values()))
+        except gspread.exceptions.WorksheetNotFound:
+            print(f"Worksheet {name} not found in spreadsheet {spreadsheet.name}")
+            return None
+        except Exception as e:
+            print(f"Error appending rows to {name}: {e}")
+            return None
+        return None
+    
+
+    @staticmethod
+    def delete_row(spreadsheet: Spreadsheet, name: str, **on) -> None:
+        """Delete a row in a sheet by ID. on is a dictionary of column names and values"""
+        sheet_api = SheetsAPI.get_instance()
+        google_spreadsheet = sheet_api.open_spreadsheet(spreadsheet.api_key)
+        try:
+            worksheet = google_spreadsheet.worksheet(name)
+            records = worksheet.get_all_records()
+            for record in records:
+                if all(record.get(key) == on[key] for key in on):
+                    # Delete the row
+                    worksheet.delete_rows(record['row'])
+                    break
+        except gspread.exceptions.WorksheetNotFound:
+            print(f"Worksheet {name} not found in spreadsheet {spreadsheet.name}")
+            return None
+        except Exception as e:
+            print(f"Error deleting row in {name}: {e}")
+            return None
+        return None
+    
+
+                
+
+    @staticmethod
     # @sheets_cache(timeout=300)  # Cache for 5 minutes
     def connect(spreadsheet: Spreadsheet) -> Spreadsheet:
         """Connect the entity Spreadsheet with the actual Google Sheets API"""

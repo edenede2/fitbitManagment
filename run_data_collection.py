@@ -460,7 +460,7 @@ def is_end_date_passed(end_date_str):
     print(f"Warning: Could not parse end date '{end_date_str}'")
     return False
 
-def get_student_email_for_watch(fitbit_data, watch_name):
+def get_student_email_for_watch(users:pl.DataFrame, fitbit_data, watch_name):
     """
     Get student email for a specific watch if available.
     
@@ -485,15 +485,16 @@ def get_student_email_for_watch(fitbit_data, watch_name):
         return None
     
     # Get the student email from the first match
-    student_email = matching_watches.select('currentStudent').row(0)[0]
+    student_name = matching_watches.select('currentStudent').row(0)[0]
     
+    student_email = users.filter(pl.col('name') == student_name).select('email').item()
     # Only return if there's an actual value
-    if student_email and str(student_email).strip():
+    if student_name and str(student_name).strip():
         return str(student_email).strip()
     
     return None
 
-def check_fitbit_alerts(log_data, config_data, fitbit_data=None):
+def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_data=None):
     """
     Check Fitbit data against alert thresholds and send email alerts.
     Only processes the most recent log entry for each watch.
@@ -650,7 +651,8 @@ def check_fitbit_alerts(log_data, config_data, fitbit_data=None):
                 # Add student email if available
                 student_email = None
                 if fitbit_data is not None:
-                    student_email = get_student_email_for_watch(fitbit_data, watch_name)
+                    users = spreadsheet.get_sheet("user", sheet_type="user").to_dataframe(engine="polars")
+                    student_email = get_student_email_for_watch(fitbit_data, watch_name,users)
                     if student_email:
                         recipients.append(student_email)
                 
@@ -1156,7 +1158,7 @@ def hourly_data_collection():
                         .alias('manager')
                     )
             
-            fitbit_alerts = check_fitbit_alerts(log_data, fitbit_config_data, fitbit_data)
+            fitbit_alerts = check_fitbit_alerts(spreadsheet, log_data, fitbit_config_data, fitbit_data)
             
             if fitbit_alerts:
                 print(f"Sent Fitbit alerts for {len(fitbit_alerts)} projects")
