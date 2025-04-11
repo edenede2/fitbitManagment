@@ -41,32 +41,33 @@ def load_fitbit_datatable(user_email: str, user_role: str, user_project: str, sp
                 return
             
             # Convert to pandas DataFrame for easier manipulation
-            fitbit_df = fitbit_sheet.to_dataframe(engine="polars")
+            original_fitbit_df = fitbit_sheet.to_dataframe(engine="polars")
             user_df = user_sheet.to_dataframe(engine="polars")
             
             # Filter based on user role
-            if user_role == 'manager':
+            if user_role == 'Manager':
                 # user_projects = user_details.get('projects', [])
                 # if isinstance(user_project, str):
                 #     user_projects = [user_project]
                 
-                st.sidebar.write(f"Your projects: {', '.join(user_project)}")
+                # st.sidebar.write(f"Your projects: {', '.join(user_project)}")
                 
                 # Filter devices by project
-                fitbit_df = fitbit_df.filter(pl.col("project") == user_project)
+                fitbit_df = original_fitbit_df.filter(pl.col("project") == user_project)
                 
                 if fitbit_df.is_empty():
                     st.warning(f"No Fitbit devices found for your projects: {', '.join(user_project)}")
                     return
                 
                 # Also filter users by project for student assignment
-                user_df = user_df.filter(pl.col("project").is_in(user_project))
+                user_df = user_df.filter(pl.col("project")== user_project)
             
             # Display management interface based on role
             if user_role == 'Admin':
+                fitbit_df = original_fitbit_df
                 display_admin_interface(fitbit_df, user_df, fitbit_sheet, spreadsheet)
             else:  # manager
-                display_manager_interface(fitbit_df, user_df, fitbit_sheet, spreadsheet, user_project)
+                display_manager_interface(fitbit_df, user_df, fitbit_sheet, spreadsheet, user_project,original_fitbit_df)
             
     except Exception as e:
         st.error(f"Error loading Fitbit devices: {str(e)}")
@@ -132,7 +133,7 @@ def display_admin_interface(fitbit_df: pl.DataFrame, user_df: pl.DataFrame,
 
 def display_manager_interface(fitbit_df: pd.DataFrame, user_df: pd.DataFrame, 
                              fitbit_sheet: Any, spreadsheet: Spreadsheet, 
-                             manager_projects: List[str]) -> None:
+                             manager_projects: List[str], original_fitbit_df: pl.DataFrame) -> None:
     """Display manager interface with limited control over project devices."""
     st.subheader("Manager View - Your Project's Fitbit Devices")
     
@@ -140,14 +141,18 @@ def display_manager_interface(fitbit_df: pd.DataFrame, user_df: pd.DataFrame,
     if isinstance(manager_projects, str):
         manager_projects = [manager_projects]
     
-    st.write(f"Managing projects: {', '.join(manager_projects)}")
-    
+    # st.write(f"Managing projects: {', '.join(manager_projects)}")
+
+
     # Display editable table for manager
     edited_df = display_editable_table(fitbit_df, user_df, is_admin=False)
-    
+    original_fitbit_df = original_fitbit_df.to_pandas()
+    edited_df = edited_df.to_pandas()
+    original_fitbit_df = pd.concat([original_fitbit_df[original_fitbit_df['project'] != manager_projects[0]], edited_df])
+
     # Save changes button
     if st.button("Save Changes"):
-        save_changes(edited_df, fitbit_sheet, spreadsheet)
+        save_changes(original_fitbit_df, fitbit_sheet, spreadsheet)
 
 def display_editable_table(fitbit_df: pl.DataFrame, user_df: pl.DataFrame, is_admin: bool = False) -> pl.DataFrame:
     """
@@ -219,6 +224,7 @@ def display_editable_table(fitbit_df: pl.DataFrame, user_df: pl.DataFrame, is_ad
 def save_changes(edited_df: pl.DataFrame, fitbit_sheet: Any, spreadsheet: Spreadsheet) -> None:
     """Save changes made to the Fitbit devices table."""
     try:
+        st.warning("⚠️ Please note: Changes may take 2-3 minutes to fully update in the cloud. Meanwhile, you can continue using the app.")
         # Update sheet data with edited DataFrame
         spreadsheet.update_sheet(
             "fitbit",
@@ -233,7 +239,7 @@ def save_changes(edited_df: pl.DataFrame, fitbit_sheet: Any, spreadsheet: Spread
         st.success("Changes saved successfully!")
         
         # Add warning about cloud update delay
-        st.warning("⚠️ Please note: Changes may take 2-3 minutes to fully update in the cloud.")
+        
         
         # Add timestamp
         st.write(f"Last updated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")

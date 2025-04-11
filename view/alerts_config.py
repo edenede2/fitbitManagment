@@ -304,7 +304,7 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
 
 
     if user_project in ['nova', 'Admin']:
-        if user_role in ['manager', 'Admin']:
+        if user_role in ['Manager', 'Admin']:
             tab1, tab2 = st.tabs(["Fitbit Alerts", "Qualtrics Alerts"])
     elif user_project in ['fibro', 'Admin']:
         tab1, tab2 = st.tabs(["Fitbit Alerts", "AppSheet Alerts"])
