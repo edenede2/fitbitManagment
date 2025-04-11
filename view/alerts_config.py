@@ -400,6 +400,9 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
     
     # Tab 2: Qualtrics Alerts Configuration
     with tab2:
+        if user_role == 'Admin':
+            user_project = st.selectbox("Select Project", ["fibro", "nova"])
+            
         if user_project == 'fibro':
             appsheet_config(spreadsheet, user_email)
         elif user_project == 'nova':
