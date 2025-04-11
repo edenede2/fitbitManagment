@@ -341,7 +341,111 @@ def qualtrics_config(spreadsheet:Spreadsheet, user_email):
             else:
                 st.error("Failed to save configuration. Please try again.")
 
+def get_project_fitbit_configs(spreadsheet:Spreadsheet, user_project):
+    """Get all Fitbit configurations for a specific project"""
+    # Get the fitbit alerts config sheet
+    fitbit_config_sheet = spreadsheet.get_sheet("fitbit_alerts_config", "fitbit_alerts_config")
+    
+    # Convert to DataFrame for easier filtering
+    config_df = fitbit_config_sheet.to_dataframe(engine="polars")
+    
+    # If empty, return empty DataFrame
+    if config_df.is_empty():
+        return pl.DataFrame()
+    
+    # If Admin, return all configs, otherwise filter by project
+    if user_project == 'Admin':
+        return config_df
+    else:
+        # Filter by project
+        return config_df.filter(pl.col('project') == user_project)
 
+def get_project_qualtrics_configs(spreadsheet:Spreadsheet, user_project):
+    """Get all Qualtrics configurations for a specific project"""
+    # Get the qualtrics alerts config sheet
+    qualtrics_config_sheet = spreadsheet.get_sheet("qualtrics_alerts_config", "qualtrics_alerts_config")
+    
+    # Convert to DataFrame for easier filtering
+    config_df = qualtrics_config_sheet.to_dataframe(engine="polars")
+    
+    # If empty, return empty DataFrame
+    if config_df.is_empty():
+        return pl.DataFrame()
+    
+    # If Admin, return all configs, otherwise filter by project
+    if user_project == 'Admin':
+        return config_df
+    else:
+        # Filter by project
+        return config_df.filter(pl.col('project') == user_project)
+
+def display_fitbit_configs(configs_df):
+    """Display a visualization of Fitbit alert configurations"""
+    if configs_df.is_empty():
+        st.info("No existing Fitbit alert configurations for this project.")
+        return
+    
+    st.subheader("Current Fitbit Alert Configurations")
+    
+    # Create an expandable section for the configuration table
+    with st.expander("View all configurations", expanded=True):
+        # Create tabs for different views of the configuration
+        tab_summary, tab_details = st.tabs(["Summary", "Detailed View"])
+        
+        with tab_summary:
+            # Create a summary table with key information
+            summary_cols = ['project', 'email', 'watch', 'batteryThr', 'endDate']
+            if all(col in configs_df.columns for col in summary_cols):
+                summary_df = configs_df.select(summary_cols)
+                st.dataframe(summary_df, use_container_width=True)
+            else:
+                st.warning("Configuration data is missing expected columns")
+        
+        with tab_details:
+            # Show the full configuration details
+            st.dataframe(configs_df, use_container_width=True)
+    
+    # Add some visual charts if there are enough configurations
+    if len(configs_df) > 1:
+        st.subheader("Configuration Analysis")
+        
+        # Chart 1: Battery thresholds
+        if 'batteryThr' in configs_df.columns:
+            try:
+                st.caption("Battery Level Thresholds")
+                battery_data = configs_df.select(['email', 'batteryThr']).to_pandas()
+                
+                import plotly.express as px
+                fig = px.bar(battery_data, x='email', y='batteryThr', 
+                             labels={'batteryThr': 'Battery Threshold (%)', 'email': 'Recipient Email'},
+                             title="Battery Alert Thresholds by Recipient")
+                st.plotly_chart(fig, use_container_width=True)
+            except Exception as e:
+                st.error(f"Error creating battery threshold chart: {e}")
+
+def display_qualtrics_configs(configs_df):
+    """Display a visualization of Qualtrics alert configurations"""
+    if configs_df.is_empty():
+        st.info("No existing Qualtrics alert configurations for this project.")
+        return
+    
+    st.subheader("Current Qualtrics Alert Configurations")
+    
+    # Display the configuration table
+    st.dataframe(configs_df, use_container_width=True)
+    
+    # Add a visualization if there are multiple configurations
+    if len(configs_df) > 1 and 'hoursThr' in configs_df.columns:
+        try:
+            hours_data = configs_df.select(['manager', 'hoursThr']).to_pandas()
+            
+            import plotly.express as px
+            fig = px.bar(hours_data, x='manager', y='hoursThr',
+                         labels={'hoursThr': 'Hours Threshold', 'manager': 'Manager'},
+                         title="Response Time Thresholds by Manager")
+            st.plotly_chart(fig, use_container_width=True)
+        except Exception as e:
+            st.error(f"Error creating hours threshold chart: {e}")
 
 def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_project) -> None:
     """Main function for the alerts configuration page"""
@@ -375,6 +479,13 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
     # Tab 1: Fitbit Alerts Configuration
     with tab1:
         st.header("Fitbit Alerts Configuration")
+        
+        # Add visualization of current configurations
+        fitbit_configs = get_project_fitbit_configs(spreadsheet, user_project)
+        display_fitbit_configs(fitbit_configs)
+        
+        st.markdown("---")
+        st.subheader("Create/Edit Configuration")
         
         # Get current configuration
         fitbit_config, watch_names = get_user_fitbit_config(spreadsheet, user_email, user_project)
@@ -471,6 +582,13 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
             
             
             st.header("Qualtrics Alerts Configuration")
+            
+            # Add visualization of current configurations
+            qualtrics_configs = get_project_qualtrics_configs(spreadsheet, user_project)
+            display_qualtrics_configs(qualtrics_configs)
+            
+            st.markdown("---")
+            st.subheader("Create/Edit Configuration")
             
             # Get current configuration
             qualtrics_config = get_user_qualtrics_config(spreadsheet, user_email)
