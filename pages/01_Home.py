@@ -29,7 +29,7 @@ if is_logged_in:
         st.write(f"Logged in as: {user_email}")
         # st.write(f"Role: {user_role.split(',')[1]}")
         if user_role != 'Guest':
-            user_role = user_role.split(',')[1]
+            user_role = user_role.split(',')[1].strip()
         st.write(f"Role: {user_role}")
         if user_role not in ['Admin', 'Manager']:
             st.warning("You don't have permission to access this page.")
