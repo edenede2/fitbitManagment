@@ -289,12 +289,17 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
     if st.session_state.selected_watch:
         st.write(f"Selected watch: {selected_watch}")
 
-        watch_details = cached_get_watch_details(st.session_state.selected_watch)
-        if isinstance(watch_details.get('isActive'), str):
+        if "watch_details" not in st.session_state:
+            st.session_state.watch_details = {}
+
+        if st.session_state.selected_watch not in st.session_state.watch_details:
+            st.session_state.watch_details[st.session_state.selected_watch] = cached_get_watch_details(st.session_state.selected_watch)
+        # watch_details = cached_get_watch_details(st.session_state.selected_watch)
+        if isinstance(st.session_state.watch_details[st.session_state.selected_watch].get('isActive'), str):
             # Convert string to boolean
-            is_active = True if (watch_details.get('isActive') == 'TRUE') else False
+            is_active = True if (st.session_state.watch_details[st.session_state.selected_watch].get('isActive') == 'TRUE') else False
         else:
-            is_active = watch_details.get('isActive', False)
+            is_active = st.session_state.watch_details[st.session_state.selected_watch].get('isActive', False)
         active_status = "🟢 Active" if is_active else "🔴 Inactive"
         st.info(f"Watch Status: {active_status}")
         
@@ -491,12 +496,17 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
             
             # Get and display watch details
             with st.spinner("Loading watch details..."):
-                watch_details = cached_get_watch_details(st.session_state.selected_watch)
+                if 'watch_details' not in st.session_state:
+                    st.session_state.watch_details = {}
+                if st.session_state.selected_watch not in st.session_state.watch_details:
+                    st.session_state.watch_details[st.session_state.selected_watch] = cached_get_watch_details(st.session_state.selected_watch)
+                # Fetch watch details from cache
+                # watch_details = cached_get_watch_details(st.session_state.selected_watch)
                 
                 # Create Watch object and update with latest information from API only when refresh is clicked
-                if watch_details:
+                if st.session_state.watch_details[st.session_state.selected_watch]:
                     try:
-                        watch = WatchFactory.create_from_details(watch_details)
+                        watch = WatchFactory.create_from_details(st.session_state.watch_details[st.session_state.selected_watch])
                         
                         # Only make API calls when refresh button is clicked
                         if refresh_device:
@@ -505,35 +515,35 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                                 watch.update_device_info(force_fetch=True)
                                 
                                 # Update watch_details with fresh data from the API
-                                watch_details['lastBatteryLevel'] = watch.battery_level
-                                watch_details['lastSynced'] = watch.last_sync_time.isoformat() if watch.last_sync_time else ""
-                                watch_details['lastHeartRate'] = watch.get_current_hourly_HR(force_fetch=True) or ""
-                                watch_details['lastSteps'] = watch.get_current_hourly_steps(force_fetch=True) or ""
+                                st.session_state.watch_details[st.session_state.selected_watch]['lastBatteryLevel'] = watch.battery_level
+                                st.session_state.watch_details[st.session_state.selected_watch]['lastSynced'] = watch.last_sync_time.isoformat() if watch.last_sync_time else ""
+                                st.session_state.watch_details[st.session_state.selected_watch]['lastHeartRate'] = watch.get_current_hourly_HR(force_fetch=True) or ""
+                                st.session_state.watch_details[st.session_state.selected_watch]['lastSteps'] = watch.get_current_hourly_steps(force_fetch=True) or ""
                                 sleep_start, sleep_end = watch.get_last_sleep_start_end(force_fetch=True)
-                                watch_details['lastSleepStart'] = sleep_start or ""
-                                watch_details['lastSleepEnd'] = sleep_end or ""
-                                watch_details['lastSleepDuration'] = watch.get_last_sleep_duration(force_fetch=True) or ""
+                                st.session_state.watch_details[st.session_state.selected_watch]['lastSleepStart'] = sleep_start or ""
+                                st.session_state.watch_details[st.session_state.selected_watch]['lastSleepEnd'] = sleep_end or ""
+                                st.session_state.watch_details[st.session_state.selected_watch]['lastSleepDuration'] = watch.get_last_sleep_duration(force_fetch=True) or ""
                                 
                                 st.success("✅ Device data refreshed successfully!")
                         else:
                             # Use existing data from watch_details without making API calls
                             # If some values are missing in watch_details, initialize them without API calls
-                            if 'lastBatteryLevel' not in watch_details:
-                                watch_details['lastBatteryLevel'] = watch.battery_level
-                            if 'lastSynced' not in watch_details and watch.last_sync_time:
-                                watch_details['lastSynced'] = watch.last_sync_time.isoformat()
+                            if 'lastBatteryLevel' not in st.session_state.watch_details[st.session_state.selected_watch]:
+                                st.session_state.watch_details[st.session_state.selected_watch]['lastBatteryLevel'] = watch.battery_level
+                            if 'lastSynced' not in st.session_state.watch_details[st.session_state.selected_watch] and watch.last_sync_time:
+                                st.session_state.watch_details[st.session_state.selected_watch]['lastSynced'] = watch.last_sync_time.isoformat()
                             
                             # These will use cached values without making API calls
-                            if 'lastHeartRate' not in watch_details:
-                                watch_details['lastHeartRate'] = ""
-                            if 'lastSteps' not in watch_details:
-                                watch_details['lastSteps'] = ""
-                            if 'lastSleepStart' not in watch_details:
-                                watch_details['lastSleepStart'] = ""
-                            if 'lastSleepEnd' not in watch_details:
-                                watch_details['lastSleepEnd'] = ""
-                            if 'lastSleepDuration' not in watch_details:
-                                watch_details['lastSleepDuration'] = ""
+                            if 'lastHeartRate' not in st.session_state.watch_details[st.session_state.selected_watch]:
+                                st.session_state.watch_details[st.session_state.selected_watch]['lastHeartRate'] = ""
+                            if 'lastSteps' not in st.session_state.watch_details[st.session_state.selected_watch]:
+                                st.session_state.watch_details[st.session_state.selected_watch]['lastSteps'] = ""
+                            if 'lastSleepStart' not in st.session_state.watch_details[st.session_state.selected_watch]:
+                                st.session_state.watch_details[st.session_state.selected_watch]['lastSleepStart'] = ""
+                            if 'lastSleepEnd' not in st.session_state.watch_details[st.session_state.selected_watch]:
+                                st.session_state.watch_details[st.session_state.selected_watch]['lastSleepEnd'] = ""
+                            if 'lastSleepDuration' not in st.session_state.watch_details[st.session_state.selected_watch]:
+                                st.session_state.watch_details[st.session_state.selected_watch]['lastSleepDuration'] = ""
                     except Exception as e:
                         st.error(f"Error with watch data: {e}")
                 
@@ -542,18 +552,18 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                 else:
                     st.info("Using cached data. Click 'Refresh Device Data' for real-time information.")
                 
-                if watch_details:
+                if st.session_state.watch_details[st.session_state.selected_watch]:
                     # Display in a nice format with expanders
                     col1, col2 = st.columns(2)
                     
                     with col1:
                         st.markdown("### 📋 Basic Information")
-                        st.info(f"**Name:** {watch_details.get('name', '')}")
-                        st.info(f"**Project:** {watch_details.get('project', '')}")
+                        st.info(f"**Name:** {st.session_state.watch_details[st.session_state.selected_watch].get('name', '')}")
+                        st.info(f"**Project:** {st.session_state.watch_details[st.session_state.selected_watch].get('project', '')}")
                         st.info(f"**Status:** {active_status}")  # Added isActive status display
                         
                         # Battery level with gauge chart
-                        battery_level = watch_details.get('lastBatteryLevel', '0')
+                        battery_level = st.session_state.watch_details[st.session_state.selected_watch].get('lastBatteryLevel', '0')
                         try:
                             battery_level = int(battery_level)
                         except:
@@ -587,31 +597,31 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                     
                     with col2:
                         st.markdown("### 📊 Latest Metrics")
-                        st.info(f"**Last Synced:** {watch_details.get('lastSynced', '')}")
-                        st.info(f"**Heart Rate:** {watch_details.get('lastHeartRate', '')} bpm")
-                        st.info(f"**Steps:** {watch_details.get('lastSteps', '')}")
+                        st.info(f"**Last Synced:** {st.session_state.watch_details[st.session_state.selected_watch].get('lastSynced', '')}")
+                        st.info(f"**Heart Rate:** {st.session_state.watch_details[st.session_state.selected_watch].get('lastHeartRate', '')} bpm")
+                        st.info(f"**Steps:** {st.session_state.watch_details[st.session_state.selected_watch].get('lastSteps', '')}")
                         
                         st.markdown("### 💤 Sleep Information")
-                        st.info(f"**Last Sleep Start:** {watch_details.get('lastSleepStart', '')}")
-                        st.info(f"**Last Sleep End:** {watch_details.get('lastSleepEnd', '')}")
-                        st.info(f"**Sleep Duration:** {watch_details.get('lastSleepDuration', '')} hours")
+                        st.info(f"**Last Sleep Start:** {st.session_state.watch_details[st.session_state.selected_watch].get('lastSleepStart', '')}")
+                        st.info(f"**Last Sleep End:** {st.session_state.watch_details[st.session_state.selected_watch].get('lastSleepEnd', '')}")
+                        st.info(f"**Sleep Duration:** {st.session_state.watch_details[st.session_state.selected_watch].get('lastSleepDuration', '')} hours")
                     
                     # Status warnings section - removed the "all systems normal" success message
                     st.markdown("### ⚠️ Device Status")
                     
                     # Check battery level
-                    if watch_details.get('lastBatteryLevel'):
+                    if st.session_state.watch_details[st.session_state.selected_watch].get('lastBatteryLevel'):
                         try:
-                            battery_level = int(watch_details.get('lastBatteryLevel', 0))
+                            battery_level = int(st.session_state.watch_details[st.session_state.selected_watch].get('lastBatteryLevel', 0))
                             if battery_level < 20:
                                 st.warning(f"🔋 Battery level is low ({battery_level}%). Please charge the device.")
                         except:
                             pass
                     
                     # Calculate time since last sync
-                    if watch_details.get('lastSynced'):
+                    if st.session_state.watch_details[st.session_state.selected_watch].get('lastSynced'):
                         try:
-                            last_sync = pd.to_datetime(watch_details.get('lastSynced'))
+                            last_sync = pd.to_datetime(st.session_state.watch_details[st.session_state.selected_watch].get('lastSynced'))
                             time_since_sync = datetime.datetime.now() - last_sync
                             
                             if time_since_sync.total_seconds() > 86400:  # More than 24 hours
