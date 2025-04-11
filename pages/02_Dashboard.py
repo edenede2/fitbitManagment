@@ -25,9 +25,10 @@ if user_role == 'Guest':
     st.stop()
 
 # Get data from session state
-user_email = st.session_state.user_email
-
-user_project = st.session_state.get('user_project', 'None')
+user_email = st.experimental_user.email
+user_project = st.secrets.get(user_email.split('@')[0], 'None')
+if 'spreadsheet' not in st.session_state:
+    st.session_state.spreadsheet = auth_controller.get_spreadsheet()
 spreadsheet = st.session_state.get('spreadsheet', None)
 
 st.write(st.experimental_user)
