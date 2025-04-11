@@ -40,7 +40,6 @@ if is_logged_in:
             st.session_state.spreadsheet = auth_controller.get_spreadsheet()
         spreadsheet = st.session_state.get('spreadsheet', None)
 
-        st.write(st.experimental_user)
         # Display the dashboard
         display_dashboard(user_email, user_role, user_project, spreadsheet)
     else:
