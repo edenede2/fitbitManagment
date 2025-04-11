@@ -287,8 +287,10 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
         st.session_state.selected_watch = selected_watch
     
     # Display active status for the selected watch
-    if selected_watch:
-        watch_details = cached_get_watch_details(selected_watch)
+    if st.session_state.selected_watch:
+        st.write(f"Selected watch: {selected_watch}")
+
+        watch_details = cached_get_watch_details(st.session_state.selected_watch)
         if isinstance(watch_details.get('isActive'), str):
             # Convert string to boolean
             is_active = True if (watch_details.get('isActive') == 'TRUE') else False
@@ -301,7 +303,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
         tab1, tab2 = st.tabs(["📊 Signal Data", "📱 Device Details"])
         
         with tab1:
-            st.subheader(f"Signal Data for {selected_watch}")
+            st.subheader(f"Signal Data for {st.session_state.selected_watch}")
             
             # Date range selector with better defaults
             col1, col2 = st.columns(2)
@@ -352,7 +354,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
             with st.expander("Debug Info", expanded=False):
                 st.write("Button state:", st.session_state.load_data_button)
                 st.write("Loading complete:", st.session_state.loading_complete)
-                st.write("Selected watch:", selected_watch)
+                st.write("Selected watch:", st.session_state.selected_watch)
                 st.write("Selected signal:", signal_column)
             
             # Process data when button is clicked but loading is not complete
@@ -382,11 +384,11 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                         st.text(f"Processing {date_str} ({i+1}/{len(date_range)})")
                         
                         # Unique key for this date's data
-                        day_data_key = f"{selected_watch}_{signal_column}_{date_str}"
+                        day_data_key = f"{st.session_state.selected_watch}_{signal_column}_{date_str}"
                         
                         # Fetch data
                         day_data = fetch_watch_data(
-                            selected_watch, 
+                            st.session_state.selected_watch, 
                             signal_column, 
                             single_date,
                             single_date,
@@ -403,7 +405,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                     # Store combined data
                     if not all_data.empty:
                         st.session_state.current_data = all_data
-                        st.session_state.loaded_watch = selected_watch
+                        st.session_state.loaded_watch = st.session_state.selected_watch
                         st.session_state.loaded_signal = signal_column
                     else:
                         st.warning("No data found for the selected date range.")
@@ -428,7 +430,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                     st.session_state.loaded_watch = None
                     st.session_state.loaded_signal = None
                     st.session_state.load_data_button = False
-                elif st.session_state.loaded_watch != selected_watch:
+                elif st.session_state.loaded_watch != st.session_state.selected_watch:
                     st.warning("Data loaded for a different watch. Please select the correct watch and run again.")
                     st.session_state.loading_complete = False
                     st.session_state.loaded_dates = []
@@ -437,12 +439,12 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                     st.session_state.loaded_signal = None
                     st.session_state.load_data_button = False
 
-            elif st.session_state.loading_complete and st.session_state.loaded_watch == selected_watch:
+            elif st.session_state.loading_complete and st.session_state.loaded_watch == st.session_state.selected_watch:
                 st.success(f"Data loaded successfully for {len(st.session_state.loaded_dates)} dates")
                 
                 # Display data for each date in expanders
                 for date_str in st.session_state.loaded_dates:
-                    day_data_key = f"{selected_watch}_{signal_column}_{date_str}"
+                    day_data_key = f"{st.session_state.selected_watch}_{signal_column}_{date_str}"
                     
                     if day_data_key in st.session_state:
                         with st.expander(f"Data for {date_str}", expanded=False):
@@ -483,14 +485,14 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                     st.rerun()
         
         with tab2:
-            st.subheader(f"Device Details: {selected_watch}")
+            st.subheader(f"Device Details: {st.session_state.selected_watch}")
             
             # Add a refresh button to explicitly fetch fresh data
             refresh_device = st.button("🔄 Refresh Device Data")
             
             # Get and display watch details
             with st.spinner("Loading watch details..."):
-                watch_details = cached_get_watch_details(selected_watch)
+                watch_details = cached_get_watch_details(st.session_state.selected_watch)
                 
                 # Create Watch object and update with latest information from API only when refresh is clicked
                 if watch_details:
@@ -636,7 +638,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                                     sheets_manager = st.session_state.async_sheets_manager
                                 
                                 # Get or initialize the watch's chat messages in session state
-                                watch_chat_key = f"chat_{selected_watch}"
+                                watch_chat_key = f"chat_{st.session_state.selected_watch}"
                                 if watch_chat_key not in st.session_state:
                                     # Try to fetch existing messages for this watch
                                     try:
@@ -647,7 +649,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                                             st.session_state[watch_chat_key] = []
                                         else:
                                             # Filter to get only messages for this watch
-                                            watch_df = student_df.filter(pl.col("watchName") == selected_watch)
+                                            watch_df = student_df.filter(pl.col("watchName") == st.session_state.selected_watch)
                                             st.session_state[watch_chat_key] = watch_df.to_dicts() if not watch_df.is_empty() else []
                                     except Exception as e:
                                         # If there's an error, start with an empty chat
@@ -682,7 +684,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                                                 st.divider()
                                 
                                 # Use a form for message input to better control submission
-                                with st.form(key=f"chat_form_{selected_watch}", clear_on_submit=True):
+                                with st.form(key=f"chat_form_{st.session_state.selected_watch}", clear_on_submit=True):
                                     new_message = st.text_area("Type your message", key="message_text", height=100)
                                     submit_button = st.form_submit_button("Send Message")
                                     
@@ -696,7 +698,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                                             "user": user_email,
                                             "content": new_message.strip(),
                                             "datetime": dt_string,
-                                            "watchName": selected_watch
+                                            "watchName": st.session_state.selected_watch
                                         }
                                         
                                         try:
