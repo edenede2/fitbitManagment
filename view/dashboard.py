@@ -248,7 +248,9 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
             watch_in_sheet = row["name"]
             watch_project = row["project"]
             if user_project != watch_project:
-                continue
+                if user_role != "Admin":
+                    continue
+                
                     
             if watch_in_sheet:
                 dict_details_by_name[watch_in_sheet] = row
