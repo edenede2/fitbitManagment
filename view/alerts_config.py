@@ -166,7 +166,22 @@ def save_fitbit_config(spreadsheet:Spreadsheet, config_data):
         current_config_df = current_config_df.rename({"battaryThr": "batteryThr"})
     elif "batteryThr" in current_config_df.columns and "battaryThr" in new_config_df.columns:
         new_config_df = new_config_df.rename({"battaryThr": "batteryThr"})
-        
+    
+    # Ensure numeric columns are consistent types by converting to strings
+    numeric_cols = ['currentSyncThr', 'totalSyncThr', 'currentHrThr', 'totalHrThr', 
+                   'currentSleepThr', 'totalSleepThr', 'currentStepsThr', 'totalStepsThr', 
+                   'batteryThr']
+    
+    # Convert numeric columns to string in both dataframes to ensure compatibility
+    if not current_config_df.is_empty():
+        for col in numeric_cols:
+            if col in current_config_df.columns:
+                current_config_df = current_config_df.with_columns(pl.col(col).cast(pl.Utf8))
+    
+    for col in numeric_cols:
+        if col in new_config_df.columns:
+            new_config_df = new_config_df.with_columns(pl.col(col).cast(pl.Utf8))
+            
     if should_append:
         # Just append the new config
         if not current_config_df.is_empty():
