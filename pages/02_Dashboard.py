@@ -26,8 +26,10 @@ if user_role == 'Guest':
 
 # Get data from session state
 user_email = st.session_state.user_email
+
 user_project = st.session_state.get('user_project', 'None')
 spreadsheet = st.session_state.get('spreadsheet', None)
 
+st.write(st.experimental_user)
 # Display the dashboard
 display_dashboard(user_email, user_role, user_project, spreadsheet)
