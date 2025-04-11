@@ -443,7 +443,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                     st.session_state.loaded_signal = None
                     st.session_state.load_data_button = False
 
-            elif st.session_state.loading_complete and st.session_state.loaded_watch == st.session_state.selected_watch:
+            elif st.session_state.load_data_button and st.session_state.loading_complete and st.session_state.loaded_watch == st.session_state.selected_watch:
                 st.success(f"Data loaded successfully for {len(st.session_state.loaded_dates)} dates")
                 
                 # Display data for each date in expanders
