@@ -257,7 +257,7 @@ def analyze_whatsapp_messages():
         print(traceback.format_exc())
         return False
     
-def get_watch_details() -> pl.DataFrame:
+def get_watch_details(spreadsheet:Spreadsheet) -> pl.DataFrame:
     """
     Fetches watch details from the spreadsheet and returns them as a Polars DataFrame.
     Only returns active watches.
@@ -266,16 +266,16 @@ def get_watch_details() -> pl.DataFrame:
         pl.DataFrame: A DataFrame containing active watch details.
     """
     # Load environment variables for API key
-    load_dotenv()
+    # load_dotenv()
     
-    # Get spreadsheet key from environment
-    spreadsheet_key = os.getenv("SPREADSHEET_KEY")
-    if not spreadsheet_key:
-        raise ValueError("SPREADSHEET_KEY not found in environment variables")
+    # # Get spreadsheet key from environment
+    # spreadsheet_key = os.getenv("SPREADSHEET_KEY")
+    # if not spreadsheet_key:
+    #     raise ValueError("SPREADSHEET_KEY not found in environment variables")
     
     # Create new Spreadsheet instance directly
-    spreadsheet = Spreadsheet(name="FitbitData", api_key=spreadsheet_key)
-    GoogleSheetsAdapter.connect(spreadsheet)
+    # spreadsheet = Spreadsheet(name="FitbitData", api_key=spreadsheet_key)
+    # GoogleSheetsAdapter.connect(spreadsheet)
     
     # Get the fitbit sheet
     fitbit_sheet = spreadsheet.get_sheet("fitbit", sheet_type="fitbit")
@@ -290,6 +290,7 @@ def get_watch_details() -> pl.DataFrame:
         # Ensure both name and project columns exist and use consistent names
         print(f"DataFrame columns before: {df.columns.tolist()}")
     
+
     active_watches = df[df['isActive'].str.upper() != 'FALSE'].copy() if 'isActive' in df.columns else df
     
     # Log the result for debugging
@@ -459,7 +460,7 @@ def is_end_date_passed(end_date_str):
     print(f"Warning: Could not parse end date '{end_date_str}'")
     return False
 
-def get_student_email_for_watch(fitbit_data, watch_name):
+def get_student_email_for_watch(users:pl.DataFrame, fitbit_data, watch_name):
     """
     Get student email for a specific watch if available.
     
@@ -484,15 +485,16 @@ def get_student_email_for_watch(fitbit_data, watch_name):
         return None
     
     # Get the student email from the first match
-    student_email = matching_watches.select('currentStudent').row(0)[0]
+    student_name = matching_watches.select('currentStudent').row(0)[0]
     
+    student_email = users.filter(pl.col('name') == student_name).select('email').item()
     # Only return if there's an actual value
-    if student_email and str(student_email).strip():
+    if student_name and str(student_name).strip():
         return str(student_email).strip()
     
     return None
 
-def check_fitbit_alerts(log_data, config_data, fitbit_data=None):
+def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_data=None):
     """
     Check Fitbit data against alert thresholds and send email alerts.
     Only processes the most recent log entry for each watch.
@@ -649,7 +651,8 @@ def check_fitbit_alerts(log_data, config_data, fitbit_data=None):
                 # Add student email if available
                 student_email = None
                 if fitbit_data is not None:
-                    student_email = get_student_email_for_watch(fitbit_data, watch_name)
+                    users = spreadsheet.get_sheet("user", sheet_type="user").to_dataframe(engine="polars")
+                    student_email = get_student_email_for_watch(fitbit_data, watch_name,users)
                     if student_email:
                         recipients.append(student_email)
                 
@@ -1035,7 +1038,7 @@ def hourly_data_collection():
         GoogleSheetsAdapter.connect(spreadsheet)
         
         # Step 1: Get watch data and previous status history
-        watch_data = get_watch_details()
+        watch_data = get_watch_details(spreadsheet)
         previous_status = get_watch_status_history()
         
         if not watch_data.is_empty():
@@ -1044,13 +1047,12 @@ def hourly_data_collection():
             
             # We need a unique identifier for each watch to track status
             # First check if 'id' column exists, otherwise use a combination of project and watchName
-            id_column = 'id' if 'id' in watch_data.columns else 'deviceId'
             
             # Map of watch ID to activity status
             for row in watch_data.iter_rows(named=True):
-                watch_id = str(row.get(id_column, ''))
-                if not watch_id and 'project' in watch_data.columns and 'name' in watch_data.columns:
-                    watch_id = f"{row.get('project', '')}-{row.get('name', '')}"
+                watch_id = f"{row.get('project', '')}-{row.get('name', '')}"
+                # if not watch_id and 'project' in watch_data.columns and 'name' in watch_data.columns:
+                #     watch_id = f"{row.get('project', '')}-{row.get('name', '')}"
                 
                 watch_name = row.get('name', row.get('watchName', ''))
                 is_active = str(row.get('isActive', '')).upper() != 'FALSE'
@@ -1079,7 +1081,7 @@ def hourly_data_collection():
             
             # Update log using ServerLogFile - passing inactive watches to reset their counters
             log_file = ServerLogFile()
-            result = log_file.update_fitbits_log(watch_data, reset_total_for_watches=newly_inactive_watches)
+            result = log_file.update_fitbits_log(spreadsheet,watch_data, reset_total_for_watches=newly_inactive_watches)
             
             # Save the current status for the next run
             save_watch_status_history(current_status)
@@ -1156,7 +1158,7 @@ def hourly_data_collection():
                         .alias('manager')
                     )
             
-            fitbit_alerts = check_fitbit_alerts(log_data, fitbit_config_data, fitbit_data)
+            fitbit_alerts = check_fitbit_alerts(spreadsheet, log_data, fitbit_config_data, fitbit_data)
             
             if fitbit_alerts:
                 print(f"Sent Fitbit alerts for {len(fitbit_alerts)} projects")

@@ -4,6 +4,7 @@ from enum import Enum
 import uuid
 from abc import ABC, abstractmethod
 import datetime
+# from entity.Sheet import GoogleSheetsAdapter, Spreadsheet
 
 class UserRole(Enum):
     """Enum for user roles"""
@@ -20,7 +21,7 @@ class Permission(Enum):
     MANAGE_USERS = "manage_users"
     MANAGE_WATCHES = "manage_watches"
     READ_ALL_PROJECTS = "read_all_projects"
-    ADMIN_ALL = "admin_all"
+
 
 # Observer pattern interfaces
 class Observer(ABC):
