@@ -106,13 +106,74 @@ def get_user_qualtrics_config(spreadsheet:Spreadsheet, user_email):
 
 def save_fitbit_config(spreadsheet:Spreadsheet, config_data):
     """Save Fitbit configuration for the current user"""
-
-    # config_df = pl.DataFrame(config_data)
-    spreadsheet.update_sheet("fitbit_alerts_config", config_data, strategy="append")
-    GoogleSheetsAdapter.save(spreadsheet, "fitbit_alerts_config")
-
     
-
+    # Get the current configuration sheet
+    fitbit_config_sheet = spreadsheet.get_sheet("fitbit_alerts_config", "fitbit_alerts_config")
+    current_config_df = fitbit_config_sheet.to_dataframe(engine="polars")
+    
+    # Define the checks based on the specified criteria
+    project = config_data.get('project', '')
+    email = config_data.get('email', '')
+    watch = config_data.get('watch', '')
+    manager = config_data.get('manager', '')
+    
+    # Initialize a flag to track if we need to append or replace
+    should_append = True
+    
+    if not current_config_df.is_empty():
+        # Case 1: If no email and no watch, check for rows with the same project
+        if not email and not watch and project:
+            existing_rows = current_config_df.filter(pl.col('project') == project)
+            if not existing_rows.is_empty():
+                # Replace the existing rows with the same project
+                current_config_df = current_config_df.filter(pl.col('project') != project)
+                should_append = False
+        
+        # Case 2: If email specified but no watch, check for rows with the same project and email
+        elif email and not watch and project:
+            existing_rows = current_config_df.filter(
+                (pl.col('project') == project) & (pl.col('email') == email)
+            )
+            if not existing_rows.is_empty():
+                # Replace the existing rows with the same project and email
+                current_config_df = current_config_df.filter(
+                    ~((pl.col('project') == project) & (pl.col('email') == email))
+                )
+                should_append = False
+        
+        # Case 3: If watch, email and project all specified, check for exact match
+        elif email and watch and project:
+            existing_rows = current_config_df.filter(
+                (pl.col('project') == project) & 
+                (pl.col('email') == email) & 
+                (pl.col('watch') == watch)
+            )
+            if not existing_rows.is_empty():
+                # Replace the existing rows with the same project, email, and watch
+                current_config_df = current_config_df.filter(
+                    ~((pl.col('project') == project) & 
+                      (pl.col('email') == email) & 
+                      (pl.col('watch') == watch))
+                )
+                should_append = False
+    
+    # Convert the config_data to a DataFrame
+    new_config_df = pl.DataFrame([config_data])
+    
+    # Append the new configuration or replace with updated configuration
+    if should_append:
+        # Just append the new config
+        if not current_config_df.is_empty():
+            updated_df = pl.concat([current_config_df, new_config_df])
+        else:
+            updated_df = new_config_df
+    else:
+        # Add the new config after filtering out the old one
+        updated_df = pl.concat([current_config_df, new_config_df])
+    
+    # Update the sheet with the new configuration
+    spreadsheet.update_sheet("fitbit_alerts_config", updated_df, strategy="replace")
+    GoogleSheetsAdapter.save(spreadsheet, "fitbit_alerts_config")
     
     return True
 
@@ -178,7 +239,7 @@ def get_fibro_users(spreadsheet:Spreadsheet):
     # Filter by project
     fibro_users_df = fibro_users_df.filter(pl.col('project') == 'fibro')
     fibro_users_df = fibro_users_df.with_columns(
-        pl.col("isActive").apply(
+        pl.col("isActive").map_elements(
             lambda x: x if isinstance(x, bool) else (True if str(x).lower() == "true" else False)
         )
     )
@@ -365,7 +426,7 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
 
             st.subheader("(OPTIONAL) Watch Name")
             st.write("Select the specific watch name for which you want to set the alerts config.")
-            watch_name = st.selectbox("Watch Name", options=watch_names, index=0)
+            watch_name = st.selectbox("Watch Name", options=["All the project."] + watch_names , index=0)
 
             st.subheader("End Date")
             st.write("This date will be used to stop the alerts.")
@@ -388,7 +449,7 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
                     'batteryThr': battery_thr,
                     'manager': user_email,
                     'email': recipient_email,
-                    'watch': watch_name,
+                    'watch': watch_name if watch_name != "All the project." else '',
                     'endDate': end_date.strftime("%Y-%m-%d")
                 }
                 
@@ -402,7 +463,7 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
     with tab2:
         if user_role == 'Admin':
             user_project = st.selectbox("Select Project", ["fibro", "nova"])
-            
+
         if user_project == 'fibro':
             appsheet_config(spreadsheet, user_email)
         elif user_project == 'nova':
