@@ -39,8 +39,15 @@ class AuthenticationController:
                     user_email = st.session_state.get('user_email', 'demo@example.com')
                 
                 # Display user role information
-                user_role = st.session_state.get('user_role', 'Unknown')
-                user_project = st.session_state.get('user_project', 'None')
+                user_role = st.secrets.get(user_email.split('@')[0], 'Guest')
+                if user_role != 'Guest':
+                    user_role = user_role.split(',')[1]
+                user_project = st.secrets.get(user_email.split('@')[0], 'None')
+                if user_project is not None:
+                    user_project = user_project.split(',')[0]
+                st.session_state.user_email = user_email
+                st.session_state.user_role = user_role
+                st.session_state.user_project = user_project
                 
                 st.write(f"Role: {user_role}")
                 st.write(f"Project: {user_project}")
