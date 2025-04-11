@@ -257,11 +257,13 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
     
     # Get available watches
     with st.spinner("Loading available watches..."):
-        available_watches = get_available_watches(user_email, user_role, user_project)
+        if 'available_watches' not in st.session_state:
+            st.session_state.available_watches = get_available_watches(user_email, user_role, user_project)
+        # available_watches = get_available_watches(user_email, user_role, user_project)
     
-    if available_watches.empty:
-        st.warning("No watches available for your role and project")
-        return
+        if st.session_state.available_watches.empty:
+            st.warning("No watches available for your role and project")
+            return
     
     # Log total dashboard load time only on initial load or if it's slow
     dashboard_load_time = time.time() - dashboard_start_time
@@ -271,7 +273,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
     # Display watch selector in the main page (not sidebar)
     st.subheader("Select Watch")
     
-    watch_names = sorted([str(x) for x in available_watches['name'].tolist()])
+    watch_names = sorted([str(x) for x in st.session_state.available_watches['name'].tolist()])
     
     # Initialize session state for selected watch if it doesn't exist
     if 'selected_watch' not in st.session_state:
