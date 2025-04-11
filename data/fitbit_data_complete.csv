@@ -239,6 +239,11 @@ nova001,true,nova
 nova002,true,nova
 nova003,true,nova
 nova004,true,nova
+fibro1,true,fibro
+nova001,true,nova
+nova002,true,nova
+nova003,true,nova
+nova004,true,nova
 fibro1,True,fibro
 nova001,TRUE,nova
 nova002,TRUE,nova

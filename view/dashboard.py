@@ -248,7 +248,11 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
             dict_details_by_name[watch_name] = row
         st.session_state.fitbit_watches = dict_details_by_name
     if "selected_watch" not in st.session_state:
-        st.session_state.selected_watch = st.session_state.fitbit_watches.keys()[0]
+        # Fix: dict_keys is not subscriptable, convert to list first or use next(iter())
+        if st.session_state.fitbit_watches:
+            st.session_state.selected_watch = next(iter(st.session_state.fitbit_watches.keys()))
+        else:
+            st.session_state.selected_watch = None
     st.title("Fitbit Watch Dashboard")
     st.markdown("---")
     
