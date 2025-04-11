@@ -18,7 +18,7 @@ from model.config import get_secrets
 from entity.AsyncSheetsManager import AsyncSheetsManager
 
 # Increase cache time to reduce API calls
-@st.cache_data(ttl=1800)  # Cache for 30 minutes instead of 5
+# @st.cache_data(ttl=1800)  # Cache for 30 minutes instead of 5
 def cached_get_watches(user_email, user_role, user_project):
     project_controller = ProjectController()
     if user_role == "Admin":
@@ -158,7 +158,6 @@ def fetch_watch_data(watch_name, signal_type, start_date, end_date, should_fetch
         return pd.DataFrame()
 
 # Add a cache decorator for watch details
-@st.cache_data(ttl=300)  # Cache for 5 minutes
 def cached_get_watch_details(watch_name):
     project_controller = ProjectController()
     return project_controller.get_watch_details(watch_name)
@@ -241,6 +240,13 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
     # Time the entire dashboard loading process
     dashboard_start_time = time.time()
     
+    if "fitbit_watches" not in st.session_state:
+        df = sp.get_sheet("fitbit", sheet_type="fitbit").to_dataframe("polars")
+        dict_details_by_name = {}
+        for row in df.iter_rows(named=True):
+            watch_name = row["name"]
+            dict_details_by_name[watch_name] = row
+        st.session_state.fitbit_watches = dict_details_by_name
     st.title("Fitbit Watch Dashboard")
     st.markdown("---")
     
@@ -257,11 +263,12 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
     
     # Get available watches
     with st.spinner("Loading available watches..."):
-        available_watches = get_available_watches(user_email, user_role, user_project)
+        if 'available_watches' not in st.session_state:
+            st.session_state.available_watches = st.session_state.fitbit_watches.keys()
     
-    if available_watches.empty:
-        st.warning("No watches available for your role and project")
-        return
+        if len(st.session_state.available_watches) <= 0:
+            st.warning("No watches available for your role and project")
+            return
     
     # Log total dashboard load time only on initial load or if it's slow
     dashboard_load_time = time.time() - dashboard_start_time
@@ -271,7 +278,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
     # Display watch selector in the main page (not sidebar)
     st.subheader("Select Watch")
     
-    watch_names = sorted([str(x) for x in available_watches['name'].tolist()])
+    watch_names = sorted([str(x) for x in st.session_state.available_watches['name'].tolist()])
     
     # Initialize session state for selected watch if it doesn't exist
     if 'selected_watch' not in st.session_state:
@@ -285,13 +292,20 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
         st.session_state.selected_watch = selected_watch
     
     # Display active status for the selected watch
-    if selected_watch:
-        watch_details = cached_get_watch_details(selected_watch)
-        if isinstance(watch_details.get('isActive'), str):
+    if st.session_state.selected_watch:
+        st.write(f"Selected watch: {selected_watch}")
+
+        if "watch_details" not in st.session_state:
+            st.session_state.watch_details = {}
+
+        if st.session_state.selected_watch not in st.session_state.watch_details:
+            st.session_state.watch_details[st.session_state.selected_watch] = st.session_state.fitbit_watches[st.session_state.selected_watch]
+        
+        if isinstance(st.session_state.watch_details[st.session_state.selected_watch].get('isActive'), str):
             # Convert string to boolean
-            is_active = True if (watch_details.get('isActive') == 'TRUE') else False
+            is_active = True if (st.session_state.watch_details[st.session_state.selected_watch].get('isActive') == 'TRUE') else False
         else:
-            is_active = watch_details.get('isActive', False)
+            is_active = st.session_state.watch_details[st.session_state.selected_watch].get('isActive', False)
         active_status = "🟢 Active" if is_active else "🔴 Inactive"
         st.info(f"Watch Status: {active_status}")
         
@@ -299,7 +313,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
         tab1, tab2 = st.tabs(["📊 Signal Data", "📱 Device Details"])
         
         with tab1:
-            st.subheader(f"Signal Data for {selected_watch}")
+            st.subheader(f"Signal Data for {st.session_state.selected_watch}")
             
             # Date range selector with better defaults
             col1, col2 = st.columns(2)
@@ -318,9 +332,21 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                     max_value=datetime.datetime.now()
                 )
             
+            # Track previous selections to detect changes
+            if 'prev_watch' not in st.session_state:
+                st.session_state.prev_watch = st.session_state.selected_watch
+            if 'prev_start_date' not in st.session_state:
+                st.session_state.prev_start_date = start_date
+            if 'prev_end_date' not in st.session_state:
+                st.session_state.prev_end_date = end_date
+            
             # Signal selector
             signal_options = ["Heart Rate", "Steps", "Sleep"]
             selected_signal = st.selectbox("Select Signal Type", signal_options)
+            
+            # Track previous signal selection
+            if 'prev_signal' not in st.session_state:
+                st.session_state.prev_signal = selected_signal
             
             # Map selected signal to data column
             signal_map = {
@@ -338,7 +364,36 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                 st.session_state.loading_complete = False
             if "loaded_dates" not in st.session_state:
                 st.session_state.loaded_dates = []
+            
+            # Check for changes in selection that should reset the load button state
+            selection_changed = (st.session_state.prev_watch != st.session_state.selected_watch or 
+                                st.session_state.prev_start_date != start_date or 
+                                st.session_state.prev_end_date != end_date or
+                                st.session_state.prev_signal != selected_signal)
+            
+            if selection_changed:
+                if st.session_state.load_data_button:
+                    st.session_state.load_data_button = False
+                    st.session_state.loading_complete = False
+                    st.session_state.loaded_dates = []
+                    st.session_state.current_data = None
+                    st.session_state.loaded_watch = None
+                    st.session_state.loaded_signal = None
                 
+                # Update previous selections
+                st.session_state.prev_watch = st.session_state.selected_watch
+                st.session_state.prev_start_date = start_date
+                st.session_state.prev_end_date = end_date
+                st.session_state.prev_signal = selected_signal
+            
+            # Show debugging info in an expander
+            with st.expander("Debug Info", expanded=False):
+                st.write("Button state:", st.session_state.load_data_button)
+                st.write("Loading complete:", st.session_state.loading_complete)
+                st.write("Selected watch:", st.session_state.selected_watch)
+                st.write("Selected signal:", signal_column)
+                st.write("Selection changed:", selection_changed)
+            
             # Create a button that triggers loading
             load_button_clicked = st.button("Load Data")
             
@@ -346,13 +401,6 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
             if load_button_clicked:
                 st.session_state.load_data_button = True
                 
-            # Show debugging info in an expander
-            with st.expander("Debug Info", expanded=False):
-                st.write("Button state:", st.session_state.load_data_button)
-                st.write("Loading complete:", st.session_state.loading_complete)
-                st.write("Selected watch:", selected_watch)
-                st.write("Selected signal:", signal_column)
-            
             # Process data when button is clicked but loading is not complete
             if st.session_state.load_data_button and not st.session_state.loading_complete:
                 # Calculate date range
@@ -380,11 +428,11 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                         st.text(f"Processing {date_str} ({i+1}/{len(date_range)})")
                         
                         # Unique key for this date's data
-                        day_data_key = f"{selected_watch}_{signal_column}_{date_str}"
+                        day_data_key = f"{st.session_state.selected_watch}_{signal_column}_{date_str}"
                         
                         # Fetch data
                         day_data = fetch_watch_data(
-                            selected_watch, 
+                            st.session_state.selected_watch, 
                             signal_column, 
                             single_date,
                             single_date,
@@ -401,7 +449,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                     # Store combined data
                     if not all_data.empty:
                         st.session_state.current_data = all_data
-                        st.session_state.loaded_watch = selected_watch
+                        st.session_state.loaded_watch = st.session_state.selected_watch
                         st.session_state.loaded_signal = signal_column
                     else:
                         st.warning("No data found for the selected date range.")
@@ -426,7 +474,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                     st.session_state.loaded_watch = None
                     st.session_state.loaded_signal = None
                     st.session_state.load_data_button = False
-                elif st.session_state.loaded_watch != selected_watch:
+                elif st.session_state.loaded_watch != st.session_state.selected_watch:
                     st.warning("Data loaded for a different watch. Please select the correct watch and run again.")
                     st.session_state.loading_complete = False
                     st.session_state.loaded_dates = []
@@ -434,66 +482,68 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                     st.session_state.loaded_watch = None
                     st.session_state.loaded_signal = None
                     st.session_state.load_data_button = False
-
-            elif st.session_state.loading_complete and st.session_state.loaded_watch == selected_watch:
-                st.success(f"Data loaded successfully for {len(st.session_state.loaded_dates)} dates")
-                
-                # Display data for each date in expanders
-                for date_str in st.session_state.loaded_dates:
-                    day_data_key = f"{selected_watch}_{signal_column}_{date_str}"
+                else:
+                    st.success(f"Data loaded successfully for {len(st.session_state.loaded_dates)} dates")
                     
-                    if day_data_key in st.session_state:
-                        with st.expander(f"Data for {date_str}", expanded=False):
-                            if not st.session_state[day_data_key].empty:
-                                st.subheader(f"{selected_signal} for {date_str}")
-                                
-                                # Safe way to use spreadsheet
-                                try:
-                                    spreadsheet(st.session_state[day_data_key])
-                                except Exception as e:
-                                    st.error(f"Error with spreadsheet: {str(e)}")
-                                    st.dataframe(st.session_state[day_data_key])
-                                
-                                # Create visualization
-                                if signal_column == "HR":
-                                    fig = px.line(st.session_state[day_data_key], x='syncDate', y='HR',
-                                                title=f'Heart Rate for {date_str}')
-                                    st.plotly_chart(fig, use_container_width=True)
-                                elif signal_column == "steps":
-                                    fig = px.bar(st.session_state[day_data_key], x='syncDate', y='steps',
-                                                title=f'Steps for {date_str}')
-                                    st.plotly_chart(fig, use_container_width=True)
-                                elif signal_column == "sleep_duration":
-                                    fig = px.bar(st.session_state[day_data_key], x='syncDate', y='sleep_duration',
-                                                title=f'Sleep Duration for {date_str}')
-                                    st.plotly_chart(fig, use_container_width=True)
-                            else:
-                                st.info(f"No data for {date_str}")
-                
-                # Add a clear button to reset loading state
-                if st.button("Clear Data"):
-                    st.session_state.load_data_button = False
-                    st.session_state.loading_complete = False
-                    st.session_state.loaded_dates = []
-                    st.session_state.current_data = None
-                    st.session_state.loaded_watch = None
-                    st.session_state.loaded_signal = None
-                    st.rerun()
+                    # Display data for each date in expanders
+                    for date_str in st.session_state.loaded_dates:
+                        day_data_key = f"{st.session_state.selected_watch}_{signal_column}_{date_str}"
+                        
+                        if day_data_key in st.session_state:
+                            with st.expander(f"Data for {date_str}", expanded=False):
+                                if not st.session_state[day_data_key].empty:
+                                    st.subheader(f"{selected_signal} for {date_str}")
+                                    
+                                    # Safe way to use spreadsheet
+                                    try:
+                                        spreadsheet(st.session_state[day_data_key])
+                                    except Exception as e:
+                                        st.error(f"Error with spreadsheet: {str(e)}")
+                                        st.dataframe(st.session_state[day_data_key])
+                                    
+                                    # Create visualization
+                                    if signal_column == "HR":
+                                        fig = px.line(st.session_state[day_data_key], x='syncDate', y='HR',
+                                                    title=f'Heart Rate for {date_str}')
+                                        st.plotly_chart(fig, use_container_width=True)
+                                    elif signal_column == "steps":
+                                        fig = px.bar(st.session_state[day_data_key], x='syncDate', y='steps',
+                                                    title=f'Steps for {date_str}')
+                                        st.plotly_chart(fig, use_container_width=True)
+                                    elif signal_column == "sleep_duration":
+                                        fig = px.bar(st.session_state[day_data_key], x='syncDate', y='sleep_duration',
+                                                    title=f'Sleep Duration for {date_str}')
+                                        st.plotly_chart(fig, use_container_width=True)
+                                else:
+                                    st.info(f"No data for {date_str}")
+                    
+                    # Add a clear button to reset loading state
+                    if st.button("Clear Data"):
+                        st.session_state.load_data_button = False
+                        st.session_state.loading_complete = False
+                        st.session_state.loaded_dates = []
+                        st.session_state.current_data = None
+                        st.session_state.loaded_watch = None
+                        st.session_state.loaded_signal = None
+                        st.rerun()
         
         with tab2:
-            st.subheader(f"Device Details: {selected_watch}")
+            st.subheader(f"Device Details: {st.session_state.selected_watch}")
             
             # Add a refresh button to explicitly fetch fresh data
             refresh_device = st.button("🔄 Refresh Device Data")
             
             # Get and display watch details
             with st.spinner("Loading watch details..."):
-                watch_details = cached_get_watch_details(selected_watch)
+                if 'watch_details' not in st.session_state:
+                    st.session_state.watch_details = {}
+                if st.session_state.selected_watch not in st.session_state.watch_details:
+                    st.session_state.watch_details[st.session_state.selected_watch] = st.session_state.fitbit_watches[st.session_state.selected_watch]
                 
                 # Create Watch object and update with latest information from API only when refresh is clicked
-                if watch_details:
+                if st.session_state.watch_details[st.session_state.selected_watch]:
                     try:
-                        watch = WatchFactory.create_from_details(watch_details)
+                        watch = WatchFactory.create_from_details(st.session_state.watch_details[st.session_state.selected_watch])
                         
                         # Only make API calls when refresh button is clicked
                         if refresh_device:
@@ -502,35 +552,35 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                                 watch.update_device_info(force_fetch=True)
                                 
                                 # Update watch_details with fresh data from the API
-                                watch_details['lastBatteryLevel'] = watch.battery_level
-                                watch_details['lastSynced'] = watch.last_sync_time.isoformat() if watch.last_sync_time else ""
-                                watch_details['lastHeartRate'] = watch.get_current_hourly_HR(force_fetch=True) or ""
-                                watch_details['lastSteps'] = watch.get_current_hourly_steps(force_fetch=True) or ""
+                                st.session_state.watch_details[st.session_state.selected_watch]['lastBatteryLevel'] = watch.battery_level
+                                st.session_state.watch_details[st.session_state.selected_watch]['lastSynced'] = watch.last_sync_time.isoformat() if watch.last_sync_time else ""
+                                st.session_state.watch_details[st.session_state.selected_watch]['lastHeartRate'] = watch.get_current_hourly_HR(force_fetch=True) or ""
+                                st.session_state.watch_details[st.session_state.selected_watch]['lastSteps'] = watch.get_current_hourly_steps(force_fetch=True) or ""
                                 sleep_start, sleep_end = watch.get_last_sleep_start_end(force_fetch=True)
-                                watch_details['lastSleepStart'] = sleep_start or ""
-                                watch_details['lastSleepEnd'] = sleep_end or ""
-                                watch_details['lastSleepDuration'] = watch.get_last_sleep_duration(force_fetch=True) or ""
+                                st.session_state.watch_details[st.session_state.selected_watch]['lastSleepStart'] = sleep_start or ""
+                                st.session_state.watch_details[st.session_state.selected_watch]['lastSleepEnd'] = sleep_end or ""
+                                st.session_state.watch_details[st.session_state.selected_watch]['lastSleepDuration'] = watch.get_last_sleep_duration(force_fetch=True) or ""
                                 
                                 st.success("✅ Device data refreshed successfully!")
                         else:
                             # Use existing data from watch_details without making API calls
                             # If some values are missing in watch_details, initialize them without API calls
-                            if 'lastBatteryLevel' not in watch_details:
-                                watch_details['lastBatteryLevel'] = watch.battery_level
-                            if 'lastSynced' not in watch_details and watch.last_sync_time:
-                                watch_details['lastSynced'] = watch.last_sync_time.isoformat()
+                            if 'lastBatteryLevel' not in st.session_state.watch_details[st.session_state.selected_watch]:
+                                st.session_state.watch_details[st.session_state.selected_watch]['lastBatteryLevel'] = watch.battery_level
+                            if 'lastSynced' not in st.session_state.watch_details[st.session_state.selected_watch] and watch.last_sync_time:
+                                st.session_state.watch_details[st.session_state.selected_watch]['lastSynced'] = watch.last_sync_time.isoformat()
                             
                             # These will use cached values without making API calls
-                            if 'lastHeartRate' not in watch_details:
-                                watch_details['lastHeartRate'] = ""
-                            if 'lastSteps' not in watch_details:
-                                watch_details['lastSteps'] = ""
-                            if 'lastSleepStart' not in watch_details:
-                                watch_details['lastSleepStart'] = ""
-                            if 'lastSleepEnd' not in watch_details:
-                                watch_details['lastSleepEnd'] = ""
-                            if 'lastSleepDuration' not in watch_details:
-                                watch_details['lastSleepDuration'] = ""
+                            if 'lastHeartRate' not in st.session_state.watch_details[st.session_state.selected_watch]:
+                                st.session_state.watch_details[st.session_state.selected_watch]['lastHeartRate'] = ""
+                            if 'lastSteps' not in st.session_state.watch_details[st.session_state.selected_watch]:
+                                st.session_state.watch_details[st.session_state.selected_watch]['lastSteps'] = ""
+                            if 'lastSleepStart' not in st.session_state.watch_details[st.session_state.selected_watch]:
+                                st.session_state.watch_details[st.session_state.selected_watch]['lastSleepStart'] = ""
+                            if 'lastSleepEnd' not in st.session_state.watch_details[st.session_state.selected_watch]:
+                                st.session_state.watch_details[st.session_state.selected_watch]['lastSleepEnd'] = ""
+                            if 'lastSleepDuration' not in st.session_state.watch_details[st.session_state.selected_watch]:
+                                st.session_state.watch_details[st.session_state.selected_watch]['lastSleepDuration'] = ""
                     except Exception as e:
                         st.error(f"Error with watch data: {e}")
                 
@@ -539,18 +589,18 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                 else:
                     st.info("Using cached data. Click 'Refresh Device Data' for real-time information.")
                 
-                if watch_details:
+                if st.session_state.watch_details[st.session_state.selected_watch]:
                     # Display in a nice format with expanders
                     col1, col2 = st.columns(2)
                     
                     with col1:
                         st.markdown("### 📋 Basic Information")
-                        st.info(f"**Name:** {watch_details.get('name', '')}")
-                        st.info(f"**Project:** {watch_details.get('project', '')}")
+                        st.info(f"**Name:** {st.session_state.watch_details[st.session_state.selected_watch].get('name', '')}")
+                        st.info(f"**Project:** {st.session_state.watch_details[st.session_state.selected_watch].get('project', '')}")
                         st.info(f"**Status:** {active_status}")  # Added isActive status display
                         
                         # Battery level with gauge chart
-                        battery_level = watch_details.get('lastBatteryLevel', '0')
+                        battery_level = st.session_state.watch_details[st.session_state.selected_watch].get('lastBatteryLevel', '0')
                         try:
                             battery_level = int(battery_level)
                         except:
@@ -584,31 +634,31 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                     
                     with col2:
                         st.markdown("### 📊 Latest Metrics")
-                        st.info(f"**Last Synced:** {watch_details.get('lastSynced', '')}")
-                        st.info(f"**Heart Rate:** {watch_details.get('lastHeartRate', '')} bpm")
-                        st.info(f"**Steps:** {watch_details.get('lastSteps', '')}")
+                        st.info(f"**Last Synced:** {st.session_state.watch_details[st.session_state.selected_watch].get('lastSynced', '')}")
+                        st.info(f"**Heart Rate:** {st.session_state.watch_details[st.session_state.selected_watch].get('lastHeartRate', '')} bpm")
+                        st.info(f"**Steps:** {st.session_state.watch_details[st.session_state.selected_watch].get('lastSteps', '')}")
                         
                         st.markdown("### 💤 Sleep Information")
-                        st.info(f"**Last Sleep Start:** {watch_details.get('lastSleepStart', '')}")
-                        st.info(f"**Last Sleep End:** {watch_details.get('lastSleepEnd', '')}")
-                        st.info(f"**Sleep Duration:** {watch_details.get('lastSleepDuration', '')} hours")
+                        st.info(f"**Last Sleep Start:** {st.session_state.watch_details[st.session_state.selected_watch].get('lastSleepStart', '')}")
+                        st.info(f"**Last Sleep End:** {st.session_state.watch_details[st.session_state.selected_watch].get('lastSleepEnd', '')}")
+                        st.info(f"**Sleep Duration:** {st.session_state.watch_details[st.session_state.selected_watch].get('lastSleepDuration', '')} hours")
                     
                     # Status warnings section - removed the "all systems normal" success message
                     st.markdown("### ⚠️ Device Status")
                     
                     # Check battery level
-                    if watch_details.get('lastBatteryLevel'):
+                    if st.session_state.watch_details[st.session_state.selected_watch].get('lastBatteryLevel'):
                         try:
-                            battery_level = int(watch_details.get('lastBatteryLevel', 0))
+                            battery_level = int(st.session_state.watch_details[st.session_state.selected_watch].get('lastBatteryLevel', 0))
                             if battery_level < 20:
                                 st.warning(f"🔋 Battery level is low ({battery_level}%). Please charge the device.")
                         except:
                             pass
                     
                     # Calculate time since last sync
-                    if watch_details.get('lastSynced'):
+                    if st.session_state.watch_details[st.session_state.selected_watch].get('lastSynced'):
                         try:
-                            last_sync = pd.to_datetime(watch_details.get('lastSynced'))
+                            last_sync = pd.to_datetime(st.session_state.watch_details[st.session_state.selected_watch].get('lastSynced'))
                             time_since_sync = datetime.datetime.now() - last_sync
                             
                             if time_since_sync.total_seconds() > 86400:  # More than 24 hours
@@ -634,7 +684,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                                     sheets_manager = st.session_state.async_sheets_manager
                                 
                                 # Get or initialize the watch's chat messages in session state
-                                watch_chat_key = f"chat_{selected_watch}"
+                                watch_chat_key = f"chat_{st.session_state.selected_watch}"
                                 if watch_chat_key not in st.session_state:
                                     # Try to fetch existing messages for this watch
                                     try:
@@ -645,7 +695,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                                             st.session_state[watch_chat_key] = []
                                         else:
                                             # Filter to get only messages for this watch
-                                            watch_df = student_df.filter(pl.col("watchName") == selected_watch)
+                                            watch_df = student_df.filter(pl.col("watchName") == st.session_state.selected_watch)
                                             st.session_state[watch_chat_key] = watch_df.to_dicts() if not watch_df.is_empty() else []
                                     except Exception as e:
                                         # If there's an error, start with an empty chat
@@ -680,7 +730,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                                                 st.divider()
                                 
                                 # Use a form for message input to better control submission
-                                with st.form(key=f"chat_form_{selected_watch}", clear_on_submit=True):
+                                with st.form(key=f"chat_form_{st.session_state.selected_watch}", clear_on_submit=True):
                                     new_message = st.text_area("Type your message", key="message_text", height=100)
                                     submit_button = st.form_submit_button("Send Message")
                                     
@@ -694,7 +744,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                                             "user": user_email,
                                             "content": new_message.strip(),
                                             "datetime": dt_string,
-                                            "watchName": selected_watch
+                                            "watchName": st.session_state.selected_watch
                                         }
                                         
                                         try:

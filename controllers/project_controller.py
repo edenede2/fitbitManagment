@@ -70,6 +70,8 @@ class ProjectController:
             # Get this watch's details
             watch_details = fitbit_df[fitbit_df['name'] == watch_name]
             
+            # st.write(f"Watch details: {watch_details}")
+            st.write(f"Watch details: {watch_details}")
             if len(watch_details) > 0:
                 # Convert to dict for first row
                 details = watch_details.iloc[0].to_dict()
