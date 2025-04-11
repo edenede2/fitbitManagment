@@ -863,7 +863,7 @@ class ServerLogFile:
     def get_all_keys_as_string(self):
         return [str(key) for key in self.__dict__.keys()]
     
-    def update_fitbits_log(self, fitbit_data: pl.DataFrame, reset_total_for_watches=None) -> bool:
+    def update_fitbits_log(self, spreadsheet:Spreadsheet, fitbit_data: pl.DataFrame, reset_total_for_watches=None) -> bool:
         """
         Updates the Fitbit log files and sheets.
         - CSV file: Always append (full history)
@@ -1085,28 +1085,31 @@ class ServerLogFile:
             if latest_entries_by_watch:
                 try:
                     # Get the legacy spreadsheet manager
-                    manager = LegacySpreadsheetManager.get_instance()
-                    
+                    # manager = LegacySpreadsheetManager.get_instance()
+                    new_df = pl.DataFrame(list(latest_entries_by_watch.values()))
+
+                    spreadsheet.update_sheet("log", new_df,strategy="replace")
+                    GoogleSheetsAdapter.save(spreadsheet, "log")
                     # Get the worksheet for the log sheet
-                    worksheet = manager.get_worksheet(3)  # Worksheet 3 is the log sheet
+                    # worksheet = manager.get_worksheet(3)  # Worksheet 3 is the log sheet
                     
                     # Clear the current content (replace strategy)
-                    worksheet.clear()
+                    # worksheet.clear()
                     
                     # Add headers as the first row
-                    worksheet.append_row(expected_columns)
+                    # worksheet.append_row(expected_columns)
                     
                     # Add only the latest entry for each watch
-                    latest_entries = list(latest_entries_by_watch.values())
-                    for item in latest_entries:
-                        # Map data to expected columns format
-                        row_data = []
-                        for col in expected_columns:
-                            row_data.append(str(item.get(col, '')))
+                    # latest_entries = list(latest_entries_by_watch.values())
+                    # for item in latest_entries:
+                    #     # Map data to expected columns format
+                    #     row_data = []
+                    #     for col in expected_columns:
+                    #         row_data.append(str(item.get(col, '')))
                         
-                        worksheet.append_row(row_data)
+                    #     worksheet.append_row(row_data)
                     
-                    print(f"Replaced log sheet with {len(latest_entries)} latest records (one per watch)")
+                    print(f"Replaced log sheet with {len(latest_entries_by_watch)} latest records (one per watch)")
                 except Exception as e:
                     print(f"Error updating log sheet: {e}")
                     print(f"Error details: {traceback.format_exc()}")
@@ -1149,6 +1152,9 @@ class ServerLogFile:
             
             # For "FitbitLog" sheet - Always APPEND (keep full history)
             try:
+                
+                # spreadsheet.update_sheet("FitbitLog", final_df, strategy="append")
+
                 # Get entity spreadsheet
                 entity_sp = LegacySpreadsheetManager.get_instance().get_entity_spreadsheet()
                 
