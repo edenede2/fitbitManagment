@@ -42,7 +42,7 @@ def main():
                     user_project = user_project.split(',')[0]
                 user_role = st.session_state.get(user_email.split('@')[0], 'Guest')
                 if user_role != 'Guest':
-                    user_role = user_role.split(',')[1]
+                    user_role = user_role.split(',')[1].strip()
 
                 # user = UserController().get_user_by_email(user_email)
                 
