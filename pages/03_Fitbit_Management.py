@@ -22,10 +22,10 @@ if is_logged_in:
         user_email = st.experimental_user.email
         user_project = st.secrets.get(user_email.split('@')[0], 'None')
         if user_project is not None:
-            user_project = user_project.split(',')[0]
+            user_project = user_project.split(',')[1]
         user_role = st.secrets.get(user_email.split('@')[0], 'Guest')
         if user_role != 'Guest':
-            user_role = user_role.split(',')[1]
+            user_role = user_role.split(',')[0]
 
         if user_role not in ['Admin', 'Manager']:
             st.warning("You don't have permission to access this page.")
