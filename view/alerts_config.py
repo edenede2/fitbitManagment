@@ -161,6 +161,12 @@ def save_fitbit_config(spreadsheet:Spreadsheet, config_data):
     new_config_df = pl.DataFrame([config_data])
     
     # Append the new configuration or replace with updated configuration
+    # Check if the misspelled column exists and rename it to match
+    if "battaryThr" in current_config_df.columns and "batteryThr" in new_config_df.columns:
+        current_config_df = current_config_df.rename({"battaryThr": "batteryThr"})
+    elif "batteryThr" in current_config_df.columns and "battaryThr" in new_config_df.columns:
+        new_config_df = new_config_df.rename({"battaryThr": "batteryThr"})
+        
     if should_append:
         # Just append the new config
         if not current_config_df.is_empty():
