@@ -27,7 +27,7 @@ if is_logged_in:
             user_project = user_project.split(',')[0]
         user_role = st.secrets.get(user_email.split('@')[0], 'Guest')
         st.write(f"Logged in as: {user_email}")
-        st.write(f"Role: {user_role}")
+        st.write(f"Role: {user_role.split(',')[1]}")
         if user_role != 'Guest':
             user_role = user_role.split(',')[1]
 
