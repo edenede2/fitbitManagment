@@ -385,7 +385,7 @@ def get_project_fitbit_configs(spreadsheet:Spreadsheet, user_project):
         return config_df
     else:
         # Filter by project
-        return config_df.filter(pl.col('project') == user_project)
+        return config_df
 
 def get_project_qualtrics_configs(spreadsheet:Spreadsheet, user_project):
     """Get all Qualtrics configurations for a specific project"""
