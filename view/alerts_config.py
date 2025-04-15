@@ -67,7 +67,7 @@ def get_user_fitbit_config(spreadsheet:Spreadsheet, user_email, user_project):
     if user_project == 'Admin':
         watche_name_list = fitbit_sheet_df.select('name').unique().to_series().to_list()
     else:
-        watche_name_list = fitbit_sheet_df.filter(pl.col('project') == user_project).select('name').unique().to_series().to_list()
+        watche_name_list = fitbit_sheet_df.select('name').unique().to_series().to_list()
     
     # Return the first config for this user
     return user_config.to_dicts()[0], sorted(watche_name_list)
