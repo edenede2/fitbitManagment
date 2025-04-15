@@ -67,7 +67,7 @@ def get_user_fitbit_config(spreadsheet:Spreadsheet, user_email, user_project):
     if user_project == 'Admin':
         watche_name_list = fitbit_sheet_df.select('name').unique().to_series().to_list()
     else:
-        watche_name_list = fitbit_sheet_df.select('name').unique().to_series().to_list()
+        watche_name_list = fitbit_sheet_df.filter(pl.col('project') == user_project).select('name').unique().to_series().to_list()
     
     # Return the first config for this user
     return user_config.to_dicts()[0], sorted(watche_name_list)
@@ -385,7 +385,7 @@ def get_project_fitbit_configs(spreadsheet:Spreadsheet, user_project):
         return config_df
     else:
         # Filter by project
-        return config_df
+        return config_df.filter(pl.col('project') == user_project)
 
 def get_project_qualtrics_configs(spreadsheet:Spreadsheet, user_project):
     """Get all Qualtrics configurations for a specific project"""
@@ -513,7 +513,7 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
         
         st.markdown("---")
         st.subheader("Create/Edit Configuration")
-        st.write(f"Current User: {fitbit_configs}")
+        
         # Get current configuration
         fitbit_config, watch_names = get_user_fitbit_config(spreadsheet, user_email, user_project)
         
