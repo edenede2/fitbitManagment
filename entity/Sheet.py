@@ -269,8 +269,6 @@ class ChatsSheet(Sheet):
     ))
 
 
-
-# Enhanced Spreadsheet (Entity version)
 @dataclass
 class Spreadsheet:
     """
@@ -634,8 +632,16 @@ class GoogleSheetsAdapter:
         pass
     
     @staticmethod
-    def save(spreadsheet: Spreadsheet, sheet_name: str = None):
-        """Save changes back to Google Sheets"""
+    def save(spreadsheet: Spreadsheet, sheet_name: str = None, mode: str = 'auto'):
+        """
+        Save changes back to Google Sheets.
+        
+        Args:
+            spreadsheet: Spreadsheet entity to save
+            sheet_name: Optional specific sheet to save
+            mode: Save mode - 'auto' (detect best approach), 'append' (add new records),
+                 'rewrite' (clear and rewrite), 'update' (update existing + append new)
+        """
         # Get the Google Sheets connection
         google_spreadsheet = spreadsheet.get_gspread_connection()
         
@@ -648,51 +654,307 @@ class GoogleSheetsAdapter:
                     # Get or create worksheet
                     try:
                         worksheet = google_spreadsheet.worksheet(sheet_name)
-                    except gspread.exceptions.WorksheetNotFound:
-                        worksheet = google_spreadsheet.add_worksheet(
-                            title=sheet_name, rows=1, cols=10
-                        )
+                        
+                        # Choose appropriate save strategy based on sheet type and mode
+                        is_append_only = sheet_name.lower() in ['fitbitlog', 'log', 'chats']
+                        detected_mode = 'append' if is_append_only else 'update'
+                        save_mode = mode if mode != 'auto' else detected_mode
+                        
+                        # Make sure we have valid data
+                        if not sheet.data or not isinstance(sheet.data, list) or not sheet.data:
+                            print(f"No data to save for sheet {sheet_name}")
+                            return
+                            
+                        # Get headers from first item
+                        headers = list(sheet.data[0].keys())
+                        
+                        # Different save strategies
+                        if save_mode == 'rewrite':
+                            # Full rewrite - clear and add all data
+                            print(f"Using REWRITE strategy for {sheet_name}")
+                            worksheet.clear()
+                            worksheet.append_row(headers)
+                            
+                            # Add all rows in batches for better performance
+                            batch_size = 100  # Google Sheets allows up to 100 rows in a batch
+                            all_rows = []
+                            
+                            for item in sheet.data:
+                                row = [item.get(header, '') for header in headers]
+                                all_rows.append(row)
+                            
+                            # Send in batches
+                            for i in range(0, len(all_rows), batch_size):
+                                batch = all_rows[i:i+batch_size]
+                                worksheet.append_rows(batch)
+                                print(f"Saved batch {i//batch_size + 1}/{(len(all_rows)-1)//batch_size + 1}")
+                        
+                        elif save_mode == 'append':
+                            # Append-only strategy - add only new records
+                            print(f"Using APPEND strategy for {sheet_name}")
+                            
+                            # Make sure headers match
+                            existing_headers = worksheet.row_values(1)
+                            if existing_headers != headers:
+                                # If headers don't match, we need to handle it (could be a schema change)
+                                print(f"Headers mismatch in {sheet_name}: existing={existing_headers}, new={headers}")
+                                
+                                # Check if this is a new sheet with no data
+                                all_values = worksheet.get_all_values()
+                                if len(all_values) <= 1:  # Only header row or empty
+                                    # Rewrite headers for new/empty sheet
+                                    worksheet.clear()
+                                    worksheet.append_row(headers)
+                                else:
+                                    # For existing data with schema change, fall back to rewrite
+                                    print(f"Schema change detected, falling back to rewrite")
+                                    save_mode = 'rewrite'
+                                    # Call the method again with rewrite mode
+                                    GoogleSheetsAdapter.save(spreadsheet, sheet_name, 'rewrite')
+                                    return
+                            
+                            # Get existing data for comparison (if we need it)
+                            if sheet_name.lower() == 'fitbitlog':
+                                # For FitbitLog, we know we just want to append all data
+                                # Find the last row with data
+                                try:
+                                    last_row = len(worksheet.get_all_values())
+                                    if last_row <= 1:  # Only header or empty
+                                        start_row = 1  # Start after header
+                                    else:
+                                        start_row = last_row
+                                        
+                                    # Add all new rows
+                                    batch_size = 100
+                                    all_rows = []
+                                    
+                                    for item in sheet.data:
+                                        row = [item.get(header, '') for header in headers]
+                                        all_rows.append(row)
+                                    
+                                    # Send in batches
+                                    for i in range(0, len(all_rows), batch_size):
+                                        batch = all_rows[i:i+batch_size]
+                                        worksheet.append_rows(batch)
+                                        print(f"Appended batch {i//batch_size + 1}/{(len(all_rows)-1)//batch_size + 1}")
+                                except Exception as e:
+                                    print(f"Error during append: {e}")
+                                    print(traceback.format_exc())
+                            else:
+                                # For other sheets, check what's already there and only add new
+                                existing_data = worksheet.get_all_records()
+                                
+                                # Find records that don't exist yet
+                                # Use a simple hash-based approach for comparison
+                                existing_hashes = {GoogleSheetsAdapter._hash_record(record) for record in existing_data}
+                                new_records = []
+                                
+                                for item in sheet.data:
+                                    item_hash = GoogleSheetsAdapter._hash_record(item)
+                                    if item_hash not in existing_hashes:
+                                        new_records.append(item)
+                                
+                                print(f"Found {len(new_records)} new records to append")
+                                
+                                # Add new records in batches
+                                if new_records:
+                                    batch_size = 100
+                                    all_rows = []
+                                    
+                                    for item in new_records:
+                                        row = [item.get(header, '') for header in headers]
+                                        all_rows.append(row)
+                                    
+                                    # Send in batches
+                                    for i in range(0, len(all_rows), batch_size):
+                                        batch = all_rows[i:i+batch_size]
+                                        worksheet.append_rows(batch)
+                                        print(f"Appended batch {i//batch_size + 1}/{(len(all_rows)-1)//batch_size + 1}")
+                        
+                        elif save_mode == 'update':
+                            # Update strategy - update existing records and add new ones
+                            print(f"Using UPDATE strategy for {sheet_name}")
+                            
+                            # Get all existing data
+                            try:
+                                existing_data = worksheet.get_all_records()
+                                
+                                if not existing_data:
+                                    # Sheet exists but is empty, just write all data
+                                    worksheet.append_row(headers)
+                                    
+                                    # Add all rows in batches
+                                    batch_size = 100
+                                    all_rows = []
+                                    
+                                    for item in sheet.data:
+                                        row = [item.get(header, '') for header in headers]
+                                        all_rows.append(row)
+                                    
+                                    # Send in batches
+                                    for i in range(0, len(all_rows), batch_size):
+                                        batch = all_rows[i:i+batch_size]
+                                        worksheet.append_rows(batch)
+                                        print(f"Saved batch {i//batch_size + 1}/{(len(all_rows)-1)//batch_size + 1}")
+                                else:
+                                    # Determine primary key field(s) based on sheet type
+                                    id_fields = ['id']  # Default - use 'id' as primary key
+                                    if 'fitbit' in sheet_name.lower():
+                                        id_fields = ['name', 'project']
+                                    elif 'log' in sheet_name.lower():
+                                        id_fields = ['project', 'watchName']
+                                    elif 'student_fitbit' in sheet_name.lower():
+                                        id_fields = ['email', 'watch']
+                                    
+                                    # Build index of existing data by primary key(s)
+                                    existing_index = {}
+                                    for idx, record in enumerate(existing_data):
+                                        # Create a composite key from the id fields
+                                        key = tuple(str(record.get(field, '')) for field in id_fields)
+                                        existing_index[key] = (idx + 2, record)  # +2 for 1-based index and header row
+                                    
+                                    # Track what to update and what to add
+                                    to_update = []  # (row_idx, column_idxs, values)
+                                    to_add = []     # New rows to append
+                                    
+                                    # Process all records
+                                    for item in sheet.data:
+                                        # Create key to check if record exists
+                                        key = tuple(str(item.get(field, '')) for field in id_fields)
+                                        
+                                        if key in existing_index:
+                                            # Record exists - check for changes
+                                            row_idx, old_record = existing_index[key]
+                                            
+                                            # Compare fields and collect changes
+                                            changes = []
+                                            for col_idx, header in enumerate(headers, 1):  # 1-based column index
+                                                new_val = item.get(header, '')
+                                                old_val = old_record.get(header, '')
+                                                if str(new_val) != str(old_val):
+                                                    changes.append((col_idx, header, new_val))
+                                            
+                                            if changes:
+                                                # Group changes by row for efficient updates
+                                                to_update.append((row_idx, changes))
+                                        else:
+                                            # New record - add to append list
+                                            to_add.append(item)
+                                    
+                                    # First, update existing records (use batch updates)
+                                    if to_update:
+                                        print(f"Updating {len(to_update)} existing records")
+                                        
+                                        # Group updates into batches for efficiency
+                                        batch_size = 30  # Limit batch size for updates
+                                        for i in range(0, len(to_update), batch_size):
+                                            batch = to_update[i:i+batch_size]
+                                            
+                                            # Create batch update request
+                                            batch_updates = []
+                                            for row_idx, changes in batch:
+                                                for col_idx, header, value in changes:
+                                                    batch_updates.append({
+                                                        'range': f'{worksheet.title}!{GoogleSheetsAdapter._col_num_to_letter(col_idx)}{row_idx}',
+                                                        'values': [[value]]
+                                                    })
+                                            
+                                            # Apply batch update if not empty
+                                            if batch_updates:
+                                                try:
+                                                    google_spreadsheet.values_batch_update({'data': batch_updates, 'valueInputOption': 'RAW'})
+                                                    print(f"Updated batch {i//batch_size + 1}/{(len(to_update)-1)//batch_size + 1}")
+                                                except Exception as e:
+                                                    print(f"Error in batch update: {e}")
+                                    
+                                    # Second, add new records
+                                    if to_add:
+                                        print(f"Adding {len(to_add)} new records")
+                                        
+                                        # Prepare data for batch append
+                                        all_rows = []
+                                        for item in to_add:
+                                            row = [item.get(header, '') for header in headers]
+                                            all_rows.append(row)
+                                        
+                                        # Send in batches
+                                        batch_size = 100
+                                        for i in range(0, len(all_rows), batch_size):
+                                            batch = all_rows[i:i+batch_size]
+                                            worksheet.append_rows(batch)
+                                            print(f"Appended batch {i//batch_size + 1}/{(len(all_rows)-1)//batch_size + 1}")
+                                    
+                                    if not to_update and not to_add:
+                                        print(f"No changes detected for sheet {sheet_name}")
+                            
+                            except Exception as e:
+                                print(f"Error in update strategy: {e}")
+                                print(traceback.format_exc())
+                                # Fall back to rewrite if update fails
+                                print(f"Falling back to rewrite strategy")
+                                GoogleSheetsAdapter.save(spreadsheet, sheet_name, 'rewrite')
                     
-                    # Clear and update
-                    worksheet.clear()
-                    if sheet.data:
-                        if isinstance(sheet.data, list) and sheet.data:
-                            # Get headers from first item
+                    except gspread.exceptions.WorksheetNotFound:
+                        # For new worksheets, create it and use full write
+                        print(f"Creating new worksheet {sheet_name}")
+                        worksheet = google_spreadsheet.add_worksheet(
+                            title=sheet_name, rows=1, cols=max(10, len(headers) if 'headers' in locals() else 10)
+                        )
+                        
+                        # Initialize new worksheet
+                        if sheet.data and isinstance(sheet.data, list) and sheet.data:
                             headers = list(sheet.data[0].keys())
                             worksheet.append_row(headers)
                             
-                            # Add all rows
+                            # Prepare data for batch update
+                            rows = []
                             for item in sheet.data:
                                 row = [item.get(header, '') for header in headers]
-                                worksheet.append_row(row)
+                                rows.append(row)
+                            
+                            # Use batch update for efficiency
+                            if rows:
+                                # Send in batches
+                                batch_size = 100
+                                for i in range(0, len(rows), batch_size):
+                                    batch = rows[i:i+batch_size]
+                                    worksheet.append_rows(batch)
+                                    print(f"Saved batch {i//batch_size + 1}/{(len(rows)-1)//batch_size + 1}")
+                    
                 except Exception as e:
                     print(f"Error saving sheet {sheet_name}: {e}")
+                    print(f"Error details: {traceback.format_exc()}")
+                    print(f"Failed operation: Saving data to worksheet '{sheet_name}'")
+                    
+                    # Try a simple retry once with rewrite strategy
+                    try:
+                        print(f"Attempting to retry saving sheet {sheet_name} with rewrite strategy...")
+                        
+                        # Use rewrite strategy for retry
+                        GoogleSheetsAdapter.save(spreadsheet, sheet_name, 'rewrite')
+                    except Exception as retry_error:
+                        print(f"Retry also failed for sheet {sheet_name}: {retry_error}")
+                        print(f"Retry error details: {traceback.format_exc()}")
         else:
             # Update all sheets
-            for sheet_name, sheet in spreadsheet.sheets.items():
-                try:
-                    # Get or create worksheet
-                    try:
-                        worksheet = google_spreadsheet.worksheet(sheet_name)
-                    except gspread.exceptions.WorksheetNotFound:
-                        worksheet = google_spreadsheet.add_worksheet(
-                            title=sheet_name, rows=1, cols=10
-                        )
-                    
-                    # Clear and update
-                    worksheet.clear()
-                    if sheet.data:
-                        if isinstance(sheet.data, list) and sheet.data:
-                            # Get headers from first item
-                            headers = list(sheet.data[0].keys())
-                            worksheet.append_row(headers)
-                            
-                            # Add all rows
-                            for item in sheet.data:
-                                row = [item.get(header, '') for header in headers]
-                                worksheet.append_row(row)
-                except Exception as e:
-                    print(f"Error saving sheet {sheet_name}: {e}")
+            for sheet_name in spreadsheet.sheets:
+                GoogleSheetsAdapter.save(spreadsheet, sheet_name, mode)
+
+    @staticmethod
+    def _hash_record(record):
+        """Create a simple hash of a record for comparison"""
+        # Convert to string and hash
+        record_str = str(sorted(record.items()))
+        return hash(record_str)
+        
+    @staticmethod
+    def _col_num_to_letter(col_num):
+        """Convert column number (1-based) to column letter (A, B, C, ..., AA, AB, etc.)"""
+        letters = ""
+        while col_num > 0:
+            col_num, remainder = divmod(col_num - 1, 26)
+            letters = chr(65 + remainder) + letters
+        return letters
 
 # =====================================================================
 # ================ LEGACY COMPATIBILITY LAYER ========================
@@ -1110,30 +1372,6 @@ class ServerLogFile:
                 except Exception as e:
                     print(f"Error creating/updating watch {row.get('name', '')} via API: {e}")
                     # Continue with existing data
-                    try:
-                        row = {
-                            **row,
-                            "battery": row.get("battery", ""),
-                            "HR": row.get("HR", ""),
-                            "syncDate": row.get("syncDate", ""),
-                            "sleep_start": row.get("sleep_start", ""),
-                            "sleep_end": row.get("sleep_end", ""),
-                            "sleep_duration": row.get("sleep_duration", ""),
-                            "steps": row.get("steps", "")
-                        }
-                    except Exception as e2:
-                        print(f"Error updating row data: {e2}")
-                        row = {
-                            "battery": "",
-                            "HR": "",
-                            "syncDate": "",
-                            "sleep_start": "",
-                            "sleep_end": "",
-                            "sleep_duration": "",
-                            "steps": ""
-                        }
-                # Skip if watch ID is not found
-                
                 
                 # Get previous log entry if available to keep track of failure counters
                 prev_entry = previous_log_entries.get(watch_id, {})
@@ -1236,29 +1474,11 @@ class ServerLogFile:
             if latest_entries_by_watch:
                 try:
                     # Get the legacy spreadsheet manager
-                    # manager = LegacySpreadsheetManager.get_instance()
                     new_df = pl.DataFrame(list(latest_entries_by_watch.values()))
 
-                    spreadsheet.update_sheet("log", new_df,strategy="replace")
-                    GoogleSheetsAdapter.save(spreadsheet, "log")
-                    # Get the worksheet for the log sheet
-                    # worksheet = manager.get_worksheet(3)  # Worksheet 3 is the log sheet
-                    
-                    # Clear the current content (replace strategy)
-                    # worksheet.clear()
-                    
-                    # Add headers as the first row
-                    # worksheet.append_row(expected_columns)
-                    
-                    # Add only the latest entry for each watch
-                    # latest_entries = list(latest_entries_by_watch.values())
-                    # for item in latest_entries:
-                    #     # Map data to expected columns format
-                    #     row_data = []
-                    #     for col in expected_columns:
-                    #         row_data.append(str(item.get(col, '')))
-                        
-                    #     worksheet.append_row(row_data)
+                    spreadsheet.update_sheet("log", new_df, strategy="replace")
+                    # Use our improved save method with rewrite mode for this sheet
+                    GoogleSheetsAdapter.save(spreadsheet, "log", mode="rewrite")
                     
                     print(f"Replaced log sheet with {len(latest_entries_by_watch)} latest records (one per watch)")
                 except Exception as e:
@@ -1303,9 +1523,6 @@ class ServerLogFile:
             
             # For "FitbitLog" sheet - Always APPEND (keep full history)
             try:
-                
-                # spreadsheet.update_sheet("FitbitLog", final_df, strategy="append")
-
                 # Get entity spreadsheet
                 entity_sp = LegacySpreadsheetManager.get_instance().get_entity_spreadsheet()
                 
@@ -1314,47 +1531,21 @@ class ServerLogFile:
                     print("Creating new FitbitLog sheet since it doesn't exist")
                     entity_sp.get_sheet("FitbitLog", "log")
                 
-                log_sheet = entity_sp.sheets["FitbitLog"]
-                
-                # Initialize data if needed
-                if not hasattr(log_sheet, 'data') or log_sheet.data is None:
-                    log_sheet.data = []
-                
-                # Make sure we have a list to append to
-                if not isinstance(log_sheet.data, list):
-                    print(f"Converting log_sheet.data from {type(log_sheet.data)} to list")
-                    try:
-                        log_sheet.data = [log_sheet.data] if log_sheet.data else []
-                    except Exception as e:
-                        print(f"Error converting to list: {e}")
-                        log_sheet.data = []
-                
-                # Debug info before append
-                original_count = len(log_sheet.data) if log_sheet.data else 0
-                print(f"FitbitLog sheet before append: {original_count} records")
-                
-                # Ensure all entries in new_log_entries have string values only
-                for entry in new_log_entries:
-                    for key, value in list(entry.items()):
-                        # Convert all values to strings to avoid type issues
-                        entry[key] = str(value) if value is not None else ""
-                
-                # Append new records
-                log_sheet.data.extend(new_log_entries)
-                
-                # Debug info after append
-                new_count = len(log_sheet.data)
-                print(f"FitbitLog sheet after append: {new_count} records (+{new_count - original_count})")
-                
-                # Make sure all data is string-typed
-                if log_sheet.data:
-                    print(f"First record sample types: " + 
-                          ", ".join(f"{k}: {type(v)}" for k, v in list(log_sheet.data[0].items())[:5]))
-                
-                # Explicitly save the sheet
-                print("Saving FitbitLog sheet...")
-                GoogleSheetsAdapter.save(entity_sp, "FitbitLog")
-                print(f"Successfully appended {len(new_log_entries)} records to FitbitLog sheet")
+                # Update the FitbitLog sheet with only the NEW log entries
+                # Instead of extending the data, we use our updated save method with append mode
+                if new_log_entries:
+                    # Create a new DataFrame with just the new entries
+                    fitbit_log_df = pl.DataFrame(new_log_entries)
+                    
+                    # Update the sheet with only the new data
+                    entity_sp.update_sheet("FitbitLog", fitbit_log_df, strategy="append")
+                    
+                    # Use our new save method with append mode to efficiently add only new records
+                    print("Saving only new records to FitbitLog sheet using append mode...")
+                    GoogleSheetsAdapter.save(entity_sp, "FitbitLog", mode="append")
+                    print(f"Successfully appended {len(new_log_entries)} records to FitbitLog sheet")
+                else:
+                    print("No new data to append to FitbitLog sheet")
             except Exception as e:
                 print(f"Error updating FitbitLog sheet: {e}")
                 print(f"Error details: {traceback.format_exc()}")
@@ -1365,6 +1556,236 @@ class ServerLogFile:
             print(f"Full error details: {traceback.format_exc()}")
             return False
     
+    def prepare_log_entries(self, spreadsheet: Spreadsheet, fitbit_data: pl.DataFrame, reset_total_for_watches=None) -> List[dict]:
+        """
+        Process Fitbit data and prepare log entries without saving them.
+        
+        Args:
+            spreadsheet (Spreadsheet): The spreadsheet to reference for previous entries
+            fitbit_data (pl.DataFrame): DataFrame containing the watch data
+            reset_total_for_watches (list, optional): List of watch IDs to reset counters for
+            
+        Returns:
+            List[dict]: List of new log entries
+        """
+        # Get current time for timestamp
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Define expected columns for entries
+        expected_columns = [
+            "project", "watchName", "lastCheck", "lastSynced", "lastBattary", 
+            "lastHR", "lastSleepStartDateTime", "lastSleepEndDateTime", "lastSteps", 
+            "lastBattaryVal", "lastHRVal", "lastHRSeq", "lastSleepDur", "lastStepsVal",
+            "CurrentFailedSync", "TotalFailedSync", "CurrentFailedHR", "TotalFailedHR",
+            "CurrentFailedSleep", "TotalFailedSleep", "CurrentFailedSteps", "TotalFailedSteps",
+            "CurrentFailedBattary", "TotalFailedBattary", "ID"
+        ]
+        
+        # Convert reset_total_for_watches to a set for faster lookups
+        reset_watches = set(reset_total_for_watches or [])
+        
+        # Get the FitbitLog sheet to check previous entries
+        previous_log_entries = {}
+        try:
+            if "FitbitLog" in spreadsheet.sheets:
+                log_sheet = spreadsheet.get_sheet("FitbitLog", "log")
+                log_df = log_sheet.to_dataframe(engine="polars")
+                
+                if not log_df.is_empty() and "ID" in log_df.columns:
+                    # Get the most recent entry for each watch
+                    for watch_id in log_df.select("ID").unique().to_series():
+                        watch_entries = log_df.filter(pl.col("ID") == watch_id)
+                        # Sort by lastCheck to get the most recent entry
+                        if "lastCheck" in watch_entries.columns:
+                            watch_entries = watch_entries.sort(pl.col("lastCheck"), descending=True)
+                        # Get the first (most recent) entry as a dictionary
+                        if not watch_entries.is_empty():
+                            previous_log_entries[watch_id] = watch_entries.row(0, named=True)
+        except Exception as e:
+            print(f"Error getting previous log entries: {e}")
+            print(traceback.format_exc())
+        
+        # Process each row from the Fitbit data
+        new_log_entries = []
+        
+        for row in fitbit_data.iter_rows(named=True):
+            # Create watch ID for matching
+            watch_id = str(row.get('id', row.get('deviceId', '')))
+            if not watch_id and 'project' in row and 'name' in row:
+                watch_id = f"{row.get('project', '')}-{row.get('name', '')}"
+            
+            # Skip inactive watches
+            is_active = str(row.get('isActive', '')).upper() != 'FALSE'
+            if not is_active:
+                continue
+            
+            # Try to update watch data via API
+            try:
+                # Convert row data to a dict for the factory
+                watch_data = {key: value for key, value in row.items()}
+                
+                # Create Watch object using the factory
+                watch = WatchFactory.create_from_details(watch_data)
+                
+                # Update device information via Fitbit API
+                print(f"Fetching latest data from Fitbit API for watch {watch.name}...")
+                watch.update_device_info()
+                
+                # Check if essential attributes were updated
+                if hasattr(watch, 'last_sync_time') and watch.last_sync_time:
+                    # Update row with the fresh data from API
+                    row = {
+                        **row,
+                        "battery": watch.battery_level if hasattr(watch, 'battery_level') else "",
+                        "HR": watch.get_current_hourly_HR() if hasattr(watch, 'get_current_hourly_HR') else "",
+                        "syncDate": watch.last_sync_time.isoformat() if hasattr(watch, 'last_sync_time') and watch.last_sync_time else "",
+                        "sleep_start": watch.get_last_sleep_start_end()[0] if hasattr(watch, 'get_last_sleep_start_end') else "",
+                        "sleep_end": watch.get_last_sleep_start_end()[1] if hasattr(watch, 'get_last_sleep_start_end') else "",
+                        "sleep_duration": watch.get_last_sleep_duration() if hasattr(watch, 'get_last_sleep_duration') else "",
+                        "steps": watch.get_current_hourly_steps() if hasattr(watch, 'get_current_hourly_steps') else ""
+                    }
+                    print(f"Successfully updated data for watch {watch.name} from Fitbit API")
+                else:
+                    print(f"Failed to update data for watch {watch.name} from Fitbit API, using existing data")
+            except Exception as e:
+                print(f"Error creating/updating watch {row.get('name', '')} via API: {e}")
+            
+            # Get previous log entry if available to keep track of failure counters
+            prev_entry = previous_log_entries.get(watch_id, {})
+            
+            # Initialize failure counters with previous values or 0
+            current_failed_sync = int(prev_entry.get("CurrentFailedSync", 0) or 0)
+            total_failed_sync = int(prev_entry.get("TotalFailedSync", 0) or 0)
+            current_failed_hr = int(prev_entry.get("CurrentFailedHR", 0) or 0)
+            total_failed_hr = int(prev_entry.get("TotalFailedHR", 0) or 0)
+            current_failed_sleep = int(prev_entry.get("CurrentFailedSleep", 0) or 0)
+            total_failed_sleep = int(prev_entry.get("TotalFailedSleep", 0) or 0)
+            current_failed_steps = int(prev_entry.get("CurrentFailedSteps", 0) or 0)
+            total_failed_steps = int(prev_entry.get("TotalFailedSteps", 0) or 0)
+            current_failed_battery = int(prev_entry.get("CurrentFailedBattary", 0) or 0)
+            total_failed_battery = int(prev_entry.get("TotalFailedBattary", 0) or 0)
+            
+            # Reset total failures if needed
+            if watch_id in reset_watches:
+                print(f"Resetting total failure counters for watch {row.get('name', '')} (ID: {watch_id})")
+                total_failed_sync = 0
+                total_failed_hr = 0
+                total_failed_sleep = 0
+                total_failed_steps = 0
+                total_failed_battery = 0
+            
+            # Track success/failure for each data type
+            sync_success = bool(row.get("syncDate"))
+            hr_success = bool(row.get("HR"))
+            sleep_success = bool(row.get("sleep_start"))
+            steps_success = bool(row.get("steps"))
+            battery_success = bool(row.get("battery"))
+            
+            # Update counters based on success/failure
+            if sync_success:
+                current_failed_sync = 0
+            else:
+                current_failed_sync += 1
+                total_failed_sync += 1
+            
+            if hr_success:
+                current_failed_hr = 0
+            else:
+                current_failed_hr += 1
+                total_failed_hr += 1
+            
+            if sleep_success:
+                current_failed_sleep = 0
+            else:
+                current_failed_sleep += 1
+                total_failed_sleep += 1
+            
+            if steps_success:
+                current_failed_steps = 0
+            else:
+                current_failed_steps += 1
+                total_failed_steps += 1
+            
+            if battery_success:
+                current_failed_battery = 0
+            else:
+                current_failed_battery += 1
+                total_failed_battery += 1
+            
+            # Build the log entry
+            log_entry = {
+                "project": row.get("project", ""),
+                "watchName": row.get("name", ""),
+                "lastCheck": now,
+                "lastSynced": row.get("syncDate", ""),
+                "lastBattary": now if row.get("battery") else "",
+                "lastHR": now if row.get("HR") else "",
+                "lastSleepStartDateTime": row.get("sleep_start", ""),
+                "lastSleepEndDateTime": row.get("sleep_end", ""),
+                "lastSteps": now if row.get("steps") else "",
+                "lastBattaryVal": row.get("battery", ""),
+                "lastHRVal": row.get("HR", ""),
+                "lastHRSeq": self._calculate_hr_sequence(row),
+                "lastSleepDur": row.get("sleep_duration", ""),
+                "lastStepsVal": row.get("steps", ""),
+                "CurrentFailedSync": current_failed_sync,
+                "TotalFailedSync": total_failed_sync,
+                "CurrentFailedHR": current_failed_hr,
+                "TotalFailedHR": total_failed_hr,
+                "CurrentFailedSleep": current_failed_sleep,
+                "TotalFailedSleep": total_failed_sleep,
+                "CurrentFailedSteps": current_failed_steps,
+                "TotalFailedSteps": total_failed_steps,
+                "CurrentFailedBattary": current_failed_battery,
+                "TotalFailedBattary": total_failed_battery,
+                "ID": watch_id
+            }
+            
+            # Add to the list of entries
+            new_log_entries.append(log_entry)
+        
+        return new_log_entries
+
+    def update_log_sheet(self, spreadsheet: Spreadsheet, fitbit_data: pl.DataFrame, reset_total_for_watches=None) -> bool:
+        """
+        Updates only the log sheet with latest data (replacement strategy).
+        
+        Args:
+            spreadsheet (Spreadsheet): The spreadsheet to update
+            fitbit_data (pl.DataFrame): DataFrame containing the watch data
+            reset_total_for_watches (list, optional): List of watch IDs to reset counters for
+            
+        Returns:
+            bool: True if update succeeded, False otherwise
+        """
+        try:
+            # Generate log entries
+            new_log_entries = self.prepare_log_entries(spreadsheet, fitbit_data, reset_total_for_watches)
+            
+            if not new_log_entries:
+                print("No active watch data to update log sheet")
+                return True
+                
+            # For log sheet, we keep only the latest entry per watch
+            latest_entries_by_watch = {}
+            for entry in new_log_entries:
+                watch_id = entry.get('ID', '')
+                if watch_id:
+                    latest_entries_by_watch[watch_id] = entry
+            
+            # Update the log sheet with the latest entries (replace strategy)
+            log_df = pl.DataFrame(list(latest_entries_by_watch.values()))
+            spreadsheet.update_sheet("log", log_df, strategy="replace")
+            GoogleSheetsAdapter.save(spreadsheet, "log", mode="rewrite")
+            
+            print(f"Updated log sheet with {len(latest_entries_by_watch)} latest entries (one per watch)")
+            return True
+            
+        except Exception as e:
+            print(f"Error updating log sheet: {e}")
+            print(f"Error details: {traceback.format_exc()}")
+            return False
+
     def _calculate_hr_sequence(self, row_data):
         """Calculate heart rate sequence information from the data"""
         return ""

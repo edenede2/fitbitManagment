@@ -1217,12 +1217,39 @@ def hourly_data_collection():
                 for watch_id in newly_inactive_watches:
                     print(f"Watch {previous_status[watch_id].get('name', watch_id)} became inactive - will reset failure counters")
             
-            # Save to CSV for historical tracking
             save_to_csv(watch_data)
             
             # Update log using ServerLogFile - passing inactive watches to reset their counters
             log_file = ServerLogFile()
-            result = log_file.update_fitbits_log(spreadsheet,watch_data, reset_total_for_watches=newly_inactive_watches)
+            
+            # First, only update the log sheet (with replace strategy)
+            result = log_file.update_log_sheet(spreadsheet, watch_data, reset_total_for_watches=newly_inactive_watches)
+            
+            # Step 1: First get existing FitbitLog data to ensure proper structure
+            if "FitbitLog" not in spreadsheet.sheets:
+                # Create the sheet if it doesn't exist
+                fitbit_log_sheet = spreadsheet.get_sheet("FitbitLog", "log")
+            else:
+                fitbit_log_sheet = spreadsheet.sheets["FitbitLog"]
+                
+            # Ensure fitbit_log_sheet.data is a list of dictionaries
+            if not isinstance(fitbit_log_sheet.data, list):
+                # Initialize as empty list if not already a list
+                fitbit_log_sheet.data = []
+                
+            # Step 2: Prepare new log entries (but don't update the sheet yet)
+            new_log_entries = log_file.prepare_log_entries(spreadsheet, watch_data, reset_total_for_watches=newly_inactive_watches)
+            
+            # Step 3: If we have new entries, manually append them to the sheet data
+            if new_log_entries:
+                # Add new entries to the sheet's data directly
+                fitbit_log_sheet.data.extend(new_log_entries)
+                
+                # Step 4: Now save with rewrite mode to ensure proper data structure
+                GoogleSheetsAdapter.save(spreadsheet, "FitbitLog", mode="rewrite")
+                print(f"[{datetime.datetime.now()}] Added {len(new_log_entries)} new entries to FitbitLog")
+            else:
+                print(f"[{datetime.datetime.now()}] No new entries to add to FitbitLog")
             
             # Save the current status for the next run
             save_watch_status_history(current_status)
