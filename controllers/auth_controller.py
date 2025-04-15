@@ -38,16 +38,12 @@ class AuthenticationController:
                     # For demo mode
                     st.write(f"Demo mode as: {st.session_state.get('user_email', 'Guest')}")
                     user_email = st.session_state.get('user_email', 'demo@example.com')
-                st.write(f"User email = {user_email}")
-                st.write(f"User email from experimental_user = {st.experimental_user.email}")
-                st.write(f"User from experimental_user = {st.experimental_user.email.split('@')[0]}")
                 # Display user role information
                 user_role = st.secrets.get(st.experimental_user.email.split('@')[0], 'Guest')
                 if user_role != 'Guest':
                     user_role = user_role.split(',')[0]
                 user_project = st.secrets.get(f"{st.experimental_user.email.split('@')[0]}", 'None')
-                st.write(f"User: {user_project}")
-                st.write(f"Role: {user_project.split(',')[0]}")
+
                 # st.write(f"Project: {user_role.split(',')[1]}")
                 # if user_project is not None:
                 #     user_project = user_project.split(',')[1]
