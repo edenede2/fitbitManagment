@@ -58,6 +58,10 @@ class AuthenticationController:
                 
                 st.write(f"Role: {user_project}")
                 st.write(f"Project: {user_role}")
+
+                # Display logout button
+                if st.button("Logout"):
+                    self.logout_user()
             else:
                 # Demo login options
                 st.subheader("Demo Login")
