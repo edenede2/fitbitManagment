@@ -43,6 +43,9 @@ class AuthenticationController:
                 if user_role != 'Guest':
                     user_role = user_role.split(',')[0]
                 user_project = st.secrets.get(user_email.split('@')[0], 'None')
+                st.write(f"User: {user_project}")
+                st.write(f"Role: {user_project.split(',')[0]}")
+                st.write(f"Project: {user_role.split(',')[1]}")
                 if user_project is not None:
                     user_project = user_project.split(',')[1]
                 st.session_state.user_email = user_email
