@@ -39,6 +39,7 @@ class AuthenticationController:
                     user_email = st.session_state.get('user_email', 'demo@example.com')
                 st.write(f"User email = {user_email}")
                 st.write(f"User email from experimental_user = {st.experimental_user.email}")
+                st.write(f"User from experimental_user = {st.experimental_user.email.split('@')[0]}")
                 # Display user role information
                 user_role = st.secrets.get(user_email.split('@')[0], 'Guest')
                 if user_role != 'Guest':
