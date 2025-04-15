@@ -42,7 +42,7 @@ class AuthenticationController:
                 st.write(f"User email from experimental_user = {st.experimental_user.email}")
                 st.write(f"User from experimental_user = {st.experimental_user.email.split('@')[0]}")
                 # Display user role information
-                st.write(f"User role! = {get_secrets().get('omri.radai', 'None')}")
+                st.write(f"User role! = {get_secrets()['omri.radai']}")
                 user_role = st.secrets.get(user_email.split('@')[0], 'Guest')
                 if user_role != 'Guest':
                     user_role = user_role.split(',')[0]
