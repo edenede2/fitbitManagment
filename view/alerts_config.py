@@ -513,7 +513,7 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
         
         st.markdown("---")
         st.subheader("Create/Edit Configuration")
-        
+        st.write(f"Current User: {fitbit_configs}")
         # Get current configuration
         fitbit_config, watch_names = get_user_fitbit_config(spreadsheet, user_email, user_project)
         
