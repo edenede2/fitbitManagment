@@ -602,7 +602,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
             st.subheader("Visualizations")
             
             # Let user select a watch to view historical data
-            watch_options = sorted(filtered_df['watchName'].unique().to_list())
+            watch_options = sorted(fitbit_log_df['watchName'].unique().to_list())
             if watch_options:
                 selected_watch = st.selectbox("Select Watch for History:", watch_options)
                 
