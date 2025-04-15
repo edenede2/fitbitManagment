@@ -2,6 +2,7 @@ import streamlit as st
 from entity.Sheet import Spreadsheet, GoogleSheetsAdapter
 from utils.sheets_cache import sheets_cache
 import time
+from model.config import get_secrets
 
 class AuthenticationController:
     """Controller handling user authentication and authorization"""
@@ -41,6 +42,7 @@ class AuthenticationController:
                 st.write(f"User email from experimental_user = {st.experimental_user.email}")
                 st.write(f"User from experimental_user = {st.experimental_user.email.split('@')[0]}")
                 # Display user role information
+                st.write(f"User role! = {get_secrets().get(user_email.split('@')[0], 'Guest')}")
                 user_role = st.secrets.get(user_email.split('@')[0], 'Guest')
                 if user_role != 'Guest':
                     user_role = user_role.split(',')[0]

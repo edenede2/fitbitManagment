@@ -2,5 +2,4 @@
 fitbit_log.csv
 data/
 reports/
-.streamlit/secrets.toml
 .streamlit/config.toml
