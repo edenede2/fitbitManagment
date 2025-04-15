@@ -6,6 +6,7 @@ from entity.Watch import Watch, WatchFactory
 from entity.Sheet import Spreadsheet, GoogleSheetsAdapter
 from Decorators.congrates import congrats, welcome_returning_user
 from model.config import get_secrets
+from mitosheet.streamlit.v1 import spreadsheet as msp
 import pandas as pd
 import polars as pl
 import numpy as np
@@ -576,7 +577,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                 st.subheader("Complete Raw Data")
                 if user_role == "Admin":
                     # Show all data for Admin
-                    st.dataframe(fitbit_log_df, use_container_width=True)
+                    msp(fitbit_log_df)
                     # Add download button for the raw data
                     csv = fitbit_log_df.write_csv().encode('utf-8')
                     st.download_button(
@@ -588,7 +589,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                 else:
                     # Show filtered data for others
                     fitbit_log_df = fitbit_log_df.filter(pl.col('project') == user_project)
-                    st.dataframe(fitbit_log_df, use_container_width=True)
+                    msp(fitbit_log_df)
                     # Add download button for the filtered data
                     csv = fitbit_log_df.write_csv().encode('utf-8')
                     st.download_button(
