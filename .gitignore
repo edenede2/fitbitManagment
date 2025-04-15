@@ -3,3 +3,4 @@ fitbit_log.csv
 data/
 reports/
 .streamlit/config.toml
+.streamlit/secrets.toml
