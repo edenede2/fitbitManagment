@@ -1110,6 +1110,30 @@ class ServerLogFile:
                 except Exception as e:
                     print(f"Error creating/updating watch {row.get('name', '')} via API: {e}")
                     # Continue with existing data
+                    try:
+                        row = {
+                            **row,
+                            "battery": row.get("battery", ""),
+                            "HR": row.get("HR", ""),
+                            "syncDate": row.get("syncDate", ""),
+                            "sleep_start": row.get("sleep_start", ""),
+                            "sleep_end": row.get("sleep_end", ""),
+                            "sleep_duration": row.get("sleep_duration", ""),
+                            "steps": row.get("steps", "")
+                        }
+                    except Exception as e2:
+                        print(f"Error updating row data: {e2}")
+                        row = {
+                            "battery": "",
+                            "HR": "",
+                            "syncDate": "",
+                            "sleep_start": "",
+                            "sleep_end": "",
+                            "sleep_duration": "",
+                            "steps": ""
+                        }
+                # Skip if watch ID is not found
+                
                 
                 # Get previous log entry if available to keep track of failure counters
                 prev_entry = previous_log_entries.get(watch_id, {})
