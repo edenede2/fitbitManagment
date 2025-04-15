@@ -49,8 +49,8 @@ class AuthenticationController:
                 st.session_state.user_role = user_role
                 st.session_state.user_project = user_project
                 
-                st.write(f"Role: {user_role}")
-                st.write(f"Project: {user_project}")
+                st.write(f"Role: {user_project}")
+                st.write(f"Project: {user_role}")
             else:
                 # Demo login options
                 st.subheader("Demo Login")

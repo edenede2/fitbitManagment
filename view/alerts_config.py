@@ -106,13 +106,95 @@ def get_user_qualtrics_config(spreadsheet:Spreadsheet, user_email):
 
 def save_fitbit_config(spreadsheet:Spreadsheet, config_data):
     """Save Fitbit configuration for the current user"""
-
-    # config_df = pl.DataFrame(config_data)
-    spreadsheet.update_sheet("fitbit_alerts_config", config_data, strategy="append")
-    GoogleSheetsAdapter.save(spreadsheet, "fitbit_alerts_config")
-
     
-
+    # Get the current configuration sheet
+    fitbit_config_sheet = spreadsheet.get_sheet("fitbit_alerts_config", "fitbit_alerts_config")
+    current_config_df = fitbit_config_sheet.to_dataframe(engine="polars")
+    
+    # Define the checks based on the specified criteria
+    project = config_data.get('project', '')
+    email = config_data.get('email', '')
+    watch = config_data.get('watch', '')
+    manager = config_data.get('manager', '')
+    
+    # Initialize a flag to track if we need to append or replace
+    should_append = True
+    
+    if not current_config_df.is_empty():
+        # Case 1: If no email and no watch, check for rows with the same project
+        if not email and not watch and project:
+            existing_rows = current_config_df.filter(pl.col('project') == project)
+            if not existing_rows.is_empty():
+                # Replace the existing rows with the same project
+                current_config_df = current_config_df.filter(pl.col('project') != project)
+                should_append = False
+        
+        # Case 2: If email specified but no watch, check for rows with the same project and email
+        elif email and not watch and project:
+            existing_rows = current_config_df.filter(
+                (pl.col('project') == project) & (pl.col('email') == email)
+            )
+            if not existing_rows.is_empty():
+                # Replace the existing rows with the same project and email
+                current_config_df = current_config_df.filter(
+                    ~((pl.col('project') == project) & (pl.col('email') == email))
+                )
+                should_append = False
+        
+        # Case 3: If watch, email and project all specified, check for exact match
+        elif email and watch and project:
+            existing_rows = current_config_df.filter(
+                (pl.col('project') == project) & 
+                (pl.col('email') == email) & 
+                (pl.col('watch') == watch)
+            )
+            if not existing_rows.is_empty():
+                # Replace the existing rows with the same project, email, and watch
+                current_config_df = current_config_df.filter(
+                    ~((pl.col('project') == project) & 
+                      (pl.col('email') == email) & 
+                      (pl.col('watch') == watch))
+                )
+                should_append = False
+    
+    # Convert the config_data to a DataFrame
+    new_config_df = pl.DataFrame([config_data])
+    
+    # Append the new configuration or replace with updated configuration
+    # Check if the misspelled column exists and rename it to match
+    if "battaryThr" in current_config_df.columns and "batteryThr" in new_config_df.columns:
+        current_config_df = current_config_df.rename({"battaryThr": "batteryThr"})
+    elif "batteryThr" in current_config_df.columns and "battaryThr" in new_config_df.columns:
+        new_config_df = new_config_df.rename({"battaryThr": "batteryThr"})
+    
+    # Ensure numeric columns are consistent types by converting to strings
+    numeric_cols = ['currentSyncThr', 'totalSyncThr', 'currentHrThr', 'totalHrThr', 
+                   'currentSleepThr', 'totalSleepThr', 'currentStepsThr', 'totalStepsThr', 
+                   'batteryThr']
+    
+    # Convert numeric columns to string in both dataframes to ensure compatibility
+    if not current_config_df.is_empty():
+        for col in numeric_cols:
+            if col in current_config_df.columns:
+                current_config_df = current_config_df.with_columns(pl.col(col).cast(pl.Utf8))
+    
+    for col in numeric_cols:
+        if col in new_config_df.columns:
+            new_config_df = new_config_df.with_columns(pl.col(col).cast(pl.Utf8))
+            
+    if should_append:
+        # Just append the new config
+        if not current_config_df.is_empty():
+            updated_df = pl.concat([current_config_df, new_config_df])
+        else:
+            updated_df = new_config_df
+    else:
+        # Add the new config after filtering out the old one
+        updated_df = pl.concat([current_config_df, new_config_df])
+    
+    # Update the sheet with the new configuration
+    spreadsheet.update_sheet("fitbit_alerts_config", updated_df, strategy="replace")
+    GoogleSheetsAdapter.save(spreadsheet, "fitbit_alerts_config")
     
     return True
 
@@ -178,7 +260,7 @@ def get_fibro_users(spreadsheet:Spreadsheet):
     # Filter by project
     fibro_users_df = fibro_users_df.filter(pl.col('project') == 'fibro')
     fibro_users_df = fibro_users_df.with_columns(
-        pl.col("isActive").apply(
+        pl.col("isActive").map_elements(
             lambda x: x if isinstance(x, bool) else (True if str(x).lower() == "true" else False)
         )
     )
@@ -223,11 +305,17 @@ def appsheet_config(spreadsheet:Spreadsheet,user_email):
             if user not in fitbit_active_users['user'].to_list():
                 st.warning("This user is inactive. You cannot edit their configuration.")
             else:
-                appsheet_config = appsheet_config.filter(pl.col('user') == user)
+                # Check if appsheet_config is a DataFrame or dict
+                if isinstance(appsheet_config, pl.DataFrame):
+                    user_config = appsheet_config.filter(pl.col('user') == user)
+                    missing_thr_value = user_config.get('missingThr', 3) if not user_config.is_empty() else 3
+                else:
+                    # It's a dictionary
+                    missing_thr_value = appsheet_config.get('missingThr', 3)
 
                 missing_thr = st.number_input("Missing Data Threshold",
                                             min_value=1, max_value=100,  # 1 hour to 1 week
-                                            value=int(appsheet_config.get('missingThr', 3)))
+                                            value=int(missing_thr_value))
                 save_button = st.form_submit_button("Save Configuration")
                 if save_button:
                     # Prepare data for saving
@@ -280,7 +368,111 @@ def qualtrics_config(spreadsheet:Spreadsheet, user_email):
             else:
                 st.error("Failed to save configuration. Please try again.")
 
+def get_project_fitbit_configs(spreadsheet:Spreadsheet, user_project):
+    """Get all Fitbit configurations for a specific project"""
+    # Get the fitbit alerts config sheet
+    fitbit_config_sheet = spreadsheet.get_sheet("fitbit_alerts_config", "fitbit_alerts_config")
+    
+    # Convert to DataFrame for easier filtering
+    config_df = fitbit_config_sheet.to_dataframe(engine="polars")
+    
+    # If empty, return empty DataFrame
+    if config_df.is_empty():
+        return pl.DataFrame()
+    
+    # If Admin, return all configs, otherwise filter by project
+    if user_project == 'Admin':
+        return config_df
+    else:
+        # Filter by project
+        return config_df.filter(pl.col('project') == user_project)
 
+def get_project_qualtrics_configs(spreadsheet:Spreadsheet, user_project):
+    """Get all Qualtrics configurations for a specific project"""
+    # Get the qualtrics alerts config sheet
+    qualtrics_config_sheet = spreadsheet.get_sheet("qualtrics_alerts_config", "qualtrics_alerts_config")
+    
+    # Convert to DataFrame for easier filtering
+    config_df = qualtrics_config_sheet.to_dataframe(engine="polars")
+    
+    # If empty, return empty DataFrame
+    if config_df.is_empty():
+        return pl.DataFrame()
+    
+    # If Admin, return all configs, otherwise filter by project
+    if user_project == 'Admin':
+        return config_df
+    else:
+        # Filter by project
+        return config_df.filter(pl.col('project') == user_project)
+
+def display_fitbit_configs(configs_df):
+    """Display a visualization of Fitbit alert configurations"""
+    if configs_df.is_empty():
+        st.info("No existing Fitbit alert configurations for this project.")
+        return
+    
+    st.subheader("Current Fitbit Alert Configurations")
+    
+    # Create an expandable section for the configuration table
+    with st.expander("View all configurations", expanded=True):
+        # Create tabs for different views of the configuration
+        tab_summary, tab_details = st.tabs(["Summary", "Detailed View"])
+        
+        with tab_summary:
+            # Create a summary table with key information
+            summary_cols = ['project', 'email', 'watch', 'batteryThr', 'endDate']
+            if all(col in configs_df.columns for col in summary_cols):
+                summary_df = configs_df.select(summary_cols)
+                st.dataframe(summary_df, use_container_width=True)
+            else:
+                st.warning("Configuration data is missing expected columns")
+        
+        with tab_details:
+            # Show the full configuration details
+            st.dataframe(configs_df, use_container_width=True)
+    
+    # Add some visual charts if there are enough configurations
+    if len(configs_df) > 1:
+        st.subheader("Configuration Analysis")
+        
+        # Chart 1: Battery thresholds
+        if 'batteryThr' in configs_df.columns:
+            try:
+                st.caption("Battery Level Thresholds")
+                battery_data = configs_df.select(['email', 'batteryThr']).to_pandas()
+                
+                import plotly.express as px
+                fig = px.bar(battery_data, x='email', y='batteryThr', 
+                             labels={'batteryThr': 'Battery Threshold (%)', 'email': 'Recipient Email'},
+                             title="Battery Alert Thresholds by Recipient")
+                st.plotly_chart(fig, use_container_width=True)
+            except Exception as e:
+                st.error(f"Error creating battery threshold chart: {e}")
+
+def display_qualtrics_configs(configs_df):
+    """Display a visualization of Qualtrics alert configurations"""
+    if configs_df.is_empty():
+        st.info("No existing Qualtrics alert configurations for this project.")
+        return
+    
+    st.subheader("Current Qualtrics Alert Configurations")
+    
+    # Display the configuration table
+    st.dataframe(configs_df, use_container_width=True)
+    
+    # Add a visualization if there are multiple configurations
+    if len(configs_df) > 1 and 'hoursThr' in configs_df.columns:
+        try:
+            hours_data = configs_df.select(['manager', 'hoursThr']).to_pandas()
+            
+            import plotly.express as px
+            fig = px.bar(hours_data, x='manager', y='hoursThr',
+                         labels={'hoursThr': 'Hours Threshold', 'manager': 'Manager'},
+                         title="Response Time Thresholds by Manager")
+            st.plotly_chart(fig, use_container_width=True)
+        except Exception as e:
+            st.error(f"Error creating hours threshold chart: {e}")
 
 def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_project) -> None:
     """Main function for the alerts configuration page"""
@@ -314,6 +506,13 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
     # Tab 1: Fitbit Alerts Configuration
     with tab1:
         st.header("Fitbit Alerts Configuration")
+        
+        # Add visualization of current configurations
+        fitbit_configs = get_project_fitbit_configs(spreadsheet, user_project)
+        display_fitbit_configs(fitbit_configs)
+        
+        st.markdown("---")
+        st.subheader("Create/Edit Configuration")
         
         # Get current configuration
         fitbit_config, watch_names = get_user_fitbit_config(spreadsheet, user_email, user_project)
@@ -365,7 +564,7 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
 
             st.subheader("(OPTIONAL) Watch Name")
             st.write("Select the specific watch name for which you want to set the alerts config.")
-            watch_name = st.selectbox("Watch Name", options=watch_names, index=0)
+            watch_name = st.selectbox("Watch Name", options=["All the project."] + watch_names , index=0)
 
             st.subheader("End Date")
             st.write("This date will be used to stop the alerts.")
@@ -388,7 +587,7 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
                     'batteryThr': battery_thr,
                     'manager': user_email,
                     'email': recipient_email,
-                    'watch': watch_name,
+                    'watch': watch_name if watch_name != "All the project." else '',
                     'endDate': end_date.strftime("%Y-%m-%d")
                 }
                 
@@ -400,6 +599,9 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
     
     # Tab 2: Qualtrics Alerts Configuration
     with tab2:
+        if user_role == 'Admin':
+            user_project = st.selectbox("Select Project", ["fibro", "nova"])
+
         if user_project == 'fibro':
             appsheet_config(spreadsheet, user_email)
         elif user_project == 'nova':
@@ -407,6 +609,13 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
             
             
             st.header("Qualtrics Alerts Configuration")
+            
+            # Add visualization of current configurations
+            qualtrics_configs = get_project_qualtrics_configs(spreadsheet, user_project)
+            display_qualtrics_configs(qualtrics_configs)
+            
+            st.markdown("---")
+            st.subheader("Create/Edit Configuration")
             
             # Get current configuration
             qualtrics_config = get_user_qualtrics_config(spreadsheet, user_email)
