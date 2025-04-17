@@ -43,7 +43,7 @@ def get_user_fitbit_config(spreadsheet:Spreadsheet, user_email, user_project):
         }
     
     # Filter by manager email
-    user_config = config_df.filter(config_df['manager'] == user_email)
+    user_config = config_df.filter(pl.col('manager') == user_email)
     
     # If user has no config, return default
     if user_config.is_empty():
