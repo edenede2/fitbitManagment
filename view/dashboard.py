@@ -128,7 +128,7 @@ def fetch_watch_data(watch_name, signal_type, start_date, end_date, should_fetch
                 df = df.rename(columns={'value': 'steps'})
                 df['syncDate'] = df['datetime']
                 
-        elif signal_type == "sleep_duration":
+        elif signal_type == "Sleep":
             # Convert date objects to strings in the format YYYY-MM-DD
             start_date_str = start_date.strftime("%Y-%m-%d") if isinstance(start_date, datetime.date) else start_date
             end_date_str = end_date.strftime("%Y-%m-%d") if isinstance(end_date, datetime.date) else end_date
