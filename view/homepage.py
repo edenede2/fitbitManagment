@@ -538,9 +538,71 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                 hide_index=True
             )
 
-            grid_options =  {"filter" :  True}
-            
-            AgGrid(display_df[display_columns].to_pandas(),grid_options=grid_options)
+            # Define column definitions with specific filter types
+            column_defs = []
+            for col in display_columns:
+                # Get display name from column_config if available
+                display_name = column_config.get(col, col)
+                if isinstance(display_name, dict) and 'title' in display_name:
+                    display_name = display_name['title']
+                elif isinstance(display_name, st.column_config._ColumnConfig):
+                    display_name = display_name.label or col
+                
+                column_def = {
+                    "headerName": display_name,
+                    "field": col,
+                    "sortable": True,
+                    "resizable": True
+                }
+                
+                # Add special filter types based on column content
+                if col == "Battery Level":
+                    column_def["filter"] = "agNumberColumnFilter"
+                    column_def["filterParams"] = {
+                        "allowedCharPattern": "\\d\\-\\.",
+                        "numberParser": True
+                    }
+                elif col in ["Heart Rate", "Steps"]:
+                    column_def["filter"] = "agNumberColumnFilter"
+                elif col == "is_active":
+                    column_def["filter"] = "agSetColumnFilter"
+                elif col == "watchName" or col == "project":
+                    column_def["filter"] = "agTextColumnFilter"
+                    column_def["filterParams"] = {
+                        "filterOptions": ["contains", "notContains", "equals", "notEqual", "startsWith", "endsWith"],
+                        "defaultOption": "contains"
+                    }
+                else:
+                    column_def["filter"] = "agTextColumnFilter"
+                
+                column_defs.append(column_def)
+
+            # Create comprehensive grid options
+            grid_options = {
+                "columnDefs": column_defs,
+                "defaultColDef": {
+                    "flex": 1,
+                    "minWidth": 120,
+                    "filter": True,
+                    "floatingFilter": True,
+                    "sortable": True,
+                    "resizable": True
+                },
+                "pagination": True,
+                "paginationPageSize": 20,
+                "enableRangeSelection": True,
+                "rowSelection": "multiple"
+            }
+
+            # Render the AgGrid with improved options
+            AgGrid(
+                display_df[display_columns].to_pandas(),
+                grid_options=grid_options,
+                update_mode="MODEL_CHANGED",
+                fit_columns_on_grid_load=True,
+                allow_unsafe_jscode=True,
+                height=500
+            )
             
             # Add expandable section with detailed view
             with st.expander("View Detailed Data"):
