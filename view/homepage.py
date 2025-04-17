@@ -538,9 +538,8 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                 hide_index=True
             )
 
-            grid_options = [
-                {'field': 'watchName', 'filter': True}
-            ]
+            grid_options =  {'filter': True}
+            
             AgGrid(display_df[display_columns].to_pandas(),grid_options=grid_options)
             
             # Add expandable section with detailed view
