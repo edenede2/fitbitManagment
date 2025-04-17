@@ -596,12 +596,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
 
             # Render the AgGrid with improved options
             AgGrid(
-                display_df[display_columns].to_pandas(),
-                grid_options=grid_options,
-                update_mode="MODEL_CHANGED",
-                fit_columns_on_grid_load=True,
-                allow_unsafe_jscode=True,
-                height=500
+                display_df[display_columns].to_pandas().to_dict(orient="records")
             )
             
             # Add expandable section with detailed view
