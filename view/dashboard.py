@@ -264,7 +264,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
     # Get available watches
     with st.spinner("Loading available watches..."):
         if 'available_watches' not in st.session_state:
-            st.session_state.available_watches = st.session_state.fitbit_watches.keys()
+            st.session_state.available_watches = list(st.session_state.fitbit_watches.keys())
     
         if len(st.session_state.available_watches) <= 0:
             st.warning("No watches available for your role and project")
