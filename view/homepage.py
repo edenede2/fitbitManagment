@@ -595,7 +595,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
             }
 
             gd = GridOptionsBuilder.from_dataframe(display_df[display_columns].to_pandas())
-            gd.build()
+            gd =gd.build()
             st.write(gd)
 
             # Render the AgGrid with improved options
