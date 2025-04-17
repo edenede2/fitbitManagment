@@ -545,8 +545,8 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                 display_name = column_config.get(col, col)
                 if isinstance(display_name, dict) and 'title' in display_name:
                     display_name = display_name['title']
-                elif isinstance(display_name, st.column_config._ColumnConfig):
-                    display_name = display_name.label or col
+                # elif isinstance(display_name, st.column_config._ColumnConfig):
+                #     display_name = display_name.label or col
                 
                 column_def = {
                     "headerName": display_name,
