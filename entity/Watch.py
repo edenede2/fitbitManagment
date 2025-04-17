@@ -760,7 +760,7 @@ class Watch:
             start_time=hour_ago,
             end_time=current_date
         )
-        
+        st.write(f"data: {data}")
         processed_data = self.process_data('Heart Rate Intraday', data)
         
         if processed_data and len(processed_data) > 0:
