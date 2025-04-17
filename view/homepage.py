@@ -537,7 +537,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                 height=min(35 * len(display_df) + 38, 600),
                 hide_index=True
             )
-            AgGrid(display_df[display_columns])
+            AgGrid(display_df[display_columns].to_pandas())
             
             # Add expandable section with detailed view
             with st.expander("View Detailed Data"):
