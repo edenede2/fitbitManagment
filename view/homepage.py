@@ -7,6 +7,7 @@ from entity.Sheet import Spreadsheet, GoogleSheetsAdapter
 from Decorators.congrates import congrats, welcome_returning_user
 from model.config import get_secrets
 from mitosheet.streamlit.v1 import spreadsheet as msp
+from st_aggrid import AgGrid
 import pandas as pd
 import polars as pl
 import numpy as np
@@ -536,6 +537,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                 height=min(35 * len(display_df) + 38, 600),
                 hide_index=True
             )
+            AgGrid(display_df[display_columns])
             
             # Add expandable section with detailed view
             with st.expander("View Detailed Data"):
