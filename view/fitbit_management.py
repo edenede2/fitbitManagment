@@ -167,7 +167,7 @@ def display_editable_table(fitbit_df: pl.DataFrame, user_df: pl.DataFrame, is_ad
         The edited DataFrame
     """
     # Create a copy to avoid modifying the original during editing
-    edited_df = fitbit_df.clone()
+    edited_df = fitbit_df.clone().sort("project", "name")
     
     # Create a data editor with appropriate permissions
     edited_df = st.data_editor(

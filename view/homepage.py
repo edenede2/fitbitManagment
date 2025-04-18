@@ -669,7 +669,17 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                 st.subheader("Complete Raw Data")
                 if user_role == "Admin":
                     # Show all data for Admin
-                    st.dataframe(fitbit_log_df.to_pandas())
+                    # st.dataframe(fitbit_log_df.to_pandas())
+                    gd = GridOptionsBuilder.from_dataframe(
+                        fitbit_log_df.to_pandas()
+                    )
+                    configure_filters_from_polars(gd, fitbit_log_df)
+                    AgGrid(
+                        fitbit_log_df.to_pandas(),
+                        gridOptions=gd.build(),
+                        fit_columns_on_grid_load=True,
+                        theme="streamlit"
+                    )
                     # Add download button for the raw data
                     csv = fitbit_log_df.write_csv().encode('utf-8')
                     st.download_button(
@@ -681,7 +691,17 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                 else:
                     # Show filtered data for others
                     fitbit_log_df = fitbit_log_df.filter(pl.col('project') == user_project)
-                    st.dataframe(fitbit_log_df.to_pandas())
+                    # st.dataframe(fitbit_log_df.to_pandas())
+                    gd = GridOptionsBuilder.from_dataframe(
+                        fitbit_log_df.to_pandas()
+                    )
+                    configure_filters_from_polars(gd, fitbit_log_df)
+                    AgGrid(
+                        fitbit_log_df.to_pandas(),
+                        gridOptions=gd.build(),
+                        fit_columns_on_grid_load=True,
+                        theme="streamlit"
+                    )
                     # Add download button for the filtered data
                     csv = fitbit_log_df.write_csv().encode('utf-8')
                     st.download_button(
@@ -803,7 +823,17 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                     # If all visualizations are empty, show the raw data
                     if (battery_df.height + hr_df.height + steps_df.height + sleep_df.height) == 0:
                         st.warning("No visualization data available. Here's the raw data for troubleshooting:")
-                        st.dataframe(watch_history.select(['lastCheck', 'lastBattaryVal', 'lastHRVal', 'lastStepsVal', 'lastSleepDur']).head(10))
+                        # st.dataframe(watch_history.select(['lastCheck', 'lastBattaryVal', 'lastHRVal', 'lastStepsVal', 'lastSleepDur']).head(10))
+                        gd = GridOptionsBuilder.from_dataframe(
+                            watch_history.select(['lastCheck', 'lastBattaryVal', 'lastHRVal', 'lastStepsVal', 'lastSleepDur']).to_pandas()
+                        )
+                        configure_filters_from_polars(gd, watch_history)
+                        AgGrid(
+                            watch_history.select(['lastCheck', 'lastBattaryVal', 'lastHRVal', 'lastStepsVal', 'lastSleepDur']).to_pandas(),
+                            gridOptions=gd.build(),
+                            fit_columns_on_grid_load=True,
+                            theme="streamlit"
+                        )
                 else:
                     st.info(f"No historical data available for {selected_watch}")
             else:
