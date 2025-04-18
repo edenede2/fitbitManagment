@@ -662,6 +662,8 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                 AgGrid(
                     detail_df.to_pandas(),
                     gridOptions=gd.build(),
+                    fit_columns_on_grid_load=True,
+                    theme="streamlit"
                 )
                 # Show complete raw data from the sheet
                 st.subheader("Complete Raw Data")
