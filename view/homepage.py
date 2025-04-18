@@ -595,18 +595,28 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                 "rowSelection": "multiple"
             }
 
-            gd = GridOptionsBuilder.from_dataframe(display_df[display_columns].to_pandas())
-            gd.configure_default_column(filterable=True, sortable=True, resizable=True)
-            gd =gd.build()
-            st.write(gd)
+            gd = GridOptionsBuilder.from_dataframe(
+                    display_df[display_columns].to_pandas()
+            )
+            for col in display_columns:
+                if col in ("Battery Level", "Heart Rate", "Steps"):
+                    gd.configure_column(col, filter="agNumberColumnFilter")
+                elif col == "is_active":
+                    gd.configure_column(col, filter="agSetColumnFilter")
+                else:
+                    gd.configure_column(col, filter="agTextColumnFilter")
 
-            # Render the AgGrid with improved options
             AgGrid(
                 display_df[display_columns].to_pandas(),
-                gridOptions=grid_options,      # ← use this, not the blank builder
-                fit_columns_on_grid_load=True,
-                theme="streamlit",
+                gridOptions=gd.build(),
             )
+            # Render the AgGrid with improved options
+            # AgGrid(
+            #     display_df[display_columns].to_pandas(),
+            #     gridOptions=grid_options,      # ← use this, not the blank builder
+            #     fit_columns_on_grid_load=True,
+            #     theme="streamlit",
+            # )
             
             # Add expandable section with detailed view
             with st.expander("View Detailed Data"):
