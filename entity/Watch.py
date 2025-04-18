@@ -732,7 +732,7 @@ class Watch:
         data = self.fetch_data('device', force_fetch=force_fetch)
         
         if data and isinstance(data, list) and len(data) > 0:
-            device = data[0]  # Get the first device
+            device = data[-1]  # Get the first device
             self.battery_level = device.get('batteryLevel')
             sync_time = device.get('lastSyncTime')
             if sync_time:
