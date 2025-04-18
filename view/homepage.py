@@ -603,7 +603,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
             # Render the AgGrid with improved options
             AgGrid(
                 display_df[display_columns].to_pandas(),
-                gridOptions=grid_options,      # ← use this, not the blank builder
+                gridOptions=gd,      # ← use this, not the blank builder
                 fit_columns_on_grid_load=True,
                 theme="streamlit",
             )
