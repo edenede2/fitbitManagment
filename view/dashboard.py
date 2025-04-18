@@ -649,7 +649,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                     
                     with col2:
                         st.markdown("### 📊 Latest Metrics")
-                        st.write(f"**selected_details:** {st.session_state.watch_details[st.session_state.selected_watch]}")
+                        # st.write(f"**selected_details:** {st.session_state.watch_details[st.session_state.selected_watch]}")
                         st.info(f"**Last Synced:** {st.session_state.watch_details[st.session_state.selected_watch].get('lastSynced', '')}")
                         st.info(f"**Heart Rate:** {st.session_state.watch_details[st.session_state.selected_watch].get('lastHeartRate', '')} bpm")
                         st.info(f"**Steps:** {st.session_state.watch_details[st.session_state.selected_watch].get('lastSteps', '')}")
