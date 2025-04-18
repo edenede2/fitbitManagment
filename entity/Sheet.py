@@ -1828,7 +1828,7 @@ class AlertAnalyzer:
     """Analyzes WhatsApp alerts and message statuses."""
     
     @staticmethod
-    def analyze_whatsapp_messages(bulldog_sheet, alert_sheet, hours_threshold=48):
+    def analyze_whatsapp_messages(bulldog_sheet:Sheet, alert_sheet:Sheet, hours_threshold=48):
         """
         Analyze WhatsApp messages for status and identify suspicious numbers.
         
