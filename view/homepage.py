@@ -7,7 +7,8 @@ from entity.Sheet import Spreadsheet, GoogleSheetsAdapter
 from Decorators.congrates import congrats, welcome_returning_user
 from model.config import get_secrets
 from mitosheet.streamlit.v1 import spreadsheet as msp
-from st_aggrid import AgGrid, GridOptionsBuilder
+from st_aggrid import AgGrid
+from st_aggrid.grid_options_builder import GridOptionsBuilder
 import pandas as pd
 import polars as pl
 import numpy as np
@@ -595,6 +596,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
             }
 
             gd = GridOptionsBuilder.from_dataframe(display_df[display_columns].to_pandas())
+            gd.configure_default_column(filterable=True, sortable=True, resizable=True)
             gd =gd.build()
             st.write(gd)
 
