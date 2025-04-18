@@ -23,6 +23,7 @@ import re
 import warnings
 from typing import List, Dict, Any
 # from streamlit_elements import elements, dashboard, mui, html
+from controllers.agGridHelper import configure_filters_from_polars
 
 def display_homepage(user_email, user_role, user_project, spreadsheet: Spreadsheet) -> None:
     """
@@ -531,13 +532,13 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
             
             display_df = display_df.filter(pl.col('Last Sync').is_not_null())
             # Display using st.dataframe with column config
-            st.dataframe(
-                display_df[display_columns],
-                column_config=column_config,
-                use_container_width=True,
-                height=min(35 * len(display_df) + 38, 600),
-                hide_index=True
-            )
+            # st.dataframe(
+            #     display_df[display_columns],
+            #     column_config=column_config,
+            #     use_container_width=True,
+            #     height=min(35 * len(display_df) + 38, 600),
+            #     hide_index=True
+            # )
 
             # Define column definitions with specific filter types
             column_defs = []
@@ -652,8 +653,16 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                             pass
                 
                 # Display as dataframe
-                st.dataframe(detail_df, use_container_width=True)
+                # st.dataframe(detail_df, use_container_width=True)
                 
+                gd = GridOptionsBuilder.from_dataframe(
+                    detail_df.to_pandas()
+                )
+                configure_filters_from_polars(gd, detail_df)
+                AgGrid(
+                    detail_df.to_pandas(),
+                    gridOptions=gd.build(),
+                )
                 # Show complete raw data from the sheet
                 st.subheader("Complete Raw Data")
                 if user_role == "Admin":
