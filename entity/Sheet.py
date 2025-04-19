@@ -1745,7 +1745,7 @@ class ServerLogFile:
                 "watchName": row.get("name", ""),
                 "lastCheck": now,
                 "lastSynced": row.get("syncDate", ""),
-                "lastBattary": now if row.get("battery") else "",
+                "lastBattary": row.get("syncDate", ""),
                 "lastHR": now if row.get("HR") else "",
                 "lastSleepStartDateTime": row.get("sleep_start", ""),
                 "lastSleepEndDateTime": row.get("sleep_end", ""),
