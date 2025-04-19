@@ -90,9 +90,8 @@ def aggrid_polars(df_pl: pl.DataFrame,
     # Save the selected rows for next render
     if resp.get("selected_rows"):
         st.session_state[f"aggrid_state_{key}"]["selected_rows"] = resp["selected_rows"]
-    
+        st.write(st.session_state[f"aggrid_state_{key}"]["selected_rows"])
     # Convert the returned data back to polars
     edited_df = pl.from_pandas(pd.DataFrame(resp["data"]))
-    st.write(edited_df)
-    st.write(resp["selected_rows"])
+
     return edited_df, resp
