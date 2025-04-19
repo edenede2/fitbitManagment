@@ -545,51 +545,53 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
         display_fitbit_configs(fitbit_configs)
         st.subheader("Reset Fitbits Failures Counters")
         fitbit_failures, total_fitbit_df = get_fitbit_failures(spreadsheet, user_project)
-        # fitbit_failures = fitbit_failures.filter(pl.col('isActive') == True)
-        # fitbit_failures = fitbit_failures.with_columns(
-        #     pl.col("isActive").map_elements(
-        #         lambda x: x if isinstance(x, bool) else (True if str(x).lower() == "true" else False)
-        #     )
-        # )
-        # fitbit_failures = fitbit_failures.filter(pl.col('isActive') == True)
+        
+        # Add a reset column for checkboxes
         fitbit_failures = fitbit_failures.with_columns(
             reset=pl.lit(False)
         )
-        edited_df, resp = aggrid_polars(fitbit_failures, bool_editable=False, key="grid1")
-        st.write("Edited DF (read‑only):", edited_df)
-
-        # editable check‑boxes
-        edited_df2, resp2 = aggrid_polars(fitbit_failures, bool_editable=True, key="grid2")
-        st.write("Edited DF (editable):", resp2.data)
-        # Create a grid for the fitbit failures
-        edited_df_failures, grid_response = aggrid_polars(fitbit_failures, bool_editable=True, key="ffg")
-        st.write(grid_response.data)
-        if st.button("Reset Fitbit Failures Counters"):
-            # Get the selected rows
-            selected_rows = grid_response.get('selected_rows', [])
-            # Ensure selected_rows is a list
-            if not isinstance(selected_rows, list):
-                selected_rows = [selected_rows] if selected_rows is not None else []
+        
+        # Use only one editable grid
+        edited_df, grid_response = aggrid_polars(fitbit_failures, bool_editable=True, key="fitbit_reset_grid")
+        
+        # Show the selected rows with reset=True
+        if len(grid_response.selected_rows) > 0:
+            st.write("Selected watches to reset:")
+            for row in grid_response.selected_rows:
+                st.write(f"- {row.get('name', '')}")
                 
-            if len(selected_rows) > 0:
+        # If data is edited (checkboxes changed), show which ones are selected
+        if grid_response.data is not None:
+            reset_watches = [row.get('name', '') for row in grid_response.data if row.get('reset', False)]
+            if reset_watches:
+                st.write("Watches marked for reset:", ", ".join(reset_watches))
+        
+        if st.button("Reset Fitbit Failures Counters"):
+            # Use the data from the grid response, which contains the updated checkbox values
+            reset_rows = [row for row in grid_response.data if row.get('reset', False)]
+                
+            if len(reset_rows) > 0:
                 col_to_reset = [col for col in fitbit_failures.columns if col.startswith('Total')]
                 # Reset the counters for the selected rows
-                for row in selected_rows:
-                    if row['reset']:
-                        for column in col_to_reset:
-                            total_fitbit_df = total_fitbit_df.with_columns(
-                                pl.when(pl.col('watchName') == row['watchName'] and pl.col('lastCheck') == row['lastCheck'])
-                                .then(pl.lit(0))
-                                .otherwise(pl.col(column))
-                                .alias(column)
-                            )
-                    
+                for row in reset_rows:
+                    for column in col_to_reset:
+                        total_fitbit_df = total_fitbit_df.with_columns(
+                            pl.when((pl.col('watchName') == row.get('watchName', '')) & 
+                                   (pl.col('lastCheck') == row.get('lastCheck', '')))
+                            .then(pl.lit(0))
+                            .otherwise(pl.col(column))
+                            .alias(column)
+                        )
+                
                 # Update the sheet with the new configuration
                 spreadsheet.update_sheet("FitbitLog", total_fitbit_df, strategy="replace")
                 GoogleSheetsAdapter.save(spreadsheet, "FitbitLog")
-                st.success("Fitbit failures counters reset successfully!")
+                st.success(f"Reset {len(reset_rows)} fitbit failure counters successfully!")
+                
+                # Force a rerun to refresh the grid with updated data
+                st.experimental_rerun()
             else:
-                st.warning("No rows selected for resetting.")
+                st.warning("No watches selected for reset. Please check the boxes in the 'reset' column.")
         st.markdown("---")
         st.subheader("Create/Edit Configuration")
         
