@@ -57,10 +57,10 @@ def build_grid_options(df_pl: pl.DataFrame,bool_editable: False) -> dict:
 # 3.  put it together inside Streamlit
 # ------------------------------------------------------------------ #
 def aggrid_polars(df_pl: pl.DataFrame, bool_editable: bool = False, key: str = 'key') -> tuple:
-    if f"grid_{key}" not in st.session_state:
-        st.session_state[f"grid_{key}"] = []
+    if f"edited_{key}" not in st.session_state:
+        st.session_state[f"edited_{key}"] = []
     
-    st.session_state[f"grid_{key}"] = AgGrid(
+    grid_response = AgGrid(
         df_pl.to_pandas(),
         gridOptions=build_grid_options(df_pl, bool_editable),
         theme="streamlit",                 # or "balham", "material", …
@@ -68,7 +68,9 @@ def aggrid_polars(df_pl: pl.DataFrame, bool_editable: bool = False, key: str = '
         fit_columns_on_grid_load=True,
         allow_unsafe_jscode=True,          # ← required for checkbox renderer
     )
+
+
     
     # edited data back to Polars
-    edited_df_pl = pl.from_pandas(pd.DataFrame(st.session_state[f"grid_{key}"]["data"]))
-    return edited_df_pl, st.session_state[f"grid_{key}"]
+    st.session_state[f"edited_{key}"] = pl.from_pandas(pd.DataFrame(grid_response["data"]))
+    return st.session_state[f"edited_{key}"], grid_response
