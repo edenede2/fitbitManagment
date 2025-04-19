@@ -559,7 +559,7 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
         if len(st.session_state.reset_checkboxes) > 0:
             # Create a function to check if a row should be marked as reset
             def set_reset_value(row):
-                row_id = f"{row['name']}_{row.get('lastCheck', '')}"
+                row_id = f"{row['watchName']}_{row.get('lastCheck', '')}"
                 return st.session_state.reset_checkboxes.get(row_id, False)
                 
             # Apply the function to update the reset column
@@ -589,7 +589,7 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
             st.write("If the grid checkboxes aren't responding, use these toggles instead:")
             
             # Get unique watches from the data
-            unique_watches = fitbit_failures.select('name').unique().to_series().to_list()
+            unique_watches = fitbit_failures.select('watchName').unique().to_series().to_list()
             
             # Create columns for better layout
             cols = st.columns(3)
@@ -608,11 +608,11 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
                 # Update session state when checkbox changes
                 if reset_watch:
                     # Find all rows for this watch
-                    watch_rows = fitbit_failures.filter(pl.col('name') == watch)
+                    watch_rows = fitbit_failures.filter(pl.col('watchName') == watch)
                     
                     # Update session state for each row
                     for row in watch_rows.rows(named=True):
-                        row_id = f"{row['name']}_{row.get('lastCheck', '')}"
+                        row_id = f"{row['watchName']}_{row.get('lastCheck', '')}"
                         st.session_state.reset_checkboxes[row_id] = True
         
         # Show the selections based on session state (this will always be accurate)
