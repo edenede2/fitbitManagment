@@ -555,12 +555,13 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
         
         # Add any Total columns if they exist
         total_cols = [col for col in available_columns if col.startswith("Total")]
-        cols_to_select.extend(total_cols)
-        
         # Add required columns if they exist
         for col_name in ["watchName", "lastCheck"]:
             if col_name in available_columns:
                 cols_to_select.append(col_name)
+        cols_to_select.extend(total_cols)
+        
+        
         
         # Select only the columns that exist
         if cols_to_select:
