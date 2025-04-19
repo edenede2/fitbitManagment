@@ -547,7 +547,24 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
         fitbit_failures, total_fitbit_df = get_fitbit_failures(spreadsheet, user_project)
         
         # Add a reset column for checkboxes
-        fitbit_failures = fitbit_failures.select(pl.col("^Total.*"), pl.col("watchName"), pl.col("lastCheck"))
+        # First check which columns exist in the DataFrame
+        available_columns = fitbit_failures.columns
+        
+        # Create a list to hold columns we want to select
+        cols_to_select = []
+        
+        # Add any Total columns if they exist
+        total_cols = [col for col in available_columns if col.startswith("Total")]
+        cols_to_select.extend(total_cols)
+        
+        # Add required columns if they exist
+        for col_name in ["watchName", "lastCheck"]:
+            if col_name in available_columns:
+                cols_to_select.append(col_name)
+        
+        # Select only the columns that exist
+        if cols_to_select:
+            fitbit_failures = fitbit_failures.select(cols_to_select)
         
         
         # Create a container to maintain state between rerenders
