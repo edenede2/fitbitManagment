@@ -573,8 +573,10 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
         # After grid is rendered, update session state with any changes
         if grid_response.data is not None:
             for row in grid_response.data:
+                st.write(row)
                 if isinstance(row, str):
                     # Handle the case where row is a string (e.g., row ID)
+                    
                     row_id = row
                 else:
                     # Handle the case where row is a dictionary
