@@ -551,34 +551,79 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
             reset=pl.lit(False)
         )
         
-        # Use only one editable grid
-        edited_df, grid_response = aggrid_polars(fitbit_failures, bool_editable=True, key="fitbit_reset_grid")
-        st.write(edited_df.to_pandas())
-        # Show the selected rows with reset=True
-        if grid_response.selected_rows is not None:
-            if len(grid_response.selected_rows) > 0:
-                st.write("Selected watches to reset:")
-                for row in grid_response.selected_rows:
-                    st.write(f"- {row.get('name', '')}")
-                
-            # If data is edited (checkboxes changed), show which ones are selected
-            if grid_response.data is not None:
-                reset_watches = [row.get('name', '') for row in grid_response.data if row.get('reset', False)]
-                if reset_watches:
-                    st.write("Watches marked for reset:", ", ".join(reset_watches))
+        # Create a container to maintain state between rerenders
+        if "reset_checkboxes" not in st.session_state:
+            st.session_state.reset_checkboxes = {}
         
-        if st.button("Reset Fitbit Failures Counters"):
-            # Use the data from the grid response, which contains the updated checkbox values
-            reset_rows = [row for row in grid_response.data if row.get('reset', False)]
+        # Pre-process the dataframe to use session state values
+        if len(st.session_state.reset_checkboxes) > 0:
+            # Create a function to check if a row should be marked as reset
+            def set_reset_value(row):
+                row_id = f"{row['name']}_{row.get('lastCheck', '')}"
+                return st.session_state.reset_checkboxes.get(row_id, False)
                 
-            if len(reset_rows) > 0:
+            # Apply the function to update the reset column
+            fitbit_failures = fitbit_failures.with_columns(
+                reset=pl.struct(fitbit_failures.columns).map_elements(set_reset_value)
+            )
+        
+        # Use the AgGrid with the preprocessed data
+        edited_df, grid_response = aggrid_polars(fitbit_failures, bool_editable=True, key="fitbit_reset_grid")
+        
+        # After grid is rendered, update session state with any changes
+        if grid_response.data is not None:
+            for row in grid_response.data:
+                row_id = f"{row.get('name', '')}_{row.get('lastCheck', '')}"
+                st.session_state.reset_checkboxes[row_id] = row.get('reset', False)
+        
+        # Create checkbox alternatives - these will respond immediately
+        with st.expander("Alternative selection method", expanded=True):
+            st.write("If the grid checkboxes aren't responding, use these toggles instead:")
+            
+            # Get unique watches from the data
+            unique_watches = fitbit_failures.select('name').unique().to_series().to_list()
+            
+            # Create columns for better layout
+            cols = st.columns(3)
+            
+            # Create a checkbox for each watch
+            for i, watch in enumerate(unique_watches):
+                col_idx = i % 3
+                checkbox_key = f"watch_{watch}_reset"
+                
+                # Pre-fill state from session state if available
+                default = any(v for k, v in st.session_state.reset_checkboxes.items() if k.startswith(f"{watch}_"))
+                
+                # Create the checkbox
+                reset_watch = cols[col_idx].checkbox(f"Reset {watch}", value=default, key=checkbox_key)
+                
+                # Update session state when checkbox changes
+                if reset_watch:
+                    # Find all rows for this watch
+                    watch_rows = fitbit_failures.filter(pl.col('name') == watch)
+                    
+                    # Update session state for each row
+                    for row in watch_rows.rows(named=True):
+                        row_id = f"{row['name']}_{row.get('lastCheck', '')}"
+                        st.session_state.reset_checkboxes[row_id] = True
+        
+        # Show the selections based on session state (this will always be accurate)
+        reset_watches = [k.split('_')[0] for k, v in st.session_state.reset_checkboxes.items() if v]
+        if reset_watches:
+            st.write("Watches marked for reset:", ", ".join(set(reset_watches)))
+        
+        # Reset button now uses session state
+        if st.button("Reset Fitbit Failures Counters"):
+            reset_items = [(k.split('_')[0], k.split('_')[1]) for k, v in st.session_state.reset_checkboxes.items() if v]
+            
+            if len(reset_items) > 0:
                 col_to_reset = [col for col in fitbit_failures.columns if col.startswith('Total')]
-                # Reset the counters for the selected rows
-                for row in reset_rows:
+                # Reset the counters for the selected items
+                for watch_name, last_check in reset_items:
                     for column in col_to_reset:
                         total_fitbit_df = total_fitbit_df.with_columns(
-                            pl.when((pl.col('watchName') == row.get('watchName', '')) & 
-                                   (pl.col('lastCheck') == row.get('lastCheck', '')))
+                            pl.when((pl.col('watchName') == watch_name) & 
+                                   (pl.col('lastCheck') == last_check))
                             .then(pl.lit(0))
                             .otherwise(pl.col(column))
                             .alias(column)
@@ -587,12 +632,15 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
                 # Update the sheet with the new configuration
                 spreadsheet.update_sheet("FitbitLog", total_fitbit_df, strategy="replace")
                 GoogleSheetsAdapter.save(spreadsheet, "FitbitLog")
-                st.success(f"Reset {len(reset_rows)} fitbit failure counters successfully!")
+                st.success(f"Reset {len(reset_items)} fitbit failure counters successfully!")
+                
+                # Clear the session state after successful reset
+                st.session_state.reset_checkboxes = {}
                 
                 # Force a rerun to refresh the grid with updated data
                 st.rerun()
             else:
-                st.warning("No watches selected for reset. Please check the boxes in the 'reset' column.")
+                st.warning("No watches selected for reset. Please check the boxes in the 'reset' column or use the toggles.")
         st.markdown("---")
         st.subheader("Create/Edit Configuration")
         
