@@ -555,7 +555,12 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
         fitbit_failures = fitbit_failures.with_columns(
             reset=pl.lit(False)
         )
+        edited_df, resp = aggrid_polars(fitbit_failures, bool_editable=False, key="grid1")
+        st.write("Edited DF (read‑only):", edited_df)
 
+        # editable check‑boxes
+        edited_df2, resp2 = aggrid_polars(fitbit_failures, bool_editable=True, key="grid2")
+        st.write("Edited DF (editable):", edited_df2)
         # Create a grid for the fitbit failures
         edited_df_failures, grid_response = aggrid_polars(fitbit_failures, bool_editable=True, key="ffg")
         st.write(grid_response.data)
