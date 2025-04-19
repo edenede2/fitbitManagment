@@ -560,7 +560,7 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
 
         # editable check‑boxes
         edited_df2, resp2 = aggrid_polars(fitbit_failures, bool_editable=True, key="grid2")
-        st.write("Edited DF (editable):", edited_df2)
+        st.write("Edited DF (editable):", resp2.data)
         # Create a grid for the fitbit failures
         edited_df_failures, grid_response = aggrid_polars(fitbit_failures, bool_editable=True, key="ffg")
         st.write(grid_response.data)
