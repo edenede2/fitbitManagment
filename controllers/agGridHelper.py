@@ -1,4 +1,4 @@
-from st_aggrid import AgGrid, GridUpdateMode
+from st_aggrid import AgGrid, GridUpdateMode, DataReturnMode
 from st_aggrid.grid_options_builder import GridOptionsBuilder
 import polars as pl
 import pandas as pd
@@ -57,20 +57,15 @@ def build_grid_options(df_pl: pl.DataFrame,bool_editable: False) -> dict:
 # 3.  put it together inside Streamlit
 # ------------------------------------------------------------------ #
 def aggrid_polars(df_pl: pl.DataFrame, bool_editable: bool = False, key: str = 'key') -> tuple:
-    if f"edited_{key}" not in st.session_state:
-        st.session_state[f"edited_{key}"] = []
-    
     grid_response = AgGrid(
         df_pl.to_pandas(),
         gridOptions=build_grid_options(df_pl, bool_editable),
-        theme="streamlit",                 # or "balham", "material", …
-        update_mode=GridUpdateMode.MODEL_CHANGED,  # send back on every edit
+        theme="streamlit",
         fit_columns_on_grid_load=True,
-        allow_unsafe_jscode=True,          # ← required for checkbox renderer
+        allow_unsafe_jscode=True,              # need for builtin renderers
+        update_mode=GridUpdateMode.VALUE_CHANGED,  # fire on every cell edit
+        data_return_mode=DataReturnMode.AS_INPUT,  # return *all* rows
     )
-
-
-    
-    # edited data back to Polars
-    st.session_state[f"edited_{key}"] = pl.from_pandas(pd.DataFrame(grid_response["data"]))
-    return st.session_state[f"edited_{key}"], grid_response
+    # convert back to Polars
+    edited = pl.from_pandas(pd.DataFrame(grid_response["data"]))
+    return edited, grid_response
