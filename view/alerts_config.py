@@ -632,6 +632,7 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
                     for row in watch_rows.rows(named=True):
                         row_id = f"{row['watchName']}_{row.get('lastCheck', '')}"
                         st.session_state.reset_checkboxes[row_id] = True
+                st.write(st.session_state.reset_checkboxes)
         
         # Show the selections based on session state (this will always be accurate)
         reset_watches = [k.split('_')[0] for k, v in st.session_state.reset_checkboxes.items() if v]
