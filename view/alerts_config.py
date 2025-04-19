@@ -557,7 +557,7 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
         )
 
         # Create a grid for the fitbit failures
-        edited_df_failures, grid_response = aggrid_polars(fitbit_failures)
+        edited_df_failures, grid_response = aggrid_polars(fitbit_failures, bool_editable=True)
 
         if st.button("Reset Fitbit Failures Counters"):
             # Get the selected rows
