@@ -572,7 +572,7 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
         
         # After grid is rendered, update session state with any changes
         if grid_response.data is not None:
-            st.write(type(grid_response))
+            st.write(type(grid_response.event_data))
             for row in grid_response.data:
                 
                 if isinstance(row, str):
