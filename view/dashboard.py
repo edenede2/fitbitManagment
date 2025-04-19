@@ -320,7 +320,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
         st.json(st.session_state.watch_details[st.session_state.selected_watch])
         if isinstance(st.session_state.watch_details[st.session_state.selected_watch].get('isActive'), str):
             # Convert string to boolean
-            is_active = True if (st.session_state.watch_details[st.session_state.selected_watch].get('isActive') == 'TRUE') else False
+            is_active = True if (st.session_state.watch_details[st.session_state.selected_watch].get('isActive', '')).lower() == 'true' else False
         elif isinstance(st.session_state.watch_details[st.session_state.selected_watch].get('isActive'), bool):
             is_active = st.session_state.watch_details[st.session_state.selected_watch].get('isActive')
         else:
