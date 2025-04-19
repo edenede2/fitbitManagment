@@ -555,16 +555,17 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
         edited_df, grid_response = aggrid_polars(fitbit_failures, bool_editable=True, key="fitbit_reset_grid")
         
         # Show the selected rows with reset=True
-        if len(grid_response.selected_rows) > 0:
-            st.write("Selected watches to reset:")
-            for row in grid_response.selected_rows:
-                st.write(f"- {row.get('name', '')}")
+        if grid_response.selected_rows is not None:
+            if len(grid_response.selected_rows) > 0:
+                st.write("Selected watches to reset:")
+                for row in grid_response.selected_rows:
+                    st.write(f"- {row.get('name', '')}")
                 
-        # If data is edited (checkboxes changed), show which ones are selected
-        if grid_response.data is not None:
-            reset_watches = [row.get('name', '') for row in grid_response.data if row.get('reset', False)]
-            if reset_watches:
-                st.write("Watches marked for reset:", ", ".join(reset_watches))
+            # If data is edited (checkboxes changed), show which ones are selected
+            if grid_response.data is not None:
+                reset_watches = [row.get('name', '') for row in grid_response.data if row.get('reset', False)]
+                if reset_watches:
+                    st.write("Watches marked for reset:", ", ".join(reset_watches))
         
         if st.button("Reset Fitbit Failures Counters"):
             # Use the data from the grid response, which contains the updated checkbox values
