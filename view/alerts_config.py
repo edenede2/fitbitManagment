@@ -4,6 +4,10 @@ from entity.Sheet import GoogleSheetsAdapter, SheetFactory, Spreadsheet
 from model.config import get_secrets
 import polars as pl
 from datetime import date, timedelta
+from st_aggrid import AgGrid
+from st_aggrid.grid_options_builder import GridOptionsBuilder
+from controllers.agGridHelper import aggrid_polars
+
 def load_spreadsheet() -> Spreadsheet:
     """Load the spreadsheet with all configuration data"""
     secrets = get_secrets()
@@ -248,6 +252,35 @@ def save_appsheet_config(spreadsheet:Spreadsheet, config_data):
     GoogleSheetsAdapter.save(spreadsheet, "appsheet_alerts_config")
 
     return True
+
+def get_fitbit_failures(spreadsheet:Spreadsheet, user_project):
+    """Get Fitbit failures from the spreadsheet"""
+    # Get the fitbit alerts config sheet
+    # GoogleSheetsAdapter.connect(spreadsheet)
+    fitbit_failures_sheet_df = spreadsheet.get_sheet("log", "log").to_dataframe(engine="polars")
+    fitbit_failures_total_sheet_df = spreadsheet.get_sheet("FitbitLog", "log").to_dataframe(engine="polars")
+    # Filter by project
+    if user_project == 'Admin':
+        project_fitbits = fitbit_failures_sheet_df
+        # fitbit_failures_total_sheet_df = fitbit_failures_total_sheet_df
+    else:
+        # Filter by project
+        project_fitbits = fitbit_failures_sheet_df.filter(pl.col('project') == user_project)
+
+    # project_fitbits = fitbit_failures_sheet_df.filter(pl.col('project') == user_project)
+
+    # If empty, return empty DataFrame
+    if project_fitbits.is_empty():
+        project_fitbits = pl.DataFrame(schema={
+            'project': pl.Utf8,
+            'name': pl.Utf8,
+            'token': pl.Utf8,
+            'user': pl.Utf8,
+            'isActive': pl.Boolean,
+            'currentStudent': pl.Utf8
+        })
+        return project_fitbits, fitbit_failures_total_sheet_df
+    return project_fitbits, fitbit_failures_total_sheet_df
 
 def get_fibro_users(spreadsheet:Spreadsheet):
     """Get Fibro users from the spreadsheet"""
@@ -510,7 +543,48 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
         # Add visualization of current configurations
         fitbit_configs = get_project_fitbit_configs(spreadsheet, user_project)
         display_fitbit_configs(fitbit_configs)
-        
+        st.subheader("Reset Fitbits Failures Counters")
+        fitbit_failures, total_fitbit_df = get_fitbit_failures(spreadsheet, user_project)
+        # fitbit_failures = fitbit_failures.filter(pl.col('isActive') == True)
+        fitbit_failures = fitbit_failures.with_columns(
+            pl.col("isActive").map_elements(
+                lambda x: x if isinstance(x, bool) else (True if str(x).lower() == "true" else False)
+            )
+        )
+        fitbit_failures = fitbit_failures.filter(pl.col('isActive') == True)
+        fitbit_failures = fitbit_failures.with_columns(
+            reset=pl.lit(False)
+        )
+
+        # Create a grid for the fitbit failures
+        edited_df_failures, grid_response = aggrid_polars(fitbit_failures)
+
+        if st.button("Reset Fitbit Failures Counters"):
+            # Get the selected rows
+            selected_rows = grid_response.get('selected_rows', [])
+            # Ensure selected_rows is a list
+            if not isinstance(selected_rows, list):
+                selected_rows = [selected_rows] if selected_rows is not None else []
+                
+            if len(selected_rows) > 0:
+                col_to_reset = [col for col in fitbit_failures.columns if col.startswith('Total')]
+                # Reset the counters for the selected rows
+                for row in selected_rows:
+                    if row['reset']:
+                        for column in col_to_reset:
+                            total_fitbit_df = total_fitbit_df.with_columns(
+                                pl.when(pl.col('watchName') == row['watchName'] and pl.col('lastCheck') == row['lastCheck'])
+                                .then(pl.lit(0))
+                                .otherwise(pl.col(column))
+                                .alias(column)
+                            )
+                    
+                # Update the sheet with the new configuration
+                spreadsheet.update_sheet("FitbitLog", total_fitbit_df, strategy="replace")
+                GoogleSheetsAdapter.save(spreadsheet, "FitbitLog")
+                st.success("Fitbit failures counters reset successfully!")
+            else:
+                st.warning("No rows selected for resetting.")
         st.markdown("---")
         st.subheader("Create/Edit Configuration")
         

@@ -23,7 +23,7 @@ import re
 import warnings
 from typing import List, Dict, Any
 # from streamlit_elements import elements, dashboard, mui, html
-from controllers.agGridHelper import configure_filters_from_polars
+from controllers.agGridHelper import aggrid_polars
 
 def display_homepage(user_email, user_role, user_project, spreadsheet: Spreadsheet) -> None:
     """
@@ -655,31 +655,33 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                 # Display as dataframe
                 # st.dataframe(detail_df, use_container_width=True)
                 
-                gd = GridOptionsBuilder.from_dataframe(
-                    detail_df.to_pandas()
-                )
-                configure_filters_from_polars(gd, detail_df)
-                AgGrid(
-                    detail_df.to_pandas(),
-                    gridOptions=gd.build(),
-                    fit_columns_on_grid_load=True,
-                    theme="streamlit"
-                )
+                # gd = GridOptionsBuilder.from_dataframe(
+                #     detail_df.to_pandas()
+                # )
+                # configure_filters_from_polars(gd, detail_df)
+                # AgGrid(
+                #     detail_df.to_pandas(),
+                #     gridOptions=gd.build(),
+                #     fit_columns_on_grid_load=True,
+                #     theme="streamlit"
+                # )
+                # Use AgGrid for better filtering and sorting
+                edited_df, grid_response = aggrid_polars(detail_df)
                 # Show complete raw data from the sheet
                 st.subheader("Complete Raw Data")
                 if user_role == "Admin":
                     # Show all data for Admin
                     # st.dataframe(fitbit_log_df.to_pandas())
-                    gd = GridOptionsBuilder.from_dataframe(
-                        fitbit_log_df.to_pandas()
-                    )
-                    configure_filters_from_polars(gd, fitbit_log_df)
-                    AgGrid(
-                        fitbit_log_df.to_pandas(),
-                        gridOptions=gd.build(),
-                        fit_columns_on_grid_load=True,
-                        theme="streamlit"
-                    )
+                    # gd = GridOptionsBuilder.from_dataframe(
+                    #     fitbit_log_df.to_pandas()
+                    # )
+                    edited_flog, grid_response_flog = aggrid_polars(fitbit_log_df)
+                    # AgGrid(
+                    #     fitbit_log_df.to_pandas(),
+                    #     gridOptions=gd.build(),
+                    #     fit_columns_on_grid_load=True,
+                    #     theme="streamlit"
+                    # )
                     # Add download button for the raw data
                     csv = fitbit_log_df.write_csv().encode('utf-8')
                     st.download_button(
@@ -692,16 +694,16 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                     # Show filtered data for others
                     fitbit_log_df = fitbit_log_df.filter(pl.col('project') == user_project)
                     # st.dataframe(fitbit_log_df.to_pandas())
-                    gd = GridOptionsBuilder.from_dataframe(
-                        fitbit_log_df.to_pandas()
-                    )
-                    configure_filters_from_polars(gd, fitbit_log_df)
-                    AgGrid(
-                        fitbit_log_df.to_pandas(),
-                        gridOptions=gd.build(),
-                        fit_columns_on_grid_load=True,
-                        theme="streamlit"
-                    )
+                    # gd = GridOptionsBuilder.from_dataframe(
+                    #     fitbit_log_df.to_pandas()
+                    # )
+                    edited_flog, grid_response_flog = aggrid_polars(fitbit_log_df)
+                    # AgGrid(
+                    #     fitbit_log_df.to_pandas(),
+                    #     gridOptions=gd.build(),
+                    #     fit_columns_on_grid_load=True,
+                    #     theme="streamlit"
+                    # )
                     # Add download button for the filtered data
                     csv = fitbit_log_df.write_csv().encode('utf-8')
                     st.download_button(
@@ -824,16 +826,17 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                     if (battery_df.height + hr_df.height + steps_df.height + sleep_df.height) == 0:
                         st.warning("No visualization data available. Here's the raw data for troubleshooting:")
                         # st.dataframe(watch_history.select(['lastCheck', 'lastBattaryVal', 'lastHRVal', 'lastStepsVal', 'lastSleepDur']).head(10))
-                        gd = GridOptionsBuilder.from_dataframe(
-                            watch_history.select(['lastCheck', 'lastBattaryVal', 'lastHRVal', 'lastStepsVal', 'lastSleepDur']).to_pandas()
-                        )
-                        configure_filters_from_polars(gd, watch_history)
-                        AgGrid(
-                            watch_history.select(['lastCheck', 'lastBattaryVal', 'lastHRVal', 'lastStepsVal', 'lastSleepDur']).to_pandas(),
-                            gridOptions=gd.build(),
-                            fit_columns_on_grid_load=True,
-                            theme="streamlit"
-                        )
+                        # gd = GridOptionsBuilder.from_dataframe(
+                        #     watch_history.select(['lastCheck', 'lastBattaryVal', 'lastHRVal', 'lastStepsVal', 'lastSleepDur']).to_pandas()
+                        # )
+                        # configure_filters_from_polars(gd, watch_history)
+                        edited_df_wh, grid_response_wh = aggrid_polars( watch_history.select(['lastCheck', 'lastBattaryVal', 'lastHRVal', 'lastStepsVal', 'lastSleepDur']))
+                        # AgGrid(
+                        #     watch_history.select(['lastCheck', 'lastBattaryVal', 'lastHRVal', 'lastStepsVal', 'lastSleepDur']).to_pandas(),
+                        #     gridOptions=gd.build(),
+                        #     fit_columns_on_grid_load=True,
+                        #     theme="streamlit"
+                        # )
                 else:
                     st.info(f"No historical data available for {selected_watch}")
             else:
