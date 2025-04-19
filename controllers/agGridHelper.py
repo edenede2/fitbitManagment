@@ -18,7 +18,9 @@ def polars_dtype_to_ag_filter(dtype: pl.DataType) -> str:
 # ------------------------------------------------------------------ #
 # 2.  build GridOptionsBuilder automatically from Polars schema
 # ------------------------------------------------------------------ #
-def build_grid_options(df_pl: pl.DataFrame,bool_editable: False) -> dict:
+
+def build_grid_options(df_pl: pl.DataFrame,
+                       bool_editable: bool = False) -> dict:
     gd = GridOptionsBuilder.from_dataframe(df_pl.to_pandas())
     gd.configure_default_column(
         filterable=True,
@@ -28,26 +30,22 @@ def build_grid_options(df_pl: pl.DataFrame,bool_editable: False) -> dict:
     )
 
     for col, dtype in df_pl.schema.items():
-
-        # --- Boolean columns: checkbox render & edit ----------------
         if dtype == pl.Boolean:
             common = dict(
                 filter="agSetColumnFilter",
-                cellRenderer="agCheckboxCellRenderer",  # always show tick
-                width=120,
+                cellRenderer="booleanCellRenderer",   # ✓ / ✗
+                width=110,
             )
             if bool_editable:
-                # editable checkbox
                 gd.configure_column(
                     col,
                     editable=True,
-                    cellEditor="agCheckboxCellEditor",
+                    cellEditor="agSelectCellEditor",
+                    cellEditorParams={"values": [True, False]},
                     **common
                 )
             else:
-                # read‑only checkbox
                 gd.configure_column(col, editable=False, **common)
-        # --- everything else: picked by dtype -----------------------
         else:
             gd.configure_column(col, filter=polars_dtype_to_ag_filter(dtype))
 
