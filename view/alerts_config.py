@@ -584,21 +584,6 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
         st.write(grid_response['selected_rows'])
 
 
-        # After grid is rendered, update session state with any changes
-        if grid_response.data is not None:
-            st.write(grid_response.event_data)
-            for row in grid_response.data:
-                
-                if isinstance(row, str):
-                    # Handle the case where row is a string (e.g., row ID)
-                    
-                    row_id = row
-                else:
-                    # Handle the case where row is a dictionary
-                    row_id = f"{row.get('name', '')}_{row.get('lastCheck', '')}"
-                # row_id = f"{row.get('name', '')}_{row.get('lastCheck', '')}"
-                st.session_state.reset_checkboxes[row_id] = row.get('reset', False)
-        
         # Create checkbox alternatives - these will respond immediately
         with st.expander("Alternative selection method", expanded=True):
             st.write("If the grid checkboxes aren't responding, use these toggles instead:")
