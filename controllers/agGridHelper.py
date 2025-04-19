@@ -63,6 +63,8 @@ def aggrid_polars(df_pl: pl.DataFrame, bool_editable: bool = False, key: str = '
         allow_unsafe_jscode=True,              # need for builtin renderers
         update_mode=GridUpdateMode.VALUE_CHANGED,  # fire on every cell edit
         data_return_mode=DataReturnMode.AS_INPUT,  # return *all* rows
+        key=key,                              # ← now forwarded
+
     )
     # convert back to Polars
     edited = pl.from_pandas(pd.DataFrame(grid_response["data"]))
