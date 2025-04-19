@@ -565,7 +565,7 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
             # Apply the function to update the reset column
             fitbit_failures = fitbit_failures.with_columns(
                 reset=pl.struct(fitbit_failures.columns).map_elements(set_reset_value)
-            )
+            ).select(pl.col("^Total.*"), pl.col("watchName"), pl.col("lastCheck"))
         
         # Use the AgGrid with the preprocessed data
         # edited_df, grid_response = aggrid_polars(fitbit_failures, bool_editable=True, key="fitbit_reset_grid")
