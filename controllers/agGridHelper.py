@@ -75,16 +75,28 @@ def aggrid_polars(df_pl: pl.DataFrame,
             "selected_rows": pre_selected_rows if pre_selected_rows else []
         }
     
+    # resp = AgGrid(
+    #     df_pd,
+    #     key=key,
+    #     gridOptions=grid_options,
+    #     theme="streamlit",
+    #     fit_columns_on_grid_load=True,
+    #     allow_unsafe_jscode=True,
+    #     update_mode=GridUpdateMode.SELECTION_CHANGED,  # Changed from VALUE_CHANGED to MODEL_CHANGED
+    #     data_return_mode=DataReturnMode.FILTERED_AND_SORTED,  # Changed to get more complete data
+    #     pre_selected_rows=st.session_state[f"aggrid_state_{key}"]["selected_rows"],
+    # )
     resp = AgGrid(
         df_pd,
         key=key,
         gridOptions=grid_options,
-        theme="streamlit",
+        theme="fresh",
         fit_columns_on_grid_load=True,
         allow_unsafe_jscode=True,
         update_mode=GridUpdateMode.SELECTION_CHANGED,  # Changed from VALUE_CHANGED to MODEL_CHANGED
-        data_return_mode=DataReturnMode.FILTERED_AND_SORTED,  # Changed to get more complete data
-        pre_selected_rows=st.session_state[f"aggrid_state_{key}"]["selected_rows"],
+        height=500,
+        # data_return_mode=DataReturnMode.FILTERED_AND_SORTED,  # Changed to get more complete data
+        # pre_selected_rows=st.session_state[f"aggrid_state_{key}"]["selected_rows"],
     )
     
     # Save the selected rows for next render
