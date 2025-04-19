@@ -558,11 +558,10 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
 
         # Create a grid for the fitbit failures
         edited_df_failures, grid_response = aggrid_polars(fitbit_failures, bool_editable=True)
-
+        st.write(grid_response)
         if st.button("Reset Fitbit Failures Counters"):
             # Get the selected rows
             selected_rows = grid_response.get('selected_rows', [])
-            st.write(selected_rows)
             # Ensure selected_rows is a list
             if not isinstance(selected_rows, list):
                 selected_rows = [selected_rows] if selected_rows is not None else []
