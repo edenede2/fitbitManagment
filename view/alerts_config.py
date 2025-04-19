@@ -553,7 +553,7 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
         
         # Use only one editable grid
         edited_df, grid_response = aggrid_polars(fitbit_failures, bool_editable=True, key="fitbit_reset_grid")
-        
+        st.write(f"Edited DataFrame: {edited_df}")
         # Show the selected rows with reset=True
         if grid_response.selected_rows is not None:
             if len(grid_response.selected_rows) > 0:
