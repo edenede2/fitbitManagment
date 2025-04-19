@@ -82,7 +82,7 @@ def aggrid_polars(df_pl: pl.DataFrame,
         theme="streamlit",
         fit_columns_on_grid_load=True,
         allow_unsafe_jscode=True,
-        update_mode=GridUpdateMode.VALUE_CHANGED,  # Changed from VALUE_CHANGED to MODEL_CHANGED
+        update_mode=GridUpdateMode.SELECTION_CHANGED,  # Changed from VALUE_CHANGED to MODEL_CHANGED
         data_return_mode=DataReturnMode.FILTERED_AND_SORTED,  # Changed to get more complete data
         pre_selected_rows=st.session_state[f"aggrid_state_{key}"]["selected_rows"],
     )
