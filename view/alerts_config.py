@@ -581,7 +581,7 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
             allow_unsafe_jscode=True,
             height=500,
             theme='fresh')
-        st.write(grid_response)
+        st.write(grid_response['selected_rows'])
 
 
         # After grid is rendered, update session state with any changes
