@@ -6,7 +6,7 @@ import streamlit as st
 # ------------------------------------------------------------------ #
 # 1.  dtype  ➜  AG‑Grid filter
 # ------------------------------------------------------------------ #
-def polars_dtype_to_ag_filter(dtype: pl.DataType) -> str:
+def ag_filter(dtype: pl.DataType) -> str:
     if dtype.is_numeric():
         return "agNumberColumnFilter"
     if dtype == pl.Boolean:
