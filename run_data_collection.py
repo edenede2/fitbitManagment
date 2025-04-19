@@ -228,9 +228,10 @@ def analyze_whatsapp_messages():
                     suspicious_nums_sheet = SheetFactory.create_sheet("suspicious_nums", "suspicious_nums")
                     alert_spreadsheet.sheets["suspicious_nums"] = suspicious_nums_sheet
                 
-                # Update sheet data
-                alert_spreadsheet.sheets["suspicious_nums"].data = suspicious_nums_data 
-                GoogleSheetsAdapter.save(alert_spreadsheet, "suspicious_nums")
+                # Update sheet data - use direct assignment instead of update_sheet with append
+                alert_spreadsheet.update_sheet("suspicious_nums", suspicious_nums_data, strategy="append")
+                # alert_spreadsheet.sheets["suspicious_nums"].data = suspicious_nums_data
+                GoogleSheetsAdapter.save(alert_spreadsheet, "suspicious_nums", mode = 'append')  # Remove explicit mode
                 print(f"Updated SuspiciousNums sheet with {len(suspicious_nums_data)} records")
             else:
                 print("No suspicious numbers found")
@@ -1052,7 +1053,7 @@ def check_qualtrics_alerts(suspicious_numbers, config_data):
         print(traceback.format_exc())
         return alerts_sent
 
-def check_late_nums_alerts(late_numbers, config_data):
+def check_late_nums_alerts(late_numbers:pl.DataFrame, config_data:pl.DataFrame):
     """
     Check late response numbers against alert thresholds and send email alerts.
     
@@ -1347,7 +1348,7 @@ def hourly_data_collection():
                     )
             
             # Get suspicious numbers from previous analysis
-            suspicious_numbers_sheet = spreadsheet.get_sheet("suspicious_nums", sheet_type="suspicious_nums")
+            suspicious_numbers_sheet = spreadsheet.get_sheet("suspicious_nums", sheet_type="suspicious_nums", refresh=True)
             suspicious_numbers = suspicious_numbers_sheet.to_dataframe(engine="polars")
             
             if not suspicious_numbers.is_empty():

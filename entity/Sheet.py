@@ -284,8 +284,10 @@ class Spreadsheet:
     sheets: Dict[str, Sheet] = field(default_factory=dict)
     _gspread_connection = None
     
-    def get_sheet(self, name: str, sheet_type: str = 'generic') -> Sheet:
+    def get_sheet(self, name: str, sheet_type: str = 'generic', refresh = False) -> Sheet:
         """Get a sheet by name, creating it if it doesn't exist"""
+        if refresh:
+            GoogleSheetsAdapter.connect(self)
         if name not in self.sheets:
             self.sheets[name] = SheetFactory.create_sheet(sheet_type, name)
         return self.sheets[name]
@@ -664,9 +666,21 @@ class GoogleSheetsAdapter:
                         if not sheet.data or not isinstance(sheet.data, list) or not sheet.data:
                             print(f"No data to save for sheet {sheet_name}")
                             return
+                        
+                        # Make sure headers are in list format (not dict_keys, which is not JSON serializable)
+                        if isinstance(sheet.data[0], dict):
+                            headers = list(sheet.data[0].keys())
+                        elif isinstance(sheet.data[0], list):
+                            # Convert dict_keys to a proper list
+                            headers = list(sheet.data[0][0].keys()) if sheet.data[0] else []
+                        else:
+                            print(f"Unexpected data format in sheet {sheet_name}")
+                            return
                             
-                        # Get headers from first item
-                        headers = list(sheet.data[0].keys())
+                        # Verify headers are valid
+                        if not headers:
+                            print(f"No headers found for sheet {sheet_name}")
+                            return
                         
                         # Different save strategies
                         if save_mode == 'rewrite':
@@ -678,8 +692,11 @@ class GoogleSheetsAdapter:
                             # Add all rows in batches for better performance
                             batch_size = 100  # Google Sheets allows up to 100 rows in a batch
                             all_rows = []
-                            
+                            i = 0
                             for item in sheet.data:
+                                if isinstance(item, list):
+                                    item = item[i] 
+                                    i += 1 
                                 row = [item.get(header, '') for header in headers]
                                 all_rows.append(row)
                             
@@ -750,9 +767,19 @@ class GoogleSheetsAdapter:
                                 new_records = []
                                 
                                 for item in sheet.data:
-                                    item_hash = GoogleSheetsAdapter._hash_record(item)
-                                    if item_hash not in existing_hashes:
-                                        new_records.append(item)
+                                    if isinstance(item, list):
+                                        for i in range(len(item)):
+                                            item_hash = GoogleSheetsAdapter._hash_record(item[i])
+                                            if item_hash not in existing_hashes:
+                                                new_records.append(item[i])
+                                    else:
+                                        # If item is a dict, hash the whole dict
+                                        item_hash = GoogleSheetsAdapter._hash_record(item)
+                                        if item_hash not in existing_hashes:
+                                            new_records.append(item)
+                                    # item_hash = GoogleSheetsAdapter._hash_record(item)
+                                    # if item_hash not in existing_hashes:
+                                    #     new_records.append(item)
                                 
                                 print(f"Found {len(new_records)} new records to append")
                                 
