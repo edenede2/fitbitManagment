@@ -19,53 +19,50 @@ def polars_dtype_to_ag_filter(dtype: pl.DataType) -> str:
 # 2.  build GridOptionsBuilder automatically from Polars schema
 # ------------------------------------------------------------------ #
 
-def build_grid_options(df_pl: pl.DataFrame,
-                       bool_editable: bool = False) -> dict:
+def build_grid_options(df_pl: pl.DataFrame, *, bool_editable: bool) -> dict:
     gd = GridOptionsBuilder.from_dataframe(df_pl.to_pandas())
-    gd.configure_default_column(
-        filterable=True,
-        sortable=True,
-        resizable=True,
-        floatingFilter=True,
-    )
+    gd.configure_default_column(filterable=True, sortable=True,
+                                resizable=True, floatingFilter=True)
 
     for col, dtype in df_pl.schema.items():
         if dtype == pl.Boolean:
             common = dict(
                 filter="agSetColumnFilter",
-                cellRenderer="booleanCellRenderer",   # ✓ / ✗
+                cellRenderer="agCheckboxCellRenderer",  # ⇠ shows a tick
                 width=110,
             )
             if bool_editable:
                 gd.configure_column(
                     col,
                     editable=True,
-                    cellEditor="agSelectCellEditor",
-                    cellEditorParams={"values": [True, False]},
-                    **common
+                    cellEditor="agCheckboxCellEditor",   # ⇠ commits value
+                    **common,
                 )
             else:
-                gd.configure_column(col, editable=False, **common)
+                # read‑only tick (greyed‑out)
+                gd.configure_column(
+                    col,
+                    editable=False,
+                    cellRendererParams={"disabled": True},
+                    **common,
+                )
         else:
-            gd.configure_column(col, filter=polars_dtype_to_ag_filter(dtype))
+            gd.configure_column(col, filter=ag_filter(dtype))
 
     return gd.build()
 
-# ------------------------------------------------------------------ #
-# 3.  put it together inside Streamlit
-# ------------------------------------------------------------------ #
-def aggrid_polars(df_pl: pl.DataFrame, bool_editable: bool = False, key: str = 'key') -> tuple:
-    grid_response = AgGrid(
+def aggrid_polars(df_pl: pl.DataFrame,
+                  *, bool_editable: bool = False, key: str = None):
+    """Show a Polars DF in Ag‑Grid and return edited DF + full response."""
+    resp = AgGrid(
         df_pl.to_pandas(),
-        gridOptions=build_grid_options(df_pl, bool_editable),
+        key=key,
+        gridOptions=build_grid_options(df_pl, bool_editable=bool_editable),
         theme="streamlit",
         fit_columns_on_grid_load=True,
-        allow_unsafe_jscode=True,              # need for builtin renderers
-        update_mode=GridUpdateMode.VALUE_CHANGED,  # fire on every cell edit
-        data_return_mode=DataReturnMode.AS_INPUT,  # return *all* rows
-        key=key,                              # ← now forwarded
-
+        allow_unsafe_jscode=True,
+        update_mode=GridUpdateMode.VALUE_CHANGED,
+        data_return_mode=DataReturnMode.AS_INPUT,
     )
-    # convert back to Polars
-    edited = pl.from_pandas(pd.DataFrame(grid_response["data"]))
-    return edited, grid_response
+    edited_df = pl.from_pandas(pd.DataFrame(resp["data"]))
+    return edited_df, resp
