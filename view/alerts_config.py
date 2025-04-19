@@ -590,7 +590,7 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
                 st.success(f"Reset {len(reset_rows)} fitbit failure counters successfully!")
                 
                 # Force a rerun to refresh the grid with updated data
-                st.experimental_rerun()
+                st.rerun()
             else:
                 st.warning("No watches selected for reset. Please check the boxes in the 'reset' column.")
         st.markdown("---")
