@@ -546,12 +546,12 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
         st.subheader("Reset Fitbits Failures Counters")
         fitbit_failures, total_fitbit_df = get_fitbit_failures(spreadsheet, user_project)
         # fitbit_failures = fitbit_failures.filter(pl.col('isActive') == True)
-        fitbit_failures = fitbit_failures.with_columns(
-            pl.col("isActive").map_elements(
-                lambda x: x if isinstance(x, bool) else (True if str(x).lower() == "true" else False)
-            )
-        )
-        fitbit_failures = fitbit_failures.filter(pl.col('isActive') == True)
+        # fitbit_failures = fitbit_failures.with_columns(
+        #     pl.col("isActive").map_elements(
+        #         lambda x: x if isinstance(x, bool) else (True if str(x).lower() == "true" else False)
+        #     )
+        # )
+        # fitbit_failures = fitbit_failures.filter(pl.col('isActive') == True)
         fitbit_failures = fitbit_failures.with_columns(
             reset=pl.lit(False)
         )
