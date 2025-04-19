@@ -93,5 +93,6 @@ def aggrid_polars(df_pl: pl.DataFrame,
     
     # Convert the returned data back to polars
     edited_df = pl.from_pandas(pd.DataFrame(resp["data"]))
-    
+    st.write(edited_df)
+    st.write(resp["selected_rows"])
     return edited_df, resp
