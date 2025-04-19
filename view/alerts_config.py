@@ -570,24 +570,25 @@ def alerts_config_page(user_email, spreadsheet: Spreadsheet, user_role, user_pro
         # Use the AgGrid with the preprocessed data
         # edited_df, grid_response = aggrid_polars(fitbit_failures, bool_editable=True, key="fitbit_reset_grid")
         
-        gd = GridOptionsBuilder.from_dataframe(fitbit_failures.to_pandas())
-        gd.configure_default_column(editable=True, groupable=True)
-        gd.configure_selection(selection_mode="multiple", use_checkbox=True)
-        gd = gd.build()
-        grid_response = AgGrid(
-            fitbit_failures.to_pandas(),
-            gridOptions=gd,
-            update_mode=GridUpdateMode.SELECTION_CHANGED,
-            allow_unsafe_jscode=True,
-            height=500,
-            theme='fresh')
-        st.write(grid_response['selected_rows'])
+        
 
 
         # Create checkbox alternatives - these will respond immediately
-        with st.expander("Alternative selection method", expanded=True):
-            st.write("If the grid checkboxes aren't responding, use these toggles instead:")
+        with st.expander("Reseting watches history", expanded=True):
+            gd = GridOptionsBuilder.from_dataframe(fitbit_failures.to_pandas())
+            gd.configure_default_column(editable=True, groupable=True)
+            gd.configure_selection(selection_mode="multiple", use_checkbox=True)
+            gd = gd.build()
+            grid_response = AgGrid(
+                fitbit_failures.to_pandas(),
+                gridOptions=gd,
+                update_mode=GridUpdateMode.SELECTION_CHANGED,
+                allow_unsafe_jscode=True,
+                height=500,
+                theme='fresh')
             
+            st.write("If you want to reset the total failures counts of some watches, please select them below.")
+        
             # Get unique watches from the data
             unique_watches = fitbit_failures.select('watchName').unique().to_series().to_list()
             
