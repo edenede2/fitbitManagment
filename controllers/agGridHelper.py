@@ -98,6 +98,7 @@ def aggrid_polars(df_pl: pl.DataFrame,
         # data_return_mode=DataReturnMode.FILTERED_AND_SORTED,  # Changed to get more complete data
         # pre_selected_rows=st.session_state[f"aggrid_state_{key}"]["selected_rows"],
     )
+    st.write(resp['selected_rows'])
     
     # Save the selected rows for next render
     if resp.get("selected_rows"):
