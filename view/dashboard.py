@@ -436,35 +436,58 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                 with st.spinner(f"Fetching {selected_signal} data for {len(date_range)} days...",show_time=True):
                     # Add a progress bar
                     progress_bar = st.progress(0)
-                    
-                    # Process each date
-                    for i, single_date in enumerate(date_range):
-                        # Update progress
-                        progress_bar.progress((i+1)/len(date_range))
+                    if signal_column != "sleep_duration":
+                        # Process each date
+                        for i, single_date in enumerate(date_range):
+                            # Update progress
+                            progress_bar.progress((i+1)/len(date_range))
+                            
+                            # Format date for display
+                            date_str = single_date.strftime("%Y-%m-%d")
+                            st.text(f"Processing {date_str} ({i+1}/{len(date_range)})")
+                            
+                            # Unique key for this date's data
+                            day_data_key = f"{st.session_state.selected_watch}_{signal_column}_{date_str}"
+                            
+                            # Fetch data
+                            day_data = fetch_watch_data(
+                                st.session_state.selected_watch, 
+                                signal_column, 
+                                single_date,
+                                single_date,
+                                should_fetch=True
+                            )
+                            
+                            # Store in session state
+                            if not day_data.empty:
+                                st.session_state[day_data_key] = day_data
+                                if date_str not in st.session_state.loaded_dates:
+                                    st.session_state.loaded_dates.append(date_str)
+                                all_data = pd.concat([all_data, day_data])
+                    else:
+                        # Special case for sleep data
+                        st.text(f"Processing sleep data for {st.session_state.selected_watch} from {start_date} to {end_date}")
                         
-                        # Format date for display
-                        date_str = single_date.strftime("%Y-%m-%d")
-                        st.text(f"Processing {date_str} ({i+1}/{len(date_range)})")
-                        
-                        # Unique key for this date's data
-                        day_data_key = f"{st.session_state.selected_watch}_{signal_column}_{date_str}"
-                        
-                        # Fetch data
-                        day_data = fetch_watch_data(
+                        # Fetch sleep data
+                        sleep_data = fetch_watch_data(
                             st.session_state.selected_watch, 
                             signal_column, 
-                            single_date,
-                            single_date,
+                            start_date,
+                            end_date,
                             should_fetch=True
                         )
                         
                         # Store in session state
-                        if not day_data.empty:
-                            st.session_state[day_data_key] = day_data
-                            if date_str not in st.session_state.loaded_dates:
-                                st.session_state.loaded_dates.append(date_str)
-                            all_data = pd.concat([all_data, day_data])
-                    
+                        if not sleep_data.empty:
+                            st.session_state[day_data_key] = sleep_data
+                            all_data = pd.concat([all_data, sleep_data])
+                            st.session_state.loaded_dates.append("Sleep Data")
+                        else:
+                            st.warning("No sleep data found for the selected date range.")
+                            st.session_state.loaded_dates = []
+                            st.session_state.current_data = None
+                            st.session_state.loaded_watch = None
+                            st.session_state.loaded_signal = None                    
                     # Store combined data
                     if not all_data.empty:
                         st.session_state.current_data = all_data
