@@ -467,7 +467,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                     else:
                         # Special case for sleep data
                         st.text(f"Processing sleep data for {st.session_state.selected_watch} from {start_date} to {end_date}")
-                        
+                        date_str = start_date.strftime("%Y-%m-%d")
                         # Unique key for this date's data
                         day_data_key = f"{st.session_state.selected_watch}_{signal_column}_{date_str}"
                         # Fetch sleep data
