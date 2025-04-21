@@ -13,6 +13,7 @@ from datetime import timedelta
 import re
 
 from controllers.project_controller import ProjectController
+from controllers.agGridHelper import aggrid_polars
 from entity.Sheet import Spreadsheet, GoogleSheetsAdapter
 from entity.Watch import Watch, WatchFactory
 from model.config import get_secrets
@@ -555,9 +556,11 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                                                     title=f'Steps for {date_str}')
                                         st.plotly_chart(fig, use_container_width=True)
                                     elif signal_column == "sleep_duration":
-                                        fig = px.bar(st.session_state[day_data_key], x='syncDate', y='sleep_duration',
-                                                    title=f'Sleep Duration for {date_str}')
-                                        st.plotly_chart(fig, use_container_width=True)
+                                        df = pl.DataFrame(st.session_state[day_data_key])
+                                        aggrid_polars(df,
+                                                    key=f"sleep_duration_{date_str}",
+                                                    selection_mode="single")
+
                                 else:
                                     st.info(f"No data for {date_str}")
                     
