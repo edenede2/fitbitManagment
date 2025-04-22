@@ -22,6 +22,7 @@ import plotly.graph_objects as go
 import re
 import warnings
 from typing import List, Dict, Any
+from controllers.agGridHelper import aggrid_polars
 # from streamlit_elements import elements, dashboard, mui, html
 from controllers.agGridHelper import aggrid_polars
 
@@ -607,9 +608,9 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                 else:
                     gd.configure_column(col, filter="agTextColumnFilter")
 
-            AgGrid(
-                display_df[display_columns].to_pandas(),
-                gridOptions=gd.build(),
+
+            aggrid_polars(
+                display_df[display_columns],
             )
             # Render the AgGrid with improved options
             # AgGrid(
