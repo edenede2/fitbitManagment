@@ -68,8 +68,6 @@ def _check_access(user_role, user_project):
     
     return False
 
-
-
 def _display_late_nums(late_nums_df):
     """Display late numbers with selection options, using a form to avoid immediate reruns."""
     st.header("Late Numbers")
@@ -88,7 +86,7 @@ def _display_late_nums(late_nums_df):
                 continue
             
             is_accepted = str(row.get('accepted', '')).upper() == 'TRUE'
-            checkbox_key = f"late_nums_checkbox_{num}"
+            checkbox_key = f"late_nums_checkbox_{i}_{num}"  # Add row index to ensure uniqueness
             default_value = is_accepted or (num in st.session_state.get("selected_late_nums", []))
             
             st.checkbox(
@@ -110,11 +108,11 @@ def _display_late_nums(late_nums_df):
                 st.session_state.selected_late_nums = set()
             
             st.session_state.selected_late_nums.clear()
-            for _, row in late_nums_df.iterrows():
+            for i, row in late_nums_df.iterrows():
                 num = str(row.get('nums', ''))
                 if not num:
                     continue
-                checkbox_key = f"late_nums_checkbox_{num}"
+                checkbox_key = f"late_nums_checkbox_{i}_{num}"  # Match the updated key format
                 if st.session_state.get(checkbox_key, False):
                     st.session_state.selected_late_nums.add(num)
             
@@ -284,8 +282,8 @@ def _display_suspicious_nums(suspicious_nums_df):
             
             is_accepted = str(row.get('accepted', '')).upper() == 'TRUE'
             
-            # Create a key for each checkbox
-            checkbox_key = f"suspicious_nums_checkbox_{num}"
+            # Create a key for each checkbox with row index to ensure uniqueness
+            checkbox_key = f"suspicious_nums_checkbox_{i}_{num}"
             
             # Default value for each checkbox:
             #   - If it's already accepted in the sheet, or
@@ -298,7 +296,6 @@ def _display_suspicious_nums(suspicious_nums_df):
                 key=checkbox_key
             )
             
-            # Display your other row info
             st.write(f"**{num}**")
             filled_time = row.get('filledTime', 'N/A')
             st.write(f"Filled: {filled_time}")
@@ -314,13 +311,13 @@ def _display_suspicious_nums(suspicious_nums_df):
             # Clear current selection, then repopulate based on what's checked
             st.session_state.selected_suspicious_nums.clear()
             
-            for _, row in suspicious_nums_df.iterrows():
+            for i, row in suspicious_nums_df.iterrows():
                 num = str(row.get('nums', ''))
                 if not num:
                     continue
                 
-                # Retrieve the checkbox value from the new keys
-                checkbox_key = f"suspicious_nums_checkbox_{num}"
+                # Retrieve the checkbox value from the new keys with row index
+                checkbox_key = f"suspicious_nums_checkbox_{i}_{num}"
                 if st.session_state.get(checkbox_key, False):
                     st.session_state.selected_suspicious_nums.add(num)
             
