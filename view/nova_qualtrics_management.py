@@ -305,7 +305,7 @@ def _display_suspicious_nums(suspicious_nums_df):
             st.divider()
         
         # When the user hits "Submit", we update st.session_state
-        submitted = st.form_submit_button("Submit")
+        submitted = st.form_submit_button("Submit", key="suspicious_nums_submit")
         if submitted:
             # Initialize if not present
             if "selected_suspicious_nums" not in st.session_state:
