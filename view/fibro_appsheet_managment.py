@@ -4,7 +4,7 @@ import polars as pl
 from datetime import datetime
 import plotly.express as px
 from entity.Sheet import GoogleSheetsAdapter, Spreadsheet, Sheet
-
+from controllers.agGridHelper import aggrid_polars
 def load_fibro_datatable(user_email, user_role, user_project, spreadsheet):
     pass  # Replace this with the existing subject management code
 
@@ -21,7 +21,7 @@ def display_fibro_ema_data(spreadsheet: Spreadsheet):
         try:
             # First get data as pandas to handle mixed types better
             pandas_df = spreadsheet.get_sheet("for_analysis", "for_analysis").to_dataframe(engine="pandas")
-            st.write(f"Loaded {pandas_df}")
+            # st.write(f"Loaded {pandas_df}")
             if pandas_df is not None and not pandas_df.empty:
                 # Handle mixed types issues before converting to polars
                 # First, detect object columns that might contain mixed types
@@ -114,9 +114,10 @@ def display_fibro_ema_data(spreadsheet: Spreadsheet):
             display_pd_df = display_df[cols_to_display].sort_values("Formatted Date", ascending=False)
         else:
             display_pd_df = display_df[cols_to_display]
-            
-        st.dataframe(display_pd_df, use_container_width=True)
         
+        # st.dataframe(display_pd_df, use_container_width=True)
+        # Use aggrid for better display
+        aggrid_polars(pl.DataFrame(display_pd_df))    
         # Option to download data
         st.download_button(
             "Download Filtered Data",
@@ -133,7 +134,7 @@ def display_fibro_ema_data(spreadsheet: Spreadsheet):
         user_counts.columns = ["User Id", "Submission Count"]
         
         st.write("#### Submissions by User")
-        st.dataframe(user_counts, use_container_width=True)
+        aggrid_polars(pl.DataFrame(user_counts))    
         
         # Submissions by date using pandas
         if "Date Time" in df.columns:
@@ -144,7 +145,7 @@ def display_fibro_ema_data(spreadsheet: Spreadsheet):
                 date_counts = date_counts.sort_values("Date")
                 
                 st.write("#### Submissions by Date")
-                st.dataframe(date_counts, use_container_width=True)
+                aggrid_polars(pl.DataFrame(date_counts))    
             except Exception as e:
                 st.warning(f"Could not analyze by date: {str(e)}")
         
@@ -153,7 +154,11 @@ def display_fibro_ema_data(spreadsheet: Spreadsheet):
         if numeric_cols:
             st.write("#### Numeric Data Statistics")
             stats_df = filtered_df[numeric_cols].describe()
-            st.dataframe(stats_df, use_container_width=True)
+            aggrid_polars(pl.DataFrame(stats_df))  
+
+            user_counts = filtered_df["User Id"].value_counts().reset_index()
+            user_counts.columns = ["User Id", "Submission Count"]
+            aggrid_polars(pl.DataFrame(user_counts))  
     
     with tab3:
         st.subheader("Data Visualizations")
