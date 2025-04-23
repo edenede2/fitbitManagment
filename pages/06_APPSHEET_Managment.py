@@ -27,9 +27,9 @@ if is_logged_in:
             user_role = user_role.split(',')[0]
 
 
-        if 'spreadsheet' not in st.session_state:
-            st.session_state.spreadsheet = auth_controller.get_fibro_spreasheet()
-        spreadsheet = st.session_state.get('spreadsheet', None)
+        if 'fib_spreadsheet' not in st.session_state:
+            st.session_state.fib_spreadsheet = auth_controller.get_fibro_spreasheet()
+        spreadsheet = st.session_state.get('fib_spreadsheet', None)
         if user_project == 'fibro' or user_role == 'Admin':
             # Display NOVA Qualtrics management interface
             fibro_appsheet_management(user_email, user_role, user_project, spreadsheet)
