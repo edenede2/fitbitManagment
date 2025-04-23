@@ -117,7 +117,7 @@ def display_fibro_ema_data(spreadsheet: Spreadsheet):
         
         # st.dataframe(display_pd_df, use_container_width=True)
         # Use aggrid for better display
-        aggrid_polars(pl.DataFrame(display_pd_df))    
+        aggrid_polars(pl.DataFrame(display_pd_df), key="main_data_table")    
         # Option to download data
         st.download_button(
             "Download Filtered Data",
@@ -134,7 +134,7 @@ def display_fibro_ema_data(spreadsheet: Spreadsheet):
         user_counts.columns = ["User Id", "Submission Count"]
         
         st.write("#### Submissions by User")
-        aggrid_polars(pl.DataFrame(user_counts))    
+        aggrid_polars(pl.DataFrame(user_counts), key="all_users_counts")    
         
         # Submissions by date using pandas
         if "Date Time" in df.columns:
@@ -145,7 +145,7 @@ def display_fibro_ema_data(spreadsheet: Spreadsheet):
                 date_counts = date_counts.sort_values("Date")
                 
                 st.write("#### Submissions by Date")
-                aggrid_polars(pl.DataFrame(date_counts))    
+                aggrid_polars(pl.DataFrame(date_counts), key="date_counts")    
             except Exception as e:
                 st.warning(f"Could not analyze by date: {str(e)}")
         
@@ -154,11 +154,11 @@ def display_fibro_ema_data(spreadsheet: Spreadsheet):
         if numeric_cols:
             st.write("#### Numeric Data Statistics")
             stats_df = filtered_df[numeric_cols].describe()
-            aggrid_polars(pl.DataFrame(stats_df))  
+            aggrid_polars(pl.DataFrame(stats_df), key="numeric_stats")  
 
             user_counts = filtered_df["User Id"].value_counts().reset_index()
             user_counts.columns = ["User Id", "Submission Count"]
-            aggrid_polars(pl.DataFrame(user_counts))  
+            aggrid_polars(pl.DataFrame(user_counts), key="filtered_user_counts")
     
     with tab3:
         st.subheader("Data Visualizations")
