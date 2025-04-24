@@ -558,7 +558,10 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                                                     title=f'Steps for {date_str}')
                                         st.plotly_chart(fig, use_container_width=True)
                                     elif signal_column == "sleep_duration":
-                                        df = pl.DataFrame(st.session_state[day_data_key])
+                                        
+                                        df = pl.DataFrame(st.session_state[day_data_key]).with_columns(
+                                            pl.col("duration").apply(lambda x: x / (1000 * 60 * 60), return_dtype=pl.Float64)
+                                        )
                                         aggrid_polars(df,
                                                     key=f"sleep_duration_{date_str}",
                                                     selection_mode="single")
