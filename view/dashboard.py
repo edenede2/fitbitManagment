@@ -479,18 +479,20 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                             end_date,
                             should_fetch=True
                         )
-                        
+                        st.write(sleep_data)
                         # Store in session state
                         if not sleep_data.empty:
                             st.session_state[day_data_key] = sleep_data
                             all_data = pd.concat([all_data, sleep_data])
-                            st.session_state.loaded_dates.append("date_str")
+                            if date_str not in st.session_state.loaded_dates:
+                                st.session_state.loaded_dates.append(date_str)
                         else:
                             st.warning("No sleep data found for the selected date range.")
                             st.session_state.loaded_dates = []
                             st.session_state.current_data = None
                             st.session_state.loaded_watch = None
                             st.session_state.loaded_signal = None                    
+                    st.write(all_data)
                     # Store combined data
                     if not all_data.empty:
                         st.session_state.current_data = all_data
