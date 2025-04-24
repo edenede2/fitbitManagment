@@ -22,4 +22,4 @@ python-dotenv>=1.0.0
 pyyaml>=6.0
 rich>=10.14.0
 Authlib
-streamlit-aggrid==1.1.0.3
+streamlit-aggrid==1.1.3
