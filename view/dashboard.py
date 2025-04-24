@@ -560,7 +560,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                                     elif signal_column == "sleep_duration":
                                         
                                         df = pl.DataFrame(st.session_state[day_data_key]).with_columns(
-                                            pl.col("duration").pipe(lambda x: x / (1000 * 60 * 60), return_dtype=pl.Float64)
+                                            pl.col("duration").pipe(lambda x: x / (1000 * 60 * 60))
                                         )
                                         aggrid_polars(df,
                                                     key=f"sleep_duration_{date_str}",
