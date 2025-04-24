@@ -1,5 +1,5 @@
 # Core dependencies
-streamlit>=1.22.0
+streamlit
 pandas>=1.5.0
 polars
 mitosheet
@@ -22,4 +22,4 @@ python-dotenv>=1.0.0
 pyyaml>=6.0
 rich>=10.14.0
 Authlib
-streamlit-aggrid
+streamlit-aggrid ==32.3.0
