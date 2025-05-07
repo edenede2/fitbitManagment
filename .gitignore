@@ -4,3 +4,4 @@ data/
 reports/
 .streamlit/config.toml
 .streamlit/secrets.toml
+generateKey.ipynb
