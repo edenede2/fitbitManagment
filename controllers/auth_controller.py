@@ -34,15 +34,19 @@ class AuthenticationController:
                 if st.experimental_user.is_logged_in:
                     st.write(f"Logged in as: {st.experimental_user.email}")
                     user_email = st.experimental_user.email
+                    # Display user role information
+                    user_role = st.secrets.get(st.experimental_user.email.split('@')[0], 'Guest')
+                    user_project = st.secrets.get(f"{st.experimental_user.email.split('@')[0]}", 'None')
                 else:
                     # For demo mode
-                    st.write(f"Demo mode as: {st.session_state.get('user_email', 'Guest')}")
+                    st.write(f"Demo mode as: Guest")
                     user_email = st.session_state.get('user_email', 'demo@example.com')
-                # Display user role information
-                user_role = st.secrets.get(st.experimental_user.email.split('@')[0], 'Guest')
+                    user_role = 'Admin'
+                    user_project = 'Admin'
+                
                 if user_role != 'Guest':
                     user_role = user_role.split(',')[0]
-                user_project = st.secrets.get(f"{st.experimental_user.email.split('@')[0]}", 'None')
+                
 
                 # st.write(f"Project: {user_role.split(',')[1]}")
                 # if user_project is not None:
