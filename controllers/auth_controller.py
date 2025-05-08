@@ -61,23 +61,8 @@ class AuthenticationController:
                 # Demo login options
                 st.subheader("Demo Login")
                 
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    if st.button("Admin Demo"):
-                        self.demo_login("admin@example.com", "Admin", "All")
-                
-                with col2:
-                    if st.button("Manager Demo"):
-                        self.demo_login("manager@example.com", "Manager", "nova")
-                
-                with col1:
-                    if st.button("Student Demo"):
-                        self.demo_login("student@example.com", "Student", "nova")
-                
-                with col2:
-                    if st.button("Guest Demo"):
-                        self.demo_login("guest@example.com", "Guest", "None")
+                if st.button("Guest Demo"):
+                    self.demo_login("guest@example.com", "Guest", "Admin")
     
 
     @sheets_cache(timeout=300)
@@ -104,6 +89,23 @@ class AuthenticationController:
             if not self.main_spreadsheet:
                 # Use st.secrets to get the spreadsheet key
                 spreadsheet_key = st.secrets.get("spreadsheet_key", "")
+                self.main_spreadsheet = Spreadsheet(name="Fitbit Database", api_key=spreadsheet_key)
+                GoogleSheetsAdapter.connect(self.main_spreadsheet)
+            return self.main_spreadsheet
+        except Exception as e:
+            st.error(f"Error connecting to spreadsheet: {e}")
+            # Add a delay to prevent rapid retries on rate limits
+            if "429" in str(e) or "Quota exceeded" in str(e):
+                time.sleep(2)
+            return None
+    
+    @sheets_cache(timeout=300)
+    def get_demo_spreadsheet(self):
+        """Get or create the demo spreadsheet connection"""
+        try:
+            if not self.main_spreadsheet:
+                # Use st.secrets to get the spreadsheet key
+                spreadsheet_key = st.secrets.get("demo_key", "")
                 self.main_spreadsheet = Spreadsheet(name="Fitbit Database", api_key=spreadsheet_key)
                 GoogleSheetsAdapter.connect(self.main_spreadsheet)
             return self.main_spreadsheet
@@ -156,12 +158,12 @@ class AuthenticationController:
     def demo_login(self, email: str, role: str, project: str):
         """Set up a demo login with specified role and project"""
         st.session_state.user_email = email
-        st.session_state.user_role = role
-        st.session_state.user_project = project
+        st.session_state.user_role = 'Admin'
+        st.session_state.user_project = 'Admin'
         st.session_state.user_data = {
             'email': email,
-            'role': role,
-            'projects': [project] if project != "None" else []
+            'role': 'Admin',
+            'projects': ['Admin']
         }
         st.rerun()
     

@@ -44,9 +44,22 @@ if is_logged_in:
         else:
             st.warning("You don't have permission to access this page.")
             st.stop()
+    elif st.session_state.get('user_email') == "guest@example.com":
+        if 'demo_spreadsheet' not in st.session_state:
+            st.session_state.demo_spreadsheet = auth_controller.get_demo_spreadsheet()
+        demo_spreadsheet = st.session_state.get('demo_spreadsheet', None)
+
+        nova_qualtrics_management(
+            st.session_state.user_email,
+            st.session_state.user_role,
+            st.session_state.user_project,
+            demo_spreadsheet
+        )
+        
+    
     else:
         # Display the homepage content
-        st.warning("Please log in from the main page to access this feature.")
+        st.warning("Please log in via Google or as a Guest to visit this site.")
         st.stop()
 else:
     # Display the homepage content
