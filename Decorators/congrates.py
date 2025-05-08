@@ -100,9 +100,10 @@ class GreetingService:
         }
     
     def get_greeting(self, 
-                     user_name: str = "Guest", 
+                     user_name: str = "guest", 
                      user_role: str = "guest",
-                     user_data: Optional[Dict[str, Any]] = None) -> str:
+                     user_data: Optional[Dict[str, Any]] = None,
+                     is_guest: bool = False) -> str:
         """
         Generate a personalized greeting based on time, user role, and other context.
         
@@ -146,7 +147,8 @@ class GreetingService:
         
         # Select a random greeting from the pool
         greeting = random.choice(greeting_pool)
-        
+        if is_guest:
+            greeting = "⚠️ DEMO MODE ! \n" + greeting
         # Format with user name
         return greeting.format(user_name)
     
@@ -188,7 +190,10 @@ def congrats(user_name: str = "Guest", user_role: str = "guest", user_data: Opti
     Returns:
         str: A personalized greeting
     """
-    return _greeting_service.get_greeting(user_name, user_role, user_data)
+    if user_name == "guest":
+        return _greeting_service.get_greeting(user_name, user_role, user_data, is_guest=True)
+    else:
+        return _greeting_service.get_greeting(user_name, user_role, user_data)
 
 
 def welcome_returning_user(user_name: str, last_login: Optional[datetime.datetime] = None) -> str:

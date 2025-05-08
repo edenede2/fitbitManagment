@@ -34,6 +34,7 @@ def display_homepage(user_email, user_role, user_project, spreadsheet: Spreadshe
         st.warning("Please go to the app page and come back or refresh the page.")
     else:
         st.title(congrats(user_name=user_email.split('@')[0], user_role=user_role))
+        
         st.write("Welcome to the Fitbit Management System dashboard.")
         
         # Display role-specific information

@@ -40,7 +40,7 @@ class AuthenticationController:
                 else:
                     # For demo mode
                     st.write(f"Demo mode as: Guest")
-                    user_email = st.session_state.get('user_email', 'demo@example.com')
+                    user_email = st.session_state.get('user_email', 'guest@example.com')
                     user_role = 'Admin'
                     user_project = 'Admin'
                 
