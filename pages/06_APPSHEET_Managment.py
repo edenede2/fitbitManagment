@@ -39,9 +39,9 @@ if is_logged_in:
         # Display FIBRO EMA management interface
         # fibro_appsheet_management(user_email, user_role, user_project, spreadsheet)
     elif st.session_state.get('user_email') == "guest@example.com":
-        if 'demo_spreadsheet' not in st.session_state:
-            st.session_state.demo_spreadsheet = auth_controller.get_demo_spreadsheet()
-        demo_spreadsheet = st.session_state.get('demo_spreadsheet', None)
+        if 'demo_fibro' not in st.session_state:
+            st.session_state.demo_fibro = auth_controller.get_demo_ema_spreadsheet()
+        demo_spreadsheet = st.session_state.get('demo_fibro', None)
 
         fibro_appsheet_management(
             st.session_state.user_email,

@@ -85,6 +85,25 @@ class AuthenticationController:
             if "429" in str(e) or "Quota exceeded" in str(e):
                 time.sleep(2)
             return None
+        
+    @sheets_cache(timeout=300)
+    def get_demo_ema_spreadsheet(self):
+        """Get or create the demo Fibro spreadsheet connection"""
+        try:
+            if not self.fibro_spreadsheet:
+                # Use st.secrets to get the spreadsheet key
+                spreadsheet_key = st.secrets.get("demo_fibro", "")
+                self.fibro_spreadsheet = Spreadsheet(name="Fibro EMA Database", api_key=spreadsheet_key)
+                GoogleSheetsAdapter.connect(self.fibro_spreadsheet)
+            return self.fibro_spreadsheet
+        except Exception as e:
+            st.error(f"Error connecting to demo Fibro spreadsheet: {e}")
+            # Add a delay to prevent rapid retries on rate limits
+            if "429" in str(e) or "Quota exceeded" in str(e):
+                time.sleep(2)
+            return None
+        
+
 
     @sheets_cache(timeout=300)
     def get_spreadsheet(self):
