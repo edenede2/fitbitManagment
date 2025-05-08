@@ -148,7 +148,7 @@ class GreetingService:
         # Select a random greeting from the pool
         greeting = random.choice(greeting_pool)
         if is_guest:
-            greeting = "⚠️ DEMO MODE ! " + greeting
+            st.title("⚠️ DEMO MODE !")
         # Format with user name
         return greeting.format(user_name)
     
