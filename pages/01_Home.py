@@ -45,7 +45,7 @@ if is_logged_in:
             # Display the homepage content
             display_homepage(user_email, user_role, user_project, spreadsheet)
     elif st.session_state.get('user_email') == "guest@example.com":
-        user_email = st.session_state.email
+        user_email = st.session_state.get('user_email')
         user_name = user_email.split('@')[0]
         user_project = st.secrets.get(user_name, 'None')
         if user_project is not None:
