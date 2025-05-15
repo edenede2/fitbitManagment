@@ -1,5 +1,5 @@
 # Core dependencies
-
+streamlit
 pandas>=1.5.0
 polars
 mitosheet
