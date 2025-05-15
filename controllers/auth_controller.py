@@ -28,15 +28,15 @@ class AuthenticationController:
             st.title("👤 User Access")
             
             # Check if the user is authenticated through Streamlit or in demo mode
-            is_logged_in = st.experimental_user.is_logged_in or st.session_state.get('user_role') is not None
+            is_logged_in = st.user.is_logged_in or st.session_state.get('user_role') is not None
             
             if is_logged_in:
-                if st.experimental_user.is_logged_in:
-                    st.write(f"Logged in as: {st.experimental_user.email}")
-                    user_email = st.experimental_user.email
+                if st.user.is_logged_in:
+                    st.write(f"Logged in as: {st.user.email}")
+                    user_email = st.user.email
                     # Display user role information
-                    user_role = st.secrets.get(st.experimental_user.email.split('@')[0], 'Guest')
-                    user_project = st.secrets.get(f"{st.experimental_user.email.split('@')[0]}", 'None')
+                    user_role = st.secrets.get(st.user.email.split('@')[0], 'Guest')
+                    user_project = st.secrets.get(f"{st.user.email.split('@')[0]}", 'None')
                 else:
                     # For demo mode
                     st.write(f"Demo mode as: Guest")

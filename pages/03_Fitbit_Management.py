@@ -13,13 +13,13 @@ st.set_page_config(
 auth_controller = AuthenticationController()
 # Handle authentication in sidebar
 auth_controller.render_auth_ui()
-is_logged_in = st.experimental_user.is_logged_in or st.session_state.get('user_role') is not None
+is_logged_in = st.user.is_logged_in or st.session_state.get('user_role') is not None
 
 if is_logged_in:
-    if st.experimental_user.is_logged_in:
+    if st.user.is_logged_in:
 
         # Get data from session state
-        user_email = st.experimental_user.email
+        user_email = st.user.email
         user_project = st.secrets.get(user_email.split('@')[0], 'None')
         if user_project is not None:
             user_project = user_project.split(',')[1]
