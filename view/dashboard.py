@@ -348,7 +348,6 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                 end_date = st.date_input(
                     "End Date", 
                     datetime.datetime.now(),
-                    min_value=start_date,
                     max_value=datetime.datetime.now()
                 )
             
