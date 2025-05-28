@@ -532,7 +532,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
             else:
                 assigned_watches = []
             
-            display_df = display_df.filter(pl.col('Last Sync').is_not_null())
+            display_df = display_df.filter(pl.col('Last Sync').is_not_null()).filter(pl.col('is_active') == True)
             # Display using st.dataframe with column config
             # st.dataframe(
             #     display_df[display_columns],
