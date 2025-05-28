@@ -339,6 +339,10 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
             fitbit_log_df = fitbit_log_df.with_columns(
                 pl.col("is_active").cast(pl.Boolean)
             )
+
+            fitbit_log_df = fitbit_log_df.filter(
+                pl.col('is_active') == True
+            )
             
             # Filter based on user role and project
             if user_role.lower() == "admin":
