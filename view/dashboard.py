@@ -128,6 +128,40 @@ def fetch_watch_data(watch_name, signal_type, start_date, end_date, should_fetch
             if not df.empty and 'value' in df.columns:
                 df = df.rename(columns={'value': 'steps'})
                 df['syncDate'] = df['datetime']
+        elif signal_type == "missing_values":
+            # Convert date objects to strings in the format YYYY-MM-DD
+            start_date_str = start_date.strftime("%Y-%m-%d") if isinstance(start_date, datetime.date) else start_date
+            end_date_str = end_date.strftime("%Y-%m-%d") if isinstance(end_date, datetime.date) else end_date
+            
+            # Show a message to the user that this might take some time
+            st.info(f"Scanning for missing heart rate data from {start_date_str} to {end_date_str}. This may take a moment...")
+            
+            # Fetch missing values data from Fitbit API
+            try:
+                # Use the Watch methods we added to find days with missing data
+                bad_days = watch.find_bad_days(
+                    start_date=start_date_str,
+                    end_date=end_date_str,
+                    p_thresh=0.95  # Default threshold - 95% data required
+                )
+                
+                # Process data with Watch class method
+                df = watch.process_data('Missing Values', bad_days)
+                
+                # Convert to DataFrame with proper formatting
+                if df:
+                    df = pd.DataFrame(df)
+                    df['syncDate'] = pd.to_datetime(df['date'])
+                    df['missing_values'] = df['missing_count'].apply(lambda x: x if x else 0)
+                    
+                    # Add percentage column for better visualization
+                    df['percentage_missing'] = (df['missing_count'] / 1440 * 100).round(2)
+                    
+                    # Sort by date
+                    df = df.sort_values('date')
+            except Exception as e:
+                st.error(f"Error fetching missing values: {str(e)}")
+                df = pd.DataFrame()
                 
         elif signal_type == "sleep_duration":
             # Convert date objects to strings in the format YYYY-MM-DD
@@ -360,7 +394,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                 st.session_state.prev_end_date = end_date
             
             # Signal selector
-            signal_options = ["Heart Rate", "Steps", "Sleep"]
+            signal_options = ["Heart Rate", "Steps", "Sleep", "missingValues"]
             selected_signal = st.selectbox("Select Signal Type", signal_options)
             
             # Track previous signal selection
@@ -371,7 +405,8 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
             signal_map = {
                 "Heart Rate": "HR",
                 "Steps": "steps",
-                "Sleep": "sleep_duration"
+                "Sleep": "sleep_duration",
+                "missingValues": "missing_values"
             }
             
             signal_column = signal_map.get(selected_signal)
@@ -436,7 +471,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                 with st.spinner(f"Fetching {selected_signal} data for {len(date_range)} days...",show_time=True):
                     # Add a progress bar
                     progress_bar = st.progress(0)
-                    if signal_column != "sleep_duration":
+                    if signal_column not in ["sleep_duration", "missing_values"]:
                         # Process each date
                         for i, single_date in enumerate(date_range):
                             # Update progress
@@ -466,7 +501,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                                 all_data = pd.concat([all_data, day_data])
                     else:
                         # Special case for sleep data
-                        st.text(f"Processing sleep data for {st.session_state.selected_watch} from {start_date} to {end_date}")
+                        st.text(f"Processing {signal_column} data for {st.session_state.selected_watch} from {start_date} to {end_date}")
                         date_str = start_date.strftime("%Y-%m-%d")
                         # Unique key for this date's data
                         day_data_key = f"{st.session_state.selected_watch}_{signal_column}_{date_str}"
@@ -564,6 +599,36 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                                         aggrid_polars(df,
                                                     key=f"sleep_duration_{date_str}",
                                                     selection_mode="single")
+                                    elif signal_column == "missing_values":
+                                        # Create a bar chart showing missing minutes per day
+                                        fig = px.bar(
+                                            st.session_state[day_data_key], 
+                                            x='date', 
+                                            y='missing_values',
+                                            title=f'Missing Heart Rate Data (minutes) for {date_str}',
+                                            labels={
+                                                'date': 'Date',
+                                                'missing_values': 'Missing Minutes'
+                                            },
+                                            color='percentage_missing',
+                                            color_continuous_scale='Reds',
+                                        )
+                                        fig.update_layout(
+                                            xaxis_title='Date',
+                                            yaxis_title='Missing Minutes (out of 1440)',
+                                            coloraxis_colorbar_title='% Missing'
+                                        )
+                                        st.plotly_chart(fig, use_container_width=True)
+                                        
+                                        # Also display as a table for detailed analysis
+                                        st.write("### Detailed Missing Data")
+                                        detail_df = st.session_state[day_data_key].copy()
+                                        detail_df['available_minutes'] = 1440 - detail_df['missing_values']
+                                        detail_df['available_percentage'] = (detail_df['available_minutes'] / 1440 * 100).round(2)
+                                        st.dataframe(
+                                            detail_df[['date', 'missing_values', 'available_minutes', 'percentage_missing', 'available_percentage']],
+                                            use_container_width=True
+                                        )
 
                                 else:
                                     st.info(f"No data for {date_str}")
@@ -793,29 +858,25 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                                         
                                         # Create new message dictionary
                                         new_row = {
+                                            "watchName": st.session_state.selected_watch,
                                             "user": user_email,
-                                            "content": new_message.strip(),
-                                            "datetime": dt_string,
-                                            "watchName": st.session_state.selected_watch
+                                            "content": new_message,
+                                            "datetime": dt_string
                                         }
                                         
-                                        try:
-                                            # Update local session state immediately for UI responsiveness
-                                            current_messages = list(st.session_state[watch_chat_key])
-                                            current_messages.append(new_row)
-                                            st.session_state[watch_chat_key] = current_messages
-                                            
-                                            # Add to async queue for background saving
-                                            sheets_manager.add_message(new_row)
-                                            
-                                            # Provide immediate feedback to user
-                                            st.success("Message sent! Saving to sheet in background.")
-                                            
-                                            # Increment counter for unique widget keys
-                                            st.session_state.message_counter += 1
-                                            
-                                        except Exception as e:
-                                            st.error(f"Error queueing message: {str(e)}")
+                                        # Update session state immediately for UI responsiveness
+                                        current_messages = st.session_state[watch_chat_key]
+                                        current_messages.append(new_row)
+                                        st.session_state[watch_chat_key] = current_messages
+                                        
+                                        # Queue for background saving
+                                        sheets_manager.add_message(new_row)
+                                        
+                                        # Provide immediate feedback to user
+                                        st.success("Message sent! Saving to sheet in background.")
+                                        
+                                        # Increment counter for unique widget keys
+                                        st.session_state.message_counter += 1
                             except Exception as e:
                                 st.error(f"Error with chat functionality: {str(e)}")
                                 import traceback

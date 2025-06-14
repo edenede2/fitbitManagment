@@ -715,6 +715,11 @@ class Watch:
     
     def process_data(self, endpoint_type: str, data: Dict) -> Any:
         """Process data using the appropriate processor"""
+        # Handle the special case for Missing Values which doesn't use a processor
+        if endpoint_type == 'Missing Values':
+            # data here is already processed by find_bad_days
+            return data
+            
         processor = ProcessorFactory.get_processor(endpoint_type)
         return processor.process(data)
     
@@ -837,7 +842,105 @@ class Watch:
     def clear_cache(self) -> None:
         """Clear the cached data"""
         self._cached_data = {}
-
+    
+    def quick_scan(self, start_date: str, end_date: str) -> List[Dict]:
+        """
+        First pass to quickly identify days that might be missing heart rate data.
+        
+        Args:
+            start_date: Start date in YYYY-MM-DD format
+            end_date: End date in YYYY-MM-DD format
+            
+        Returns:
+            List of dictionaries with date and missing data hint
+        """
+        url = f"https://api.fitbit.com/1/user/-/activities/heart/date/{start_date}/{end_date}.json"
+        response = requests.get(url, headers=self.header)
+        
+        if response.status_code != 200:
+            print(f"Error in quick_scan: {response.status_code}")
+            return []
+            
+        js = response.json()
+        
+        rows = []
+        for d in js.get("activities-heart", []):
+            val = d.get("value", {})
+            rhr = val.get("restingHeartRate")  # None → probably no HR
+            avg = val.get("averageHeartRate")  # None → same
+            rows.append({
+                "date": d.get("dateTime"),
+                "no_hr_hint": (rhr is None and avg is None)
+            })
+        return rows
+    
+    def hr_minutes_one_day(self, date: str) -> int:
+        """
+        Count how many minutes of heart rate data are available for a specific day.
+        
+        Args:
+            date: Date in YYYY-MM-DD format
+            
+        Returns:
+            Number of minutes with heart rate data (0-1440)
+        """
+        url = f"https://api.fitbit.com/1/user/-/activities/heart/date/{date}/{date}/1min.json"
+        response = requests.get(url, headers=self.header)
+        
+        if response.status_code != 200:
+            print(f"Error in hr_minutes_one_day: {response.status_code}")
+            return 0
+            
+        js = response.json()
+        
+        meta = js.get("activities-heart-intraday", {})
+        pts = len(meta.get("dataset", []))  # 1 point per minute
+        return pts  # 0‒1440
+    
+    def find_bad_days(self, start_date: str, end_date: str, p_thresh: float = 0.95) -> List[Dict]:
+        """
+        Find days with missing heart rate data.
+        
+        Args:
+            start_date: Start date in YYYY-MM-DD format
+            end_date: End date in YYYY-MM-DD format
+            p_thresh: Threshold for considering a day as 'bad' (0.95 = 95% data required)
+            
+        Returns:
+            List of dictionaries with date and missing minutes information
+        """
+        # Ensure dates are in the correct format
+        if isinstance(start_date, datetime.datetime) or isinstance(start_date, datetime.date):
+            start_date = start_date.strftime("%Y-%m-%d")
+        if isinstance(end_date, datetime.datetime) or isinstance(end_date, datetime.date):
+            end_date = end_date.strftime("%Y-%m-%d")
+            
+        rows = self.quick_scan(start_date, end_date)  # pass 1
+        
+        if not rows:
+            return []
+            
+        df = pd.DataFrame(rows)
+        suspects = []
+        
+        if not df.empty and 'no_hr_hint' in df.columns and 'date' in df.columns:
+            suspects = df[df.no_hr_hint]["date"].tolist()
+        
+        bad = []
+        for d in suspects:  # pass 2, targeted
+            pts = self.hr_minutes_one_day(d)
+            missing_count = 1440 - pts
+            if pts / 1440 < p_thresh:
+                bad.append({
+                    "date": d, 
+                    "available_minutes": pts,
+                    "missing_count": missing_count,
+                    "percentage_available": round((pts / 1440) * 100, 2),
+                    "percentage_missing": round((missing_count / 1440) * 100, 2)
+                })
+        
+        return sorted(bad, key=lambda x: x["date"])
+    
 # ===== Watch Factory =====
 
 class WatchFactory:
