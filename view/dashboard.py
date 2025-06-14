@@ -394,7 +394,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                 st.session_state.prev_end_date = end_date
             
             # Signal selector
-            signal_options = ["Heart Rate", "Steps", "Sleep", "missingValues"]
+            signal_options = ["missingValues","Heart Rate", "Steps", "Sleep"]
             selected_signal = st.selectbox("Select Signal Type", signal_options)
             
             # Track previous signal selection
