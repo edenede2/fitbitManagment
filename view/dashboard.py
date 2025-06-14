@@ -151,8 +151,6 @@ def fetch_watch_data(watch_name, signal_type, start_date, end_date, should_fetch
                 # Convert to DataFrame with proper formatting
                 if df:
                     df = pd.DataFrame(df)
-                    df['syncDate'] = pd.to_datetime(df['date'])
-                    df['missing_values'] = df['missing_count'].apply(lambda x: x if x else 0)
                     
                     # Add percentage column for better visualization
                     df['percentage_missing'] = (df['missing_count'] / 1440 * 100).round(2)
