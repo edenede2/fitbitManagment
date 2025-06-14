@@ -632,16 +632,17 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
 
                                 else:
                                     st.info(f"No data for {date_str}")
+                            break
                     
-                    # Add a clear button to reset loading state
-                    if st.button("Clear Data"):
-                        st.session_state.load_data_button = False
-                        st.session_state.loading_complete = False
-                        st.session_state.loaded_dates = []
-                        st.session_state.current_data = None
-                        st.session_state.loaded_watch = None
-                        st.session_state.loaded_signal = None
-                        st.rerun()
+                    # # Add a clear button to reset loading state
+                    # if st.button("Clear Data"):
+                    #     st.session_state.load_data_button = False
+                    #     st.session_state.loading_complete = False
+                    #     st.session_state.loaded_dates = []
+                    #     st.session_state.current_data = None
+                    #     st.session_state.loaded_watch = None
+                    #     st.session_state.loaded_signal = None
+                    #     st.rerun()
         
         with tab2:
             st.subheader(f"Device Details: {st.session_state.selected_watch}")
