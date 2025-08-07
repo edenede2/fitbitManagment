@@ -738,6 +738,14 @@ class Watch:
         
         if data and isinstance(data, list) and len(data) > 0:
             device = data[-1]  # Get the first device
+            if len(data) > 1:
+                for d in data:
+                    if d.get('deviceVersion') == 'MobileTrack':
+                        data.remove(d)
+                device = data[0] if data else None
+            if not device:
+                print("No valid device found in the response")
+                return
             self.battery_level = device.get('batteryLevel')
             sync_time = device.get('lastSyncTime')
             if sync_time:
