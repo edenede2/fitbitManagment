@@ -538,14 +538,38 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                         st.session_state.loaded_signal = None
                 
                 # Mark loading as complete to prevent reloading on rerun
-                st.session_state.loading_complete = True
-                # Force a rerun to display the data
-                st.rerun()
+                # st.session_state.loading_complete = True
+                # # Force a rerun to display the data
+                # st.rerun()
+                st.session_state.fetch_debug = {
+                    "rows_fetched": 0 if all_data is None else (len(all_data.index) if hasattr(all_data, 'index') else (all_data.shape[0] if hasattr(all_data, 'shape') else 0)),
+                    "dates_loaded": list(st.session_state.loaded_dates),
+                    "watch": st.session_state.selected_watch,
+                    "signal": signal_column
+                }
+
+                if all_data is not None and not all_data.empty:
+                    st.session_state.current_data = all_data
+                    st.session_state.loaded_watch = st.session_state.selected_watch
+                    st.session_state.loaded_signal = signal_column
+                    st.session_state.loading_complete = True
+                else:
+                    st.session_state.current_data = None
+                    st.session_state.loaded_watch = None
+                    st.session_state.loaded_signal = None
+                    st.session_state.loading_complete = True  # still mark finished so the UI can show the message
+
+                # prefer the official rerun API
+                try:
+                    st.rerun()
+                except Exception:
+                     # If rerun fails, continue — the session_state flags are set and UI will update on next interaction
+                    pass
             
             # Display the loaded data after loading is complete
             if st.session_state.loading_complete and "loaded_watch" in st.session_state:
                 # If there's no data, show a warning
-                if st.session_state.current_data is None or st.session_state.current_data.empty:
+                if (st.session_state.current_data is None or st.session_state.current_data.empty):
                     st.warning("No data to show.")
                     st.session_state.loading_complete = False
                     st.session_state.loaded_dates = []
@@ -570,7 +594,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                         
                         if day_data_key in st.session_state:
                             with st.expander(f"Data for {date_str}", expanded=False):
-                                if st.session_state[day_data_key].empty:
+                                if not st.session_state[day_data_key].empty:
                                     st.subheader(f"{selected_signal} for {date_str}")
                                     
                                     # Safe way to use spreadsheet
