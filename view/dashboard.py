@@ -571,6 +571,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                 # If there's no data, show a warning
                 if (st.session_state.current_data is None or st.session_state.current_data.empty):
                     st.warning("No data to show.")
+                    st.warning(st.session_state.fetch_debug)
                     st.session_state.loading_complete = False
                     st.session_state.loaded_dates = []
                     st.session_state.current_data = None
