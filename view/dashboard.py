@@ -570,7 +570,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                         
                         if day_data_key in st.session_state:
                             with st.expander(f"Data for {date_str}", expanded=False):
-                                if not st.session_state[day_data_key].empty:
+                                if st.session_state[day_data_key].empty:
                                     st.subheader(f"{selected_signal} for {date_str}")
                                     
                                     # Safe way to use spreadsheet
