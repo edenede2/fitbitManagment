@@ -647,10 +647,10 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                                         # Also display as a table for detailed analysis
                                         st.write("### Detailed Missing Data")
                                         detail_df = st.session_state[day_data_key].copy()
-                                        detail_df['available_minutes'] = 1440 - detail_df['missing_values']
+                                        # detail_df['available_minutes'] = 1440 - detail_df['missing_values']
                                         detail_df['available_percentage'] = (detail_df['available_minutes'] / 1440 * 100).round(2)
                                         st.dataframe(
-                                            detail_df[['date', 'missing_values', 'available_minutes', 'percentage_missing', 'available_percentage']],
+                                            detail_df[['date', 'available_minutes', 'percentage_missing', 'available_percentage']],
                                             use_container_width=True
                                         )
 
