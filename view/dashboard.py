@@ -602,7 +602,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                                         fig = px.bar(
                                             st.session_state[day_data_key], 
                                             x='date', 
-                                            y='missing_values',
+                                            y='percentage_missing',
                                             title=f'Missing Heart Rate Data (minutes) for {date_str}',
                                             labels={
                                                 'date': 'Date',
