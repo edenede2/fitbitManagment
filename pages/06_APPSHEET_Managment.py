@@ -13,12 +13,22 @@ st.set_page_config(
 auth_controller = AuthenticationController()
 # Handle authentication in sidebar
 auth_controller.render_auth_ui()
-is_logged_in = st.user.is_logged_in or st.session_state.get('user_role') is not None
+
+# Safely check if user is logged in
+try:
+    is_streamlit_logged_in = st.user is not None and hasattr(st.user, 'is_logged_in') and st.user.is_logged_in
+except Exception:
+    is_streamlit_logged_in = False
+
+is_logged_in = is_streamlit_logged_in or st.session_state.get('user_role') is not None
 
 if is_logged_in:
-    if st.user.is_logged_in:
+    if is_streamlit_logged_in:
         # Check authentication
-        user_email = st.user.email
+        user_email = getattr(st.user, 'email', None)
+        if user_email is None:
+            st.error("Could not retrieve user email. Please refresh and try again.")
+            st.stop()
         user_project = st.secrets.get(user_email.split('@')[0], 'None')
         if user_project is not None:
             user_project = user_project.split(',')[1]

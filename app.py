@@ -23,7 +23,12 @@ def main():
     auth_controller.render_auth_ui()
     
     # Check if user is logged in (either through Streamlit auth or demo mode)
-    is_logged_in = st.user.is_logged_in or st.session_state.get('user_role') is not None
+    try:
+        is_streamlit_logged_in = st.user is not None and hasattr(st.user, 'is_logged_in') and st.user.is_logged_in
+    except Exception:
+        is_streamlit_logged_in = False
+    
+    is_logged_in = is_streamlit_logged_in or st.session_state.get('user_role') is not None
     
     if is_logged_in:
         try:
@@ -35,8 +40,11 @@ def main():
                 st.session_state.fibro_spreadsheet = auth_controller.get_fibro_spreasheet()
             
             # Get user info - either from Streamlit auth or session state (for demo)
-            if st.user.is_logged_in:
-                user_email = st.user.email
+            if is_streamlit_logged_in:
+                user_email = getattr(st.user, 'email', None)
+                if user_email is None:
+                    st.error("Could not retrieve user email. Please refresh and try again.")
+                    st.stop()
                 user_project = st.secrets.get(user_email.split('@')[0], 'None')
                 if user_project is not None:
                     user_project = user_project.split(',')[0]
