@@ -36,12 +36,12 @@ def mark_state_used(sp: Spreadsheet, *, state: str, watch_name: str) -> None:
     _append(sp, OAUTH_USED_TAB, row)
 
 def is_state_used(sp: Spreadsheet, state: str) -> bool:
-    rows = GoogleSheetsAdapter.get_rows(sp, OAUTH_USED_TAB, state=state)
+    rows = GoogleSheetsAdapter.get_rows(sp, OAUTH_USED_TAB, "state", state=state)
     return len(rows) > 0
 
 def resolve_state(sp: Spreadsheet, state: str) -> Optional[Dict[str, Any]]:
     # Find the latest matching state (append-only)
-    rows = GoogleSheetsAdapter.get_rows(sp, OAUTH_STATES_TAB, state=state)
+    rows = GoogleSheetsAdapter.get_rows(sp, OAUTH_STATES_TAB, "state", state=state)
     if not rows:
         return None
     return rows[-1]
@@ -62,7 +62,7 @@ def save_tokens_for_watch(sp: Spreadsheet, *, watch_name: str, token_json: dict)
     _append(sp, TOKENS_TAB, row)
 
 def get_latest_tokens(sp: Spreadsheet, watch_name: str) -> Optional[Dict[str, Any]]:
-    rows = GoogleSheetsAdapter.get_rows(sp, TOKENS_TAB, watchName=watch_name)
+    rows = GoogleSheetsAdapter.get_rows(sp, TOKENS_TAB, "watchName", watchName=watch_name)
     if not rows:
         return None
     return rows[-1]
