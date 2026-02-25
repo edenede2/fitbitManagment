@@ -3,6 +3,8 @@ import streamlit as st
 from controllers.auth_controller import AuthenticationController
 from utils.fitbit_oauth import new_state, build_authorize_url
 from utils.fitbit_token_store import save_state
+from collections import OrderedDict
+from entity.Sheet import GoogleSheetsAdapter
 
 st.set_page_config(page_title="OAuth Connect", page_icon="🔑", layout="wide")
 
@@ -31,7 +33,33 @@ st.title("🔑 Connect Demo Account to a Watch (Fitbit OAuth)")
 # pull watches from fitbit sheet (כמו בדאשבורד שלכם)
 fitbit_df = sp.get_sheet("fitbit", sheet_type="fitbit").to_dataframe("pandas")
 watch_names = sorted([w for w in fitbit_df.get("name", []) if isinstance(w, str) and w.strip()])
+with st.expander("➕ Add new watch to registry", expanded=False):
+    new_watch = st.text_input("New watch name (unique)", placeholder="e.g., NOVA_013")
+    new_project = st.text_input("Project", value=str(st.session_state.get("user_project","")))
+    is_active = st.checkbox("Active", value=True)
 
+    if st.button("Add watch"):
+        if not new_watch or not new_watch.strip():
+            st.error("Watch name is required")
+            st.stop()
+
+        # validate not exists
+        existing = GoogleSheetsAdapter.get_rows(sp, "fitbit", name=new_watch.strip())
+        if existing:
+            st.warning("Watch already exists in fitbit sheet")
+        else:
+            # IMPORTANT: order must match your 'fitbit' sheet headers
+            row = OrderedDict([
+                ("name", new_watch.strip()),
+                ("project", new_project.strip()),
+                ("isActive", "TRUE" if is_active else "FALSE"),
+                # add more columns ONLY if they exist in your sheet:
+                # ("assignedStudent", ""),
+                # ("token", ""),   # leave empty; OAuth tokens live in fitbit_oauth_tokens
+            ])
+            GoogleSheetsAdapter.append_rows(sp, "fitbit", [row])
+            st.success(f"Added watch {new_watch.strip()}. Refreshing list...")
+            st.rerun()
 watch = st.selectbox("Choose watchName", watch_names)
 project = st.text_input("Project (for logging)", value=str(st.session_state.get("user_project", "")))
 
