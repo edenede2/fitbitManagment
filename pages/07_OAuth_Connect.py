@@ -44,7 +44,7 @@ with st.expander("➕ Add new watch to registry", expanded=False):
             st.stop()
 
         # validate not exists
-        existing = GoogleSheetsAdapter.get_rows(sp, "fitbit", name=new_watch.strip())
+        existing = GoogleSheetsAdapter.get_rows(sp, "fitbit", "name", name=new_watch.strip())
         if existing:
             st.warning("Watch already exists in fitbit sheet")
         else:

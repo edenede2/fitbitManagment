@@ -414,12 +414,12 @@ class GoogleSheetsAdapter:
             print(f"Worksheet {name} not found in spreadsheet {spreadsheet.name}")
     
     @staticmethod
-    def get_rows(spreadsheet: Spreadsheet, name: str, *keys, **row) -> List[dict]:
+    def get_rows(spreadsheet: Spreadsheet, sheet_name: str, *keys, **row) -> List[dict]:
         """Get rows from a sheet by keys"""
         sheet_api = SheetsAPI.get_instance()
         google_spreadsheet = sheet_api.open_spreadsheet(spreadsheet.api_key)
         try:
-            worksheet = google_spreadsheet.worksheet(name)
+            worksheet = google_spreadsheet.worksheet(sheet_name)
             records = worksheet.get_all_records()
             result = []
             for record in records:
@@ -427,7 +427,7 @@ class GoogleSheetsAdapter:
                     result.append(record)
             return result
         except gspread.exceptions.WorksheetNotFound:
-            print(f"Worksheet {name} not found in spreadsheet {spreadsheet.name}")
+            print(f"Worksheet {sheet_name} not found in spreadsheet {spreadsheet.name}")
             return []
     
     @staticmethod
