@@ -8,6 +8,8 @@ from enum import Enum
 from abc import ABC, abstractmethod
 from entity.User import User
 import streamlit as st
+from controllers.auth_controller import AuthenticationController
+from utils.fitbit_token_store import get_valid_access_token
 # Use string references for Project to avoid circular imports
 if TYPE_CHECKING:
     from entity.Project import Project
@@ -959,6 +961,11 @@ class WatchFactory:
         project_name = details.get('project')
         token = details.get('token')
         
+        if not token:
+            auth_controller = AuthenticationController()
+            sp = auth_controller.get_spreadsheet()
+            token = get_valid_access_token(sp, name)  # name == watchName
+            
         if not all([name, project_name, token]):
             raise ValueError("Missing required watch details: name, project, or token")
         
