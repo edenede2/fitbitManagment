@@ -35,7 +35,8 @@ fitbit_df = sp.get_sheet("fitbit", sheet_type="fitbit").to_dataframe("pandas")
 watch_names = sorted([w for w in fitbit_df.get("name", []) if isinstance(w, str) and w.strip()])
 with st.expander("➕ Add new watch to registry", expanded=False):
     new_watch = st.text_input("New watch name (unique)", placeholder="e.g., NOVA_013")
-    new_project = st.text_input("Project", value=str(st.session_state.get("user_project","")))
+    new_project = st.text_input("Project", value="")
+    token = ""
     is_active = st.checkbox("Active", value=True)
 
     if st.button("Add watch"):
@@ -50,8 +51,9 @@ with st.expander("➕ Add new watch to registry", expanded=False):
         else:
             # IMPORTANT: order must match your 'fitbit' sheet headers
             row = OrderedDict([
-                ("name", new_watch.strip()),
                 ("project", new_project.strip()),
+                ("name", new_watch.strip()),
+                ("token", token),
                 ("isActive", "TRUE" if is_active else "FALSE"),
                 # add more columns ONLY if they exist in your sheet:
                 # ("assignedStudent", ""),
