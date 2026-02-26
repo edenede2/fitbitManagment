@@ -13,10 +13,15 @@ from utils.fitbit_oauth import refresh_tokens, now_ts
 OAUTH_STATES_TAB = "oauth_states"
 OAUTH_USED_TAB = "oauth_state_used"
 TOKENS_TAB = "fitbit_oauth_tokens"
+FITBIT_SHEET = "fitbit"  # where watchName is registered (and linked to project)
 
 def _append(sp: Spreadsheet, tab: str, row: OrderedDict) -> None:
     # IMPORTANT: append_rows writes values by dict order -> keep OrderedDict aligned with header order
     GoogleSheetsAdapter.append_rows(sp, tab, [row])
+
+def _update(sp: Spreadsheet, tab: str, row_id_col: str, row_id_val: str, updates: Dict[str, Any]) -> None:
+    # IMPORTANT: update_rows writes values by dict order -> keep OrderedDict aligned with header order
+    GoogleSheetsAdapter.update_rows(sp, tab, row_id_col, row_id_val, updates)
 
 def save_state(sp: Spreadsheet, *, state: str, watch_name: str, project: str) -> None:
     row = OrderedDict([
@@ -60,6 +65,7 @@ def save_tokens_for_watch(sp: Spreadsheet, *, watch_name: str, token_json: dict)
         ("created_at", str(now_ts())),
     ])
     _append(sp, TOKENS_TAB, row)
+    _update(sp, FITBIT_SHEET, "watchName", watch_name, {"token": token_json.get("access_token", "")})
 
 def get_latest_tokens(sp: Spreadsheet, watch_name: str) -> Optional[Dict[str, Any]]:
     rows = GoogleSheetsAdapter.get_rows(sp, TOKENS_TAB, "watchName", watchName=watch_name)
