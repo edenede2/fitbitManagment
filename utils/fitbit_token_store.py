@@ -19,9 +19,33 @@ def _append(sp: Spreadsheet, tab: str, row: OrderedDict) -> None:
     # IMPORTANT: append_rows writes values by dict order -> keep OrderedDict aligned with header order
     GoogleSheetsAdapter.append_rows(sp, tab, [row])
 
-def _update(sp: Spreadsheet, tab: str, row_id_col: str, row_id_val: str, updates: Dict[str, Any]) -> None:
-    # IMPORTANT: update_rows writes values by dict order -> keep OrderedDict aligned with header order
-    GoogleSheetsAdapter.update_rows(sp, tab, row_id_col, row_id_val, updates)
+def _update_fitbit_token(sp: Spreadsheet, watch_name: str, access_token: str) -> None:
+    """Directly update the 'token' column in the fitbit sheet for the given watch.
+    
+    The fitbit sheet uses 'name' as the watch identifier column.
+    Uses gspread directly because GoogleSheetsAdapter.update_rows is not suited
+    for partial-column updates.
+    """
+    try:
+        gspread_wb = sp.get_gspread_connection()
+        ws = gspread_wb.worksheet(FITBIT_SHEET)
+        headers = ws.row_values(1)  # row 1 is the header row
+        try:
+            name_col = headers.index("name") + 1   # 1-based column index
+            token_col = headers.index("token") + 1  # 1-based column index
+        except ValueError as e:
+            print(f"[fitbit_token_store] Column not found in fitbit sheet: {e}")
+            return
+        name_values = ws.col_values(name_col)  # all values in the "name" column (1-indexed rows)
+        for i, cell_val in enumerate(name_values):
+            if i == 0:
+                continue  # skip header row
+            if cell_val == watch_name:
+                ws.update_cell(i + 1, token_col, access_token)  # i+1 because row is 1-based
+                return
+        print(f"[fitbit_token_store] Watch '{watch_name}' not found in fitbit sheet — token not updated.")
+    except Exception as e:
+        print(f"[fitbit_token_store] Failed to update fitbit sheet token: {e}")
 
 def save_state(sp: Spreadsheet, *, state: str, watch_name: str, project: str) -> None:
     row = OrderedDict([
@@ -65,7 +89,7 @@ def save_tokens_for_watch(sp: Spreadsheet, *, watch_name: str, token_json: dict)
         ("created_at", str(now_ts())),
     ])
     _append(sp, TOKENS_TAB, row)
-    _update(sp, FITBIT_SHEET, "watchName", watch_name, {"token": token_json.get("access_token", "")})
+    _update_fitbit_token(sp, watch_name, token_json.get("access_token", ""))
 
 def get_latest_tokens(sp: Spreadsheet, watch_name: str) -> Optional[Dict[str, Any]]:
     rows = GoogleSheetsAdapter.get_rows(sp, TOKENS_TAB, "watchName", watchName=watch_name)
