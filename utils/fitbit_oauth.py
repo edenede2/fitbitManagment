@@ -33,6 +33,7 @@ def build_authorize_url(state: str) -> str:
         "redirect_uri": redirect_uri,
         "scope": scopes,  # Fitbit expects space-separated scopes
         "state": state,
+        "expires_in": "31536000"
     }
     return f"{AUTH_URL}?{urlencode(params)}"
 
