@@ -347,9 +347,9 @@ class SheetsAPI:
         if getattr(self, '_initialized', False):
             return
             
-        self._initialized = True
         self.client = self._get_client()
         self._spreadsheets = {}
+        self._initialized = True
     
     @staticmethod
     @st.cache_resource
@@ -381,6 +381,12 @@ class SheetsAPI:
         if cls._instance is None:
             cls()
         return cls._instance
+
+    @classmethod
+    def reset(cls):
+        """Reset the singleton instance and clear cached client"""
+        cls._instance = None
+        cls._get_client.clear()
 
 
 class GoogleSheetsAdapter:
