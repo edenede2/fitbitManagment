@@ -22,6 +22,40 @@ class AuthenticationController:
         if 'user_data' not in st.session_state:
             st.session_state.user_data = None
     
+    def _lookup_secret(self, email_prefix: str) -> str:
+        """Lookup a user secret by email prefix, handling dotted keys (TOML nested tables) and case differences."""
+        # For dotted prefixes like "anuta89.ap", TOML parses them as nested: st.secrets["anuta89"]["ap"]
+        if '.' in email_prefix:
+            parts = email_prefix.split('.', 1)
+            try:
+                table = st.secrets.get(parts[0], None)
+                if table is not None and hasattr(table, 'get'):
+                    val = table.get(parts[1], None)
+                    if val is not None:
+                        return val
+            except Exception:
+                pass
+            # Also try case-insensitive nested lookup
+            for key in st.secrets:
+                if key.lower() == parts[0].lower():
+                    table = st.secrets[key]
+                    if hasattr(table, 'get'):
+                        for sub_key in table:
+                            if sub_key.lower() == parts[1].lower():
+                                return table[sub_key]
+        else:
+            # Flat key lookup
+            val = st.secrets.get(email_prefix, None)
+            if val is not None:
+                return val
+            # Case-insensitive fallback
+            for key in st.secrets:
+                if key.lower() == email_prefix.lower():
+                    result = st.secrets[key]
+                    if isinstance(result, str):
+                        return result
+        return 'Guest'
+
     def render_auth_ui(self):
         """Render authentication UI in the sidebar"""
         with st.sidebar:
@@ -35,8 +69,10 @@ class AuthenticationController:
                     st.write(f"Logged in as: {st.user.email}")
                     user_email = st.user.email
                     # Display user role information
-                    user_role = st.secrets.get(st.user.email.split('@')[0], 'Guest')
-                    user_project = st.secrets.get(f"{st.user.email.split('@')[0]}", 'None')
+                    email_prefix = st.user.email.split('@')[0]
+                    # Handle dotted email prefixes (TOML parses dots as nested tables)
+                    user_role = self._lookup_secret(email_prefix)
+                    user_project = user_role
                 else:
                     # For demo mode
                     st.write(f"Demo mode as: Guest")
