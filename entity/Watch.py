@@ -955,19 +955,29 @@ class WatchFactory:
     @staticmethod
     def create_from_details(details: Dict) -> Watch:
         """Factory for creating Watch objects"""
-        name = details.get('name')
+        name = details.get('name') or details.get('watchName')
         project_name = details.get('project')
         token = details.get('token')
+
+        if name:
+            try:
+                from controllers.auth_controller import AuthenticationController
+                from utils.fitbit_token_store import get_legacy_fitbit_token, get_valid_access_token
+
+                auth_controller = AuthenticationController()
+                sp = auth_controller.get_spreadsheet()
+                try:
+                    token = get_valid_access_token(sp, name)
+                except ValueError:
+                    token = token or get_legacy_fitbit_token(sp, name)
+            except ValueError:
+                # Older/manual watch rows may only have a static token in the fitbit sheet.
+                pass
         
         if not token:
-            from controllers.auth_controller import AuthenticationController
-            from utils.fitbit_token_store import get_valid_access_token
+            raise ValueError("Missing required watch details: name, project, or token")
 
-            auth_controller = AuthenticationController()
-            sp = auth_controller.get_spreadsheet()
-            token = get_valid_access_token(sp, name)  # name == watchName
-
-        if not all([name, project_name, token]):
+        if not all([name, project_name]):
             raise ValueError("Missing required watch details: name, project, or token")
         
         watch = Watch(
@@ -1028,5 +1038,3 @@ def get_headers(token: str) -> Dict:
 def get_activity(project: str) -> bool:
     """Check if a project is active"""
     return True  # Replace with actual logic based on your system
-
-

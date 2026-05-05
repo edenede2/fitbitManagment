@@ -77,7 +77,8 @@ def resolve_state(sp: Spreadsheet, state: str) -> Optional[Dict[str, Any]]:
 
 def save_tokens_for_watch(sp: Spreadsheet, *, watch_name: str, token_json: dict) -> None:
     expires_in = int(token_json.get("expires_in", 0) or 0)
-    expires_at = now_ts() + max(expires_in - 30, 0)  # 30s safety buffer
+    created_at = now_ts()
+    expires_at = created_at + max(expires_in - 30, 0)  # 30s safety buffer
 
     row = OrderedDict([
         ("watchName", watch_name),
@@ -86,16 +87,34 @@ def save_tokens_for_watch(sp: Spreadsheet, *, watch_name: str, token_json: dict)
         ("refresh_token", token_json.get("refresh_token", "")),
         ("expires_at", str(expires_at)),
         ("scope", token_json.get("scope", "")),
-        ("created_at", str(now_ts())),
+        ("created_at", str(created_at)),
     ])
     _append(sp, TOKENS_TAB, row)
     _update_fitbit_token(sp, watch_name, token_json.get("access_token", ""))
 
 def get_latest_tokens(sp: Spreadsheet, watch_name: str) -> Optional[Dict[str, Any]]:
+    if sp is None:
+        raise ValueError("Spreadsheet connection unavailable")
+
     rows = GoogleSheetsAdapter.get_rows(sp, TOKENS_TAB, "watchName", watchName=watch_name)
     if not rows:
         return None
     return rows[-1]
+
+def get_legacy_fitbit_token(sp: Spreadsheet, watch_name: str) -> str:
+    """Return the static token from the legacy fitbit sheet, if one exists."""
+    if sp is None:
+        raise ValueError("Spreadsheet connection unavailable")
+
+    rows = GoogleSheetsAdapter.get_rows(sp, FITBIT_SHEET, "name", name=watch_name)
+    if not rows:
+        raise ValueError(f"No fitbit row found for watch '{watch_name}'")
+
+    token = rows[-1].get("token", "")
+    if not token:
+        raise ValueError(f"No legacy token found for watch '{watch_name}'")
+
+    return token
 
 def get_valid_access_token(sp: Spreadsheet, watch_name: str) -> str:
     """
