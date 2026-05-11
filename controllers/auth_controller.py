@@ -119,11 +119,16 @@ class AuthenticationController:
     def get_spreadsheet(self):
         """Get or create the main spreadsheet connection"""
         try:
+            if st.session_state.get("spreadsheet") is not None:
+                self.main_spreadsheet = st.session_state.spreadsheet
+                return self.main_spreadsheet
+
             if not self.main_spreadsheet:
                 # Use st.secrets to get the spreadsheet key
                 spreadsheet_key = st.secrets.get("spreadsheet_key", "")
                 self.main_spreadsheet = Spreadsheet(name="Fitbit Database", api_key=spreadsheet_key)
                 GoogleSheetsAdapter.connect(self.main_spreadsheet)
+                st.session_state.spreadsheet = self.main_spreadsheet
             return self.main_spreadsheet
         except Exception as e:
             st.error(f"Error connecting to spreadsheet: {e}")

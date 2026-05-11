@@ -2,17 +2,32 @@ from __future__ import annotations
 
 import streamlit as st
 
+from entity.Sheet import Spreadsheet
 from utils.google_health_oauth import (
     exchange_code_for_google_health_tokens,
     get_google_health_identity,
 )
 from utils.health_oauth_clients import get_oauth_client_config
 from utils.health_token_store import (
+    HEALTH_STATES_TAB,
     log_health_api_event,
     mark_oauth_state_used,
     resolve_oauth_state,
     save_google_health_tokens_for_watch,
 )
+
+
+def _get_callback_spreadsheet() -> Spreadsheet | None:
+    if st.session_state.get("spreadsheet") is not None:
+        return st.session_state.spreadsheet
+
+    spreadsheet_key = st.secrets.get("spreadsheet_key", "")
+    if not spreadsheet_key:
+        return None
+
+    # Do not call GoogleSheetsAdapter.connect here. OAuth callbacks only need
+    # targeted reads/writes, and a full connect can exhaust Sheets read quota.
+    return Spreadsheet(name="Fitbit Database", api_key=spreadsheet_key)
 
 
 def handle_google_health_callback(auth_controller) -> bool:
@@ -28,11 +43,18 @@ def handle_google_health_callback(auth_controller) -> bool:
         if qp.get("fitbit_callback") == "1" or not code or not state:
             return False
 
-        sp_probe = auth_controller.get_spreadsheet()
+        sp_probe = _get_callback_spreadsheet()
         if sp_probe is None:
             return False
         try:
-            resolve_oauth_state(sp_probe, state=state, provider="google_health")
+            ws = sp_probe.get_gspread_connection().worksheet(HEALTH_STATES_TAB)
+            matches = [
+                row for row in ws.get_all_records()
+                if str(row.get("state", "")) == str(state)
+                and str(row.get("provider", "")) == "google_health"
+            ]
+            if not matches:
+                return False
         except Exception:
             return False
 
@@ -44,7 +66,7 @@ def handle_google_health_callback(auth_controller) -> bool:
         st.error("Google Health OAuth callback missing code/state")
         return True
 
-    sp = auth_controller.get_spreadsheet()
+    sp = _get_callback_spreadsheet()
     if sp is None:
         st.error("Could not connect to spreadsheet for Google Health OAuth callback")
         return True
