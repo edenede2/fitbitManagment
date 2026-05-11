@@ -161,7 +161,12 @@ class AppSheetConfig(Sheet):
 class FitbitSheet(Sheet):
     """Sheet for storing Fitbit device data"""
     schema: SheetSchema = field(default_factory=lambda: SheetSchema(
-        columns=['project', 'name', 'token', 'user','isActive','currentStudent'],
+        columns=[
+            'project', 'name', 'token', 'oauth_type', 'provider', 'oauth_client_key',
+            'auth_status', 'health_user_id', 'legacy_fitbit_user_id',
+            'last_successful_fetch_at', 'last_data_timestamp', 'last_auth_error',
+            'reauth_link', 'reauth_link_created_at', 'user', 'isActive', 'currentStudent'
+        ],
         required_columns=['project', 'name']
     ))
 
@@ -484,8 +489,14 @@ class GoogleSheetsAdapter:
         google_spreadsheet = sheet_api.open_spreadsheet(spreadsheet.api_key)
         try:
             worksheet = google_spreadsheet.worksheet(name)
+            headers = worksheet.row_values(1)
             for record in data:
-                worksheet.append_row(list(record.values()))
+                if isinstance(record, dict) and headers:
+                    worksheet.append_row([record.get(header, "") for header in headers])
+                elif isinstance(record, dict):
+                    worksheet.append_row(list(record.values()))
+                else:
+                    worksheet.append_row(record)
         except gspread.exceptions.WorksheetNotFound:
             print(f"Worksheet {name} not found in spreadsheet {spreadsheet.name}")
             return None
@@ -538,7 +549,10 @@ class GoogleSheetsAdapter:
             sheets_names = [
                 "user", "project", "fitbit", "log", "bulldog", "EMA", "FitbitLog",
                 "fitbit_alerts_config", "qualtrics_alerts_config", "late_nums", "suspicious_nums",
-                "EMA", "student_fitbit", "chats", "for_analysis", "appsheet_alerts_config"
+                "EMA", "student_fitbit", "chats", "for_analysis", "appsheet_alerts_config",
+                "health_oauth_clients", "health_oauth_states", "health_oauth_state_used",
+                "health_oauth_tokens", "health_reauth_queue", "health_api_logs",
+                "health_webhook_events"
             ]
             if sheet_name not in sheets_names:
                 continue

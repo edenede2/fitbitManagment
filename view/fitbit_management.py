@@ -4,6 +4,36 @@ from entity.Sheet import Spreadsheet, GoogleSheetsAdapter, SheetFactory
 from typing import Dict, List, Any, Optional
 import datetime
 import polars as pl
+from utils.health_oauth_clients import load_active_oauth_clients
+
+
+def _google_oauth_client_label(row: dict) -> str:
+    env = row.get("enviroment") or row.get("environment") or "staging"
+    notes = row.get("notes") or row.get("client_id") or ""
+    suffix = f" - {notes}" if notes else ""
+    return f"{row.get('client_key', '')} ({env}){suffix}"
+
+
+def _select_google_oauth_client_key(spreadsheet: Spreadsheet, key: str) -> str:
+    try:
+        clients = load_active_oauth_clients(spreadsheet, provider="google_health")
+    except Exception as e:
+        st.warning(f"Could not load Google Health OAuth clients: {e}")
+        clients = []
+
+    if not clients:
+        st.warning("No active Google Health OAuth clients found in health_oauth_clients.")
+        return st.text_input("OAuth client key", value="google_health_staging", key=key)
+
+    selected = st.selectbox(
+        "Google Cloud project / OAuth client",
+        options=clients,
+        format_func=_google_oauth_client_label,
+        key=key,
+    )
+    return str(selected.get("client_key") or "")
+
+
 def load_fitbit_datatable(user_email: str, user_role: str, user_project: str, spreadsheet: Spreadsheet) -> None:
     """
     Load and display the Fitbit datatable with role-specific permissions.
@@ -93,6 +123,17 @@ def display_admin_interface(fitbit_df: pl.DataFrame, user_df: pl.DataFrame,
             new_project = st.selectbox("Project", all_projects)
             new_name = st.text_input("Device Name")
             new_token = st.text_input("Token")
+            new_provider = st.selectbox(
+                "Provider",
+                options=["fitbit", "google_health"],
+                format_func=lambda value: "Fitbit legacy" if value == "fitbit" else "Google Health",
+            )
+            new_oauth_client_key = ""
+            if new_provider == "google_health":
+                new_oauth_client_key = _select_google_oauth_client_key(
+                    spreadsheet,
+                    key="management_new_google_oauth_client_key",
+                )
             new_user = st.text_input("User")
             new_is_active = st.checkbox("Is Active", value=True)
             new_current_student = st.text_input("Current Student (optional)")
@@ -105,6 +146,17 @@ def display_admin_interface(fitbit_df: pl.DataFrame, user_df: pl.DataFrame,
                     "project": new_project,
                     "name": new_name,
                     "token": new_token,
+                    "oauth_type": new_provider,
+                    "provider": new_provider,
+                    "oauth_client_key": new_oauth_client_key,
+                    "auth_status": "not_connected",
+                    "health_user_id": "",
+                    "legacy_fitbit_user_id": "",
+                    "last_successful_fetch_at": "",
+                    "last_data_timestamp": "",
+                    "last_auth_error": "",
+                    "reauth_link": "",
+                    "reauth_link_created_at": "",
                     "user": new_user,
                     "isActive": "TRUE" if new_is_active else "FALSE",
                     "currentStudent": new_current_student
@@ -190,10 +242,61 @@ def display_editable_table(fitbit_df: pl.DataFrame, user_df: pl.DataFrame, is_ad
                 disabled=not is_admin,  # Only admins can change name
             ),
             "token": st.column_config.TextColumn(
-                "Token",
-                help="Authentication token for the Fitbit API",
+                "Legacy Fitbit Token",
+                help="Legacy Fitbit API token. Google Health users store tokens in health_oauth_tokens.",
                 width="large",
                 disabled=not is_admin,  # Only admins can see/edit tokens
+            ),
+            "oauth_type": st.column_config.SelectboxColumn(
+                "OAuth Type",
+                help="Provider used for this watch",
+                width="medium",
+                options=["fitbit", "google_health", ""],
+                disabled=not is_admin,
+            ),
+            "provider": st.column_config.SelectboxColumn(
+                "Provider",
+                help="Provider used for this watch",
+                width="medium",
+                options=["fitbit", "google_health", ""],
+                disabled=not is_admin,
+            ),
+            "oauth_client_key": st.column_config.TextColumn(
+                "OAuth Client Key",
+                help="Key in health_oauth_clients for Google Health rows",
+                width="medium",
+                disabled=not is_admin,
+            ),
+            "auth_status": st.column_config.SelectboxColumn(
+                "Auth Status",
+                help="Current OAuth status",
+                width="medium",
+                options=["not_connected", "connected", "expired", "reauth_required", "revoked", "error", ""],
+                disabled=not is_admin,
+            ),
+            "health_user_id": st.column_config.TextColumn(
+                "Health User ID",
+                help="Google Health user ID returned by OAuth identity",
+                width="medium",
+                disabled=True,
+            ),
+            "legacy_fitbit_user_id": st.column_config.TextColumn(
+                "Legacy Fitbit User ID",
+                help="Legacy Fitbit user ID returned by Google Health identity when available",
+                width="medium",
+                disabled=True,
+            ),
+            "last_auth_error": st.column_config.TextColumn(
+                "Last Auth Error",
+                help="Most recent OAuth or refresh error",
+                width="large",
+                disabled=True,
+            ),
+            "reauth_link": st.column_config.LinkColumn(
+                "Reauth Link",
+                help="Latest generated reauthorization link",
+                width="large",
+                disabled=True,
             ),
             "user": st.column_config.TextColumn(
                 "User",

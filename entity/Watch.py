@@ -502,6 +502,7 @@ class Watch:
     name: str
     project: str  
     token: str
+    health_client: Any = None
     header: Dict = field(init=False, default_factory=dict)
     current_student: Optional[User] = None
     previous_student: Optional[User] = None
@@ -532,6 +533,9 @@ class Watch:
     
     def fetch_data(self, endpoint_type: str, force_fetch: bool = False, **kwargs) -> Dict:
         """Fetch data from Fitbit API using the Builder pattern"""
+        if self.health_client is not None:
+            return self.health_client.fetch_raw(endpoint_type, **kwargs)
+
         # Return cached data if available and force_fetch is False
         cache_key = f"{endpoint_type}_{json.dumps(kwargs, default=str)}"
         if not force_fetch and cache_key in self._cached_data:
@@ -734,6 +738,11 @@ class Watch:
     
     def update_device_info(self, force_fetch: bool = False) -> None:
         """Update device information (battery, sync time, etc.)"""
+        if self.health_client is not None:
+            self.battery_level = self.health_client.get_current_battery()
+            self.last_sync_time = datetime.datetime.now(datetime.timezone.utc)
+            return
+
         data = self.fetch_data('device', force_fetch=force_fetch)
         
         if data and isinstance(data, list) and len(data) > 0:
@@ -763,6 +772,9 @@ class Watch:
     
     def get_current_hourly_HR(self, force_fetch: bool = False) -> Optional[int]:
         """Get the current hourly heart rate (convenience method)"""
+        if self.health_client is not None:
+            return self.health_client.get_current_hourly_hr()
+
         current_date = datetime.datetime.now()
         hour_ago = current_date - datetime.timedelta(hours=1)
         
@@ -782,6 +794,9 @@ class Watch:
     
     def get_current_hourly_steps(self, force_fetch: bool = False) -> Optional[int]:
         """Get the current hourly steps (convenience method)"""
+        if self.health_client is not None:
+            return self.health_client.get_current_hourly_steps()
+
         current_date = datetime.datetime.now()
         hours_ago = current_date - datetime.timedelta(hours=6)
         
@@ -803,12 +818,18 @@ class Watch:
     
     def get_current_battery(self, force_fetch: bool = False) -> Optional[int]:
         """Get the current battery level (convenience method)"""
+        if self.health_client is not None:
+            return self.health_client.get_current_battery()
+
         if force_fetch:
             self.update_device_info(force_fetch=True)
         return self.battery_level
     
     def get_last_sleep_start_end(self, force_fetch: bool = False) -> tuple:
         """Get the last sleep start and end times (convenience method)"""
+        if self.health_client is not None:
+            return self.health_client.get_last_sleep_start_end()
+
         yesterday = datetime.datetime.now() - datetime.timedelta(days=1)
         today = datetime.datetime.now()
         
@@ -828,6 +849,9 @@ class Watch:
     
     def get_last_sleep_duration(self, force_fetch: bool = False) -> Optional[float]:
         """Get the last sleep duration in hours (convenience method)"""
+        if self.health_client is not None:
+            return self.health_client.get_last_sleep_duration()
+
         start_time, end_time = self.get_last_sleep_start_end(force_fetch=force_fetch)
         if not start_time or not end_time:
             return None
@@ -958,23 +982,30 @@ class WatchFactory:
         name = details.get('name') or details.get('watchName')
         project_name = details.get('project')
         token = details.get('token')
+        provider = str(details.get('oauth_type') or details.get('provider') or 'fitbit').strip() or 'fitbit'
+        health_client = None
 
         if name:
             try:
                 from controllers.auth_controller import AuthenticationController
-                from utils.fitbit_token_store import get_legacy_fitbit_token, get_valid_access_token
 
                 auth_controller = AuthenticationController()
                 sp = auth_controller.get_spreadsheet()
-                try:
-                    token = get_valid_access_token(sp, name)
-                except ValueError:
-                    token = token or get_legacy_fitbit_token(sp, name)
+                if provider == 'google_health':
+                    from services.health_client_factory import HealthClientFactory
+                    health_client = HealthClientFactory.from_watch_row(sp, details)
+                    token = token or ""
+                else:
+                    from utils.fitbit_token_store import get_legacy_fitbit_token, get_valid_access_token
+                    try:
+                        token = get_valid_access_token(sp, name)
+                    except ValueError:
+                        token = token or get_legacy_fitbit_token(sp, name)
             except ValueError:
                 # Older/manual watch rows may only have a static token in the fitbit sheet.
                 pass
         
-        if not token:
+        if not token and health_client is None:
             raise ValueError("Missing required watch details: name, project, or token")
 
         if not all([name, project_name]):
@@ -983,7 +1014,8 @@ class WatchFactory:
         watch = Watch(
             name=name,
             project=project_name,
-            token=token
+            token=token or "",
+            health_client=health_client,
         )
         
         if 'isActive' in details:
