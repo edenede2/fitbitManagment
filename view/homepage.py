@@ -541,7 +541,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
             # st.dataframe(
             #     display_df[display_columns],
             #     column_config=column_config,
-            #     use_container_width=True,
+            #     width="stretch",
             #     height=min(35 * len(display_df) + 38, 600),
             #     hide_index=True
             # )
@@ -659,7 +659,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                             pass
                 
                 # Display as dataframe
-                # st.dataframe(detail_df, use_container_width=True)
+                # st.dataframe(detail_df, width="stretch")
                 
                 # gd = GridOptionsBuilder.from_dataframe(
                 #     detail_df.to_pandas()
@@ -763,7 +763,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                                          title=f"Battery History - {selected_watch}",
                                          labels={'lastCheck': 'Time', 'battery_num': 'Battery Level (%)'},
                                          range_y=[0, 100])
-                            st.plotly_chart(fig, use_container_width=True)
+                            st.plotly_chart(fig, width="stretch")
                         else:
                             st.info("No battery data available for this watch")
                     
@@ -783,7 +783,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                             fig = px.line(hr_pd_df, x='lastCheck', y='hr_num', 
                                          title=f"Heart Rate History - {selected_watch}",
                                          labels={'lastCheck': 'Time', 'hr_num': 'Heart Rate (bpm)'})
-                            st.plotly_chart(fig, use_container_width=True)
+                            st.plotly_chart(fig, width="stretch")
                         else:
                             st.info("No heart rate data available for this watch")
                     
@@ -803,7 +803,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                             fig = px.bar(steps_pd_df, x='lastCheck', y='steps_num', 
                                         title=f"Steps History - {selected_watch}",
                                         labels={'lastCheck': 'Time', 'steps_num': 'Steps'})
-                            st.plotly_chart(fig, use_container_width=True)
+                            st.plotly_chart(fig, width="stretch")
                         else:
                             st.info("No steps data available for this watch")
                     
@@ -824,7 +824,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                             fig = px.bar(sleep_pd_df, x='lastCheck', y='sleep_min', 
                                         title=f"Sleep Duration History - {selected_watch}",
                                         labels={'lastCheck': 'Date', 'sleep_min': 'Sleep Duration (min)'})
-                            st.plotly_chart(fig, use_container_width=True)
+                            st.plotly_chart(fig, width="stretch")
                         else:
                             st.info("No sleep data available for this watch")
                     

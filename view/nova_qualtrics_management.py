@@ -246,7 +246,7 @@ def _display_ema_data(ema_df):
                     ema_df = ema_df[ema_df[search_col].astype(str).str.contains(search_text)]
         
         # Display data
-        st.dataframe(ema_df, use_container_width=True)
+        st.dataframe(ema_df, width="stretch")
         
         # Export option
         if st.button("Export to CSV"):

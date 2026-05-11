@@ -115,7 +115,7 @@ def display_fibro_ema_data(spreadsheet: Spreadsheet):
         else:
             display_pd_df = display_df[cols_to_display]
         
-        # st.dataframe(display_pd_df, use_container_width=True)
+        # st.dataframe(display_pd_df, width="stretch")
         # Use aggrid for better display
         aggrid_polars(pl.DataFrame(display_pd_df), key="main_data_table")    
         # Option to download data
@@ -179,7 +179,7 @@ def display_fibro_ema_data(spreadsheet: Spreadsheet):
                     y="Count", 
                     title=f"EMA Submissions Over Time {'(All Users)' if selected_user == 'All Users' else f'(User: {selected_user})'}"
                 )
-                st.plotly_chart(fig1, use_container_width=True)
+                st.plotly_chart(fig1, width="stretch")
                 
                 # If there are any numeric columns, create additional visualizations
                 numeric_cols = [col for col in filtered_df.columns 
@@ -199,7 +199,7 @@ def display_fibro_ema_data(spreadsheet: Spreadsheet):
                             y=selected_metric,
                             title=f"Daily Average {selected_metric} {'(All Users)' if selected_user == 'All Users' else f'(User: {selected_user})'}"
                         )
-                        st.plotly_chart(fig2, use_container_width=True)
+                        st.plotly_chart(fig2, width="stretch")
                         
                         # Distribution of selected metric
                         fig3 = px.histogram(
@@ -207,7 +207,7 @@ def display_fibro_ema_data(spreadsheet: Spreadsheet):
                             x=selected_metric,
                             title=f"Distribution of {selected_metric} Values"
                         )
-                        st.plotly_chart(fig3, use_container_width=True)
+                        st.plotly_chart(fig3, width="stretch")
             
             except Exception as e:
                 st.error(f"Error creating visualization: {str(e)}")

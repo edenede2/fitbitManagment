@@ -224,7 +224,7 @@ def display_editable_table(fitbit_df: pl.DataFrame, user_df: pl.DataFrame, is_ad
     # Create a data editor with appropriate permissions
     edited_df = st.data_editor(
         edited_df,
-        use_container_width=True,
+        width="stretch",
         num_rows="dynamic" if is_admin else "fixed",
         column_config={
             "project": st.column_config.SelectboxColumn(

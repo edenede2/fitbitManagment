@@ -193,6 +193,11 @@ def fetch_watch_data(watch_name, signal_type, start_date, end_date, should_fetch
 
 # Add a cache decorator for watch details
 def cached_get_watch_details(watch_name):
+    if "fitbit_watches" in st.session_state:
+        details = st.session_state.fitbit_watches.get(watch_name)
+        if details:
+            return details
+
     project_controller = ProjectController()
     return project_controller.get_watch_details(watch_name)
 
@@ -610,11 +615,11 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                                     if signal_column == "HR":
                                         fig = px.line(st.session_state[day_data_key], x='syncDate', y='HR',
                                                     title=f'Heart Rate for {date_str}')
-                                        st.plotly_chart(fig, use_container_width=True)
+                                        st.plotly_chart(fig, width="stretch")
                                     elif signal_column == "steps":
                                         fig = px.bar(st.session_state[day_data_key], x='syncDate', y='steps',
                                                     title=f'Steps for {date_str}')
-                                        st.plotly_chart(fig, use_container_width=True)
+                                        st.plotly_chart(fig, width="stretch")
                                     elif signal_column == "sleep_duration":
                                         
                                         df = pl.DataFrame(st.session_state[day_data_key]).with_columns(
@@ -642,7 +647,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                                             yaxis_title='Missing Minutes (out of 1440)',
                                             coloraxis_colorbar_title='% Missing'
                                         )
-                                        st.plotly_chart(fig, use_container_width=True)
+                                        st.plotly_chart(fig, width="stretch")
                                         
                                         # Also display as a table for detailed analysis
                                         st.write("### Detailed Missing Data")
@@ -651,7 +656,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                                         detail_df['available_percentage'] = (detail_df['available_minutes'] / 1440 * 100).round(2)
                                         st.dataframe(
                                             detail_df[['date', 'available_minutes', 'percentage_missing', 'available_percentage']],
-                                            use_container_width=True
+                                            width="stretch"
                                         )
 
                                 else:
@@ -771,7 +776,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                         ))
 
                         fig.update_layout(height=250, margin=dict(l=10, r=10, t=50, b=10))
-                        st.plotly_chart(fig, use_container_width=True)
+                        st.plotly_chart(fig, width="stretch")
                     
                     with col2:
                         st.markdown("### 📊 Latest Metrics")
