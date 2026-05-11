@@ -11,6 +11,7 @@ from utils.health_oauth_clients import (
     make_default_client_key,
     parse_google_oauth_client_json,
     scopes_to_string,
+    suggest_google_health_redirect_uri,
     upsert_oauth_client_config,
 )
 
@@ -96,17 +97,23 @@ if is_admin:
                 st.write(f"Client ID: `{parsed_client['client_id']}`")
                 if redirect_uris:
                     redirect_uri = st.selectbox(
-                        "Redirect URI",
+                        "Redirect URI from JSON",
                         options=redirect_uris,
                         key="uploaded_redirect_uri_select",
                     )
                 else:
                     redirect_uri = ""
+                suggested_redirect_uri = suggest_google_health_redirect_uri(redirect_uri)
+                if redirect_uri != suggested_redirect_uri:
+                    st.warning(
+                        "The JSON redirect URI is Streamlit's internal login callback. "
+                        "Google Health OAuth must use the app callback URI below, and that exact URI must be added in Google Cloud."
+                    )
 
                 with st.form("save_google_oauth_client_form"):
                     client_key = st.text_input("Client key", value=default_client_key)
                     enviroment = st.selectbox("Environment", options=["dev", "staging", "production"], index=1)
-                    redirect_uri = st.text_input("Redirect URI to save", value=redirect_uri)
+                    redirect_uri = st.text_input("Redirect URI to save", value=suggested_redirect_uri)
                     scopes = st.text_area(
                         "Scopes",
                         value=scopes_to_string(DEFAULT_GOOGLE_HEALTH_SCOPES),

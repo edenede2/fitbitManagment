@@ -4,6 +4,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, List
+from urllib.parse import urlsplit, urlunsplit
 
 import gspread
 
@@ -104,6 +105,21 @@ def make_default_client_key(parsed_json: dict[str, Any], enviroment: str) -> str
     return f"google_health_{enviroment}_{suffix}"
 
 
+def is_streamlit_auth_callback_uri(redirect_uri: str) -> bool:
+    return urlsplit(str(redirect_uri or "")).path.rstrip("/") == "/oauth2callback"
+
+
+def suggest_google_health_redirect_uri(redirect_uri: str) -> str:
+    """
+    Convert a Streamlit login redirect URI into an app-level health callback URI.
+    Google Cloud must list this exact URI under Authorized redirect URIs.
+    """
+    parsed = urlsplit(str(redirect_uri or ""))
+    if not parsed.scheme or not parsed.netloc:
+        return str(redirect_uri or "")
+    return urlunsplit((parsed.scheme, parsed.netloc, "/", "google_health_callback=1", ""))
+
+
 def _worksheet(spreadsheet: Spreadsheet, tab: str):
     return spreadsheet.get_gspread_connection().worksheet(tab)
 
@@ -139,6 +155,13 @@ def upsert_oauth_client_config(
     status: str = "active",
     notes: str = "",
 ) -> None:
+    if is_streamlit_auth_callback_uri(redirect_uri):
+        suggested = suggest_google_health_redirect_uri(redirect_uri)
+        raise ValueError(
+            "Do not use Streamlit's /oauth2callback redirect URI for Google Health OAuth. "
+            f"Use {suggested} and add it to Google Cloud Authorized redirect URIs."
+        )
+
     now = utc_now_iso()
     values = _ordered_client_row({
         "client_key": client_key,
@@ -225,6 +248,12 @@ def get_oauth_client_config(spreadsheet: Spreadsheet, client_key: str) -> OAuthC
         raise ValueError(f"OAuth client {client_key} is missing client_id/client_secret")
     if not row.get("redirect_uri"):
         raise ValueError(f"OAuth client {client_key} is missing redirect_uri")
+    if is_streamlit_auth_callback_uri(str(row.get("redirect_uri") or "")):
+        suggested = suggest_google_health_redirect_uri(str(row.get("redirect_uri") or ""))
+        raise ValueError(
+            f"OAuth client {client_key} uses Streamlit's /oauth2callback redirect URI. "
+            f"Use {suggested} for Google Health OAuth."
+        )
     if not scopes:
         raise ValueError(f"OAuth client {client_key} is missing scopes")
 
