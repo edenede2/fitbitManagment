@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time as dtime, timedelta, timezone
 from typing import Any, Callable
+from zoneinfo import ZoneInfo
 
 import requests
 
@@ -9,6 +10,7 @@ import requests
 class GoogleHealthClient:
     provider = "google_health"
     BASE_URL = "https://health.googleapis.com/v4"
+    DEFAULT_TZ = ZoneInfo("Asia/Jerusalem")
 
     def __init__(self, *, access_token_provider: Callable[[], str]):
         self.access_token_provider = access_token_provider
@@ -199,6 +201,31 @@ class GoogleHealthClient:
         return None
 
     def fetch_raw(self, data_type: str, **kwargs: Any) -> dict:
+        if data_type in {"Heart Rate Intraday", "Steps Intraday"}:
+            google_data_type = {
+                "Heart Rate Intraday": "heart-rate",
+                "Steps Intraday": "steps",
+            }[data_type]
+            start_date = kwargs.get("start_date")
+            end_date = kwargs.get("end_date") or start_date
+            start_time = kwargs.get("start_time", "00:00")
+            end_time = kwargs.get("end_time", "23:59:59")
+            start_iso, end_iso = self._local_interval_to_utc_rfc3339(
+                start_date=start_date,
+                start_time=start_time,
+                end_date=end_date,
+                end_time=end_time,
+            )
+            points = self.rollup(
+                google_data_type,
+                start_time=start_iso,
+                end_time=end_iso,
+                window_size=kwargs.get("window_size", "60s"),
+            )
+            if data_type == "Heart Rate Intraday":
+                return self._fitbit_heart_intraday_payload(points)
+            return self._fitbit_steps_intraday_payload(points)
+
         if data_type in {"steps", "heart-rate"} and {"start_time", "end_time"} <= set(kwargs):
             return {
                 "rollupDataPoints": self.rollup(
@@ -211,6 +238,123 @@ class GoogleHealthClient:
         if data_type == "sleep":
             return {"dataPoints": self.list_data_points("sleep", filter_expr=kwargs.get("filter_expr"))}
         return {"dataPoints": self.list_data_points(data_type, filter_expr=kwargs.get("filter_expr"))}
+
+    @classmethod
+    def _as_date(cls, value: str | date | datetime) -> date:
+        if isinstance(value, datetime):
+            return value.date()
+        if isinstance(value, date):
+            return value
+        return date.fromisoformat(str(value))
+
+    @staticmethod
+    def _parse_clock(value: str | dtime | datetime) -> tuple[dtime, int]:
+        if isinstance(value, datetime):
+            return value.time(), 0
+        if isinstance(value, dtime):
+            return value, 0
+
+        value = str(value).strip()
+        if value == "24:00":
+            return dtime(0, 0, 0), 1
+
+        for fmt in ("%H:%M:%S", "%H:%M"):
+            try:
+                return datetime.strptime(value, fmt).time(), 0
+            except ValueError:
+                pass
+        raise ValueError(f"Invalid time value: {value}. Use HH:MM or HH:MM:SS.")
+
+    @classmethod
+    def _local_interval_to_utc_rfc3339(
+        cls,
+        *,
+        start_date: str | date | datetime,
+        start_time: str | dtime | datetime,
+        end_date: str | date | datetime | None = None,
+        end_time: str | dtime | datetime = "23:59:59",
+    ) -> tuple[str, str]:
+        s_date = cls._as_date(start_date)
+        e_date = cls._as_date(end_date or start_date)
+        s_time, s_day_offset = cls._parse_clock(start_time)
+        e_time, e_day_offset = cls._parse_clock(end_time)
+
+        s_dt = datetime.combine(s_date + timedelta(days=s_day_offset), s_time, tzinfo=cls.DEFAULT_TZ)
+        e_dt = datetime.combine(e_date + timedelta(days=e_day_offset), e_time, tzinfo=cls.DEFAULT_TZ)
+        if e_dt <= s_dt:
+            e_dt += timedelta(days=1)
+
+        return (
+            s_dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+            e_dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+        )
+
+    @classmethod
+    def _point_local_datetime(cls, point: dict[str, Any]) -> datetime | None:
+        start, end = cls._extract_interval(point)
+        timestamp = end or start
+        if not timestamp:
+            return None
+        try:
+            return datetime.fromisoformat(timestamp.replace("Z", "+00:00")).astimezone(cls.DEFAULT_TZ)
+        except ValueError:
+            return None
+
+    @classmethod
+    def _fitbit_heart_intraday_payload(cls, points: list[dict[str, Any]]) -> dict[str, Any]:
+        dataset = []
+        date_time = None
+        for point in points:
+            value = cls._extract_numeric(
+                point,
+                "beatsPerMinuteAvg",
+                "beatsPerMinute",
+                "averageBeatsPerMinute",
+                "heartRateBeatsPerMinute",
+            )
+            local_dt = cls._point_local_datetime(point)
+            if value is None or local_dt is None:
+                continue
+            date_time = date_time or local_dt.date().isoformat()
+            dataset.append({
+                "time": local_dt.strftime("%H:%M:%S"),
+                "value": value,
+                "datetime": local_dt.replace(tzinfo=None).isoformat(timespec="seconds"),
+            })
+
+        return {
+            "activities-heart": [{"dateTime": date_time or ""}],
+            "activities-heart-intraday": {
+                "dataset": dataset,
+                "datasetInterval": 60,
+                "datasetType": "minute",
+            },
+        }
+
+    @classmethod
+    def _fitbit_steps_intraday_payload(cls, points: list[dict[str, Any]]) -> dict[str, Any]:
+        dataset = []
+        date_time = None
+        for point in points:
+            value = cls._extract_numeric(point, "countSum", "steps")
+            local_dt = cls._point_local_datetime(point)
+            if value is None or local_dt is None:
+                continue
+            date_time = date_time or local_dt.date().isoformat()
+            dataset.append({
+                "time": local_dt.strftime("%H:%M:%S"),
+                "value": int(value),
+                "datetime": local_dt.replace(tzinfo=None).isoformat(timespec="seconds"),
+            })
+
+        return {
+            "activities-steps": [{"dateTime": date_time or ""}],
+            "activities-steps-intraday": {
+                "dataset": dataset,
+                "datasetInterval": 60,
+                "datasetType": "minute",
+            },
+        }
 
     @staticmethod
     def _extract_numeric(payload: dict[str, Any], *preferred_keys: str) -> int | float | None:
