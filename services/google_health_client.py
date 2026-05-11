@@ -134,14 +134,14 @@ class GoogleHealthClient:
 
     def get_current_hourly_steps(self) -> int | None:
         end_dt = datetime.now(timezone.utc)
-        start_dt = end_dt - timedelta(hours=6)
+        start_dt = end_dt - timedelta(hours=24)
         points = self.rollup(
             "steps",
             start_time=start_dt.isoformat().replace("+00:00", "Z"),
             end_time=end_dt.isoformat().replace("+00:00", "Z"),
-            window_size="3600s",
+            window_size="60s",
         )
-        for point in reversed(points):
+        for point in points:
             value = self._extract_numeric(point, "countSum", "steps")
             if value and value > 0:
                 return int(value)
@@ -149,14 +149,14 @@ class GoogleHealthClient:
 
     def get_current_hourly_hr(self) -> int | float | None:
         end_dt = datetime.now(timezone.utc)
-        start_dt = end_dt - timedelta(hours=1)
+        start_dt = end_dt - timedelta(hours=24)
         points = self.rollup(
             "heart-rate",
             start_time=start_dt.isoformat().replace("+00:00", "Z"),
             end_time=end_dt.isoformat().replace("+00:00", "Z"),
-            window_size="3600s",
+            window_size="60s",
         )
-        for point in reversed(points):
+        for point in points:
             value = self._extract_numeric(
                 point,
                 "beatsPerMinuteAvg",
@@ -329,6 +329,11 @@ class GoogleHealthClient:
                 "datasetInterval": 60,
                 "datasetType": "minute",
             },
+            "_google_health": {
+                "rollup_count": len(points),
+                "parsed_count": len(dataset),
+                "first_keys": list(points[0].keys()) if points else [],
+            },
         }
 
     @classmethod
@@ -353,6 +358,11 @@ class GoogleHealthClient:
                 "dataset": dataset,
                 "datasetInterval": 60,
                 "datasetType": "minute",
+            },
+            "_google_health": {
+                "rollup_count": len(points),
+                "parsed_count": len(dataset),
+                "first_keys": list(points[0].keys()) if points else [],
             },
         }
 

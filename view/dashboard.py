@@ -95,8 +95,16 @@ def fetch_watch_data(watch_name, signal_type, start_date, end_date, should_fetch
                     start_time="00:00",
                     end_time=end_time
                 )
+                google_debug = data.get("_google_health") if isinstance(data, dict) else None
                 # Process data with Watch class method
                 df = watch.get_data_as_dataframe('Heart Rate Intraday', data)
+                if df.empty and google_debug:
+                    st.warning(
+                        "Google Health returned "
+                        f"{google_debug.get('rollup_count', 0)} HR rollup points; "
+                        f"parsed {google_debug.get('parsed_count', 0)} points. "
+                        f"First point keys: {google_debug.get('first_keys', [])}"
+                    )
                 
                 # Rename columns for consistency with dashboard display
                 if not df.empty and 'value' in df.columns:
