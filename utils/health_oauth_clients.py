@@ -163,11 +163,20 @@ def upsert_oauth_client_config(
         ws = _worksheet(spreadsheet, CLIENTS_TAB)
         row_number, headers = _find_row_by_client_key(ws, client_key)
     except gspread.exceptions.WorksheetNotFound:
-        GoogleSheetsAdapter.append_rows(spreadsheet, CLIENTS_TAB, [values])
+        workbook = spreadsheet.get_gspread_connection()
+        ws = workbook.add_worksheet(title=CLIENTS_TAB, rows=1000, cols=len(CLIENT_COLUMNS))
+        ws.append_row(CLIENT_COLUMNS)
+        ws.append_row([values.get(header, "") for header in CLIENT_COLUMNS])
         return
 
     if not row_number:
-        GoogleSheetsAdapter.append_rows(spreadsheet, CLIENTS_TAB, [values])
+        headers = headers or CLIENT_COLUMNS
+        missing_headers = [column for column in CLIENT_COLUMNS if column not in headers]
+        if missing_headers:
+            headers = headers + missing_headers
+            ws.resize(cols=len(headers))
+            ws.update("1:1", [headers])
+        ws.append_row([values.get(header, "") for header in headers])
         return
 
     if "created_at" in headers:

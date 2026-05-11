@@ -129,7 +129,26 @@ def _update_row_by_keys(
 
 
 def _append(spreadsheet: Spreadsheet, tab: str, columns: list[str], values: dict[str, Any]) -> None:
-    GoogleSheetsAdapter.append_rows(spreadsheet, tab, [_ordered_row(columns, values)])
+    row = _ordered_row(columns, values)
+    workbook = spreadsheet.get_gspread_connection()
+    try:
+        ws = workbook.worksheet(tab)
+    except gspread.exceptions.WorksheetNotFound:
+        ws = workbook.add_worksheet(title=tab, rows=1000, cols=max(len(columns), 1))
+        ws.append_row(columns)
+
+    headers = ws.row_values(1)
+    if not headers:
+        headers = columns
+        ws.append_row(headers)
+
+    missing_headers = [column for column in columns if column not in headers]
+    if missing_headers:
+        headers = headers + missing_headers
+        ws.resize(cols=len(headers))
+        ws.update("1:1", [headers])
+
+    ws.append_row([row.get(header, "") for header in headers])
 
 
 def save_oauth_state(

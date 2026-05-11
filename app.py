@@ -94,6 +94,23 @@ def handle_google_health_callback(auth_controller: AuthenticationController) -> 
     """
     qp = st.query_params
     if qp.get("google_health_callback") != "1":
+        if qp.get("fitbit_callback") == "1":
+            return False
+        if not qp.get("code") or not qp.get("state"):
+            return False
+
+        # Be tolerant of OAuth clients whose redirect_uri was saved without
+        # ?google_health_callback=1. If the state belongs to Google Health,
+        # process it here; otherwise let the rest of the app continue.
+        sp_probe = auth_controller.get_spreadsheet()
+        if sp_probe is None:
+            return False
+        try:
+            resolve_oauth_state(sp_probe, state=qp.get("state"), provider="google_health")
+        except Exception:
+            return False
+
+    if qp.get("google_health_callback") != "1" and not qp.get("state"):
         return False
 
     error = qp.get("error")
