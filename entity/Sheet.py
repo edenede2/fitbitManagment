@@ -401,13 +401,49 @@ class GoogleSheetsAdapter:
     """Adapter for connecting entity layer Spreadsheet with Google Sheets API"""
 
     @staticmethod
+    def _records_from_values(values: List[List[Any]]) -> List[dict]:
+        """Build records manually for sheets with duplicate or blank headers."""
+        if not values:
+            return []
+
+        raw_headers = values[0]
+        headers = []
+        seen = defaultdict(int)
+        for idx, header in enumerate(raw_headers):
+            header_name = str(header or "").strip()
+            if not header_name:
+                header_name = f"__blank_{idx + 1}"
+            if seen[header_name]:
+                headers.append(f"{header_name}_{seen[header_name]}")
+            else:
+                headers.append(header_name)
+            seen[header_name] += 1
+
+        records = []
+        for row in values[1:]:
+            if not any(row):
+                continue
+            record = {}
+            for idx, header in enumerate(headers):
+                record[header] = row[idx] if idx < len(row) else ""
+            records.append(record)
+        return records
+
+    @staticmethod
+    def _get_all_records_safe(worksheet) -> List[dict]:
+        try:
+            return worksheet.get_all_records()
+        except gspread.exceptions.GSpreadException:
+            return GoogleSheetsAdapter._records_from_values(worksheet.get_all_values())
+
+    @staticmethod
     def get_all_reords(spreadsheet: Spreadsheet, name: str) -> Sheet:
         """Get a sheet by name from the entity layer"""
         sheets_api = SheetsAPI.get_instance()
         google_spreadsheet = sheets_api.open_spreadsheet(spreadsheet.api_key)
         try:
             worksheet = google_spreadsheet.worksheet(name)
-            records = worksheet.get_all_records()
+            records = GoogleSheetsAdapter._get_all_records_safe(worksheet)
         except gspread.exceptions.WorksheetNotFound:
             print(f"Worksheet {name} not found in spreadsheet {spreadsheet.name}")
             records = []
@@ -420,7 +456,7 @@ class GoogleSheetsAdapter:
         google_spreadsheet = sheet_api.open_spreadsheet(spreadsheet.api_key)
         try:
             worksheet = google_spreadsheet.worksheet(name)
-            records = worksheet.get_all_records()
+            records = GoogleSheetsAdapter._get_all_records_safe(worksheet)
             for record in records:
                 if all(record.get(key) == row[key] for key in keys):
                     return record
@@ -434,7 +470,7 @@ class GoogleSheetsAdapter:
         google_spreadsheet = sheet_api.open_spreadsheet(spreadsheet.api_key)
         try:
             worksheet = google_spreadsheet.worksheet(sheet_name)
-            records = worksheet.get_all_records()
+            records = GoogleSheetsAdapter._get_all_records_safe(worksheet)
             result = []
             for record in records:
                 if all(record.get(key) == row[key] for key in keys):
@@ -451,7 +487,7 @@ class GoogleSheetsAdapter:
         google_spreadsheet = sheet_api.open_spreadsheet(spreadsheet.api_key)
         try:
             worksheet = google_spreadsheet.worksheet(name)
-            records = worksheet.get_all_records()
+            records = GoogleSheetsAdapter._get_all_records_safe(worksheet)
             for record in records:
                 if all(record.get(key) == on[key] for key in on):
                     # Update the record with new values
@@ -471,7 +507,7 @@ class GoogleSheetsAdapter:
         google_spreadsheet = sheet_api.open_spreadsheet(spreadsheet.api_key)
         try:
             worksheet = google_spreadsheet.worksheet(name)
-            records = worksheet.get_all_records()
+            records = GoogleSheetsAdapter._get_all_records_safe(worksheet)
             for record in records:
                 if all(record.get(key) == on[key] for key in on):
                     # Update the record with new values
@@ -491,12 +527,31 @@ class GoogleSheetsAdapter:
         sheet_api = SheetsAPI.get_instance()
         google_spreadsheet = sheet_api.open_spreadsheet(spreadsheet.api_key)
         try:
-            worksheet = google_spreadsheet.worksheet(name)
-            headers = worksheet.row_values(1)
+            try:
+                worksheet = google_spreadsheet.worksheet(name)
+            except gspread.exceptions.WorksheetNotFound:
+                first_record = next((record for record in data if isinstance(record, dict)), None)
+                headers = list(first_record.keys()) if first_record else []
+                worksheet = google_spreadsheet.add_worksheet(
+                    title=name,
+                    rows=max(len(data) + 1, 100),
+                    cols=max(len(headers), 1),
+                )
+                if headers:
+                    worksheet.append_row(headers)
+
+            headers = [str(header or "").strip() for header in worksheet.row_values(1)]
             for record in data:
                 if isinstance(record, dict) and headers:
+                    missing_headers = [key for key in record.keys() if key not in headers]
+                    if missing_headers:
+                        headers = headers + missing_headers
+                        worksheet.resize(cols=len(headers))
+                        worksheet.update("1:1", [headers])
                     worksheet.append_row([record.get(header, "") for header in headers])
                 elif isinstance(record, dict):
+                    headers = list(record.keys())
+                    worksheet.append_row(headers)
                     worksheet.append_row(list(record.values()))
                 else:
                     worksheet.append_row(record)
@@ -516,7 +571,7 @@ class GoogleSheetsAdapter:
         google_spreadsheet = sheet_api.open_spreadsheet(spreadsheet.api_key)
         try:
             worksheet = google_spreadsheet.worksheet(name)
-            records = worksheet.get_all_records()
+            records = GoogleSheetsAdapter._get_all_records_safe(worksheet)
             for record in records:
                 if all(record.get(key) == on[key] for key in on):
                     # Delete the row

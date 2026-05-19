@@ -3,6 +3,7 @@ import streamlit as st
 from controllers.auth_controller import AuthenticationController
 from collections import OrderedDict
 from entity.Sheet import GoogleSheetsAdapter
+from utils.fitbit_callback import handle_fitbit_callback
 from utils.google_health_callback import handle_google_health_callback
 from utils.health_connect_links import create_health_connect_link
 from utils.health_oauth_clients import (
@@ -20,6 +21,8 @@ st.set_page_config(page_title="OAuth Connect", page_icon="🔑", layout="wide")
 auth_controller = AuthenticationController()
 
 if handle_google_health_callback(auth_controller):
+    st.stop()
+if handle_fitbit_callback(auth_controller):
     st.stop()
 
 auth_controller.render_auth_ui()

@@ -26,6 +26,38 @@ from controllers.agGridHelper import aggrid_polars
 # from streamlit_elements import elements, dashboard, mui, html
 from controllers.agGridHelper import aggrid_polars
 
+
+def _battery_percent(battery_level):
+    if battery_level is None:
+        return None
+    try:
+        if pd.isna(battery_level):
+            return None
+    except (TypeError, ValueError):
+        pass
+
+    if isinstance(battery_level, str):
+        value = battery_level.strip().replace("%", "")
+        if value.lower() in {"", "na", "n/a", "nan", "none", "null", "no data"}:
+            return None
+    else:
+        value = battery_level
+
+    try:
+        battery = float(value)
+    except (TypeError, ValueError):
+        return None
+
+    return max(0.0, min(battery, 100.0))
+
+
+def _battery_fraction(battery_level):
+    battery = _battery_percent(battery_level)
+    if battery is None:
+        return None
+    return battery / 100.0
+
+
 def display_homepage(user_email, user_role, user_project, spreadsheet: Spreadsheet) -> None:
     """
     Display the homepage with personalized content based on user's role and project
@@ -69,32 +101,27 @@ def display_homepage(user_email, user_role, user_project, spreadsheet: Spreadshe
 
 def render_battery_gauge(battery_level):
     """Render a battery level as a colored progress bar"""
-    try:
-        if battery_level is None or battery_level == "" or pd.isna(battery_level):
-            return "No data"
-        
-        # Convert to numeric value
-        battery = float(battery_level)
-        
-        # Determine color based on level
-        if battery >= 80:
-            color = "green"
-        elif battery >= 50:
-            color = "orange"
-        else:
-            color = "red"
-            
-        # Create HTML for progress bar
-        html = f"""
-        <div style="width:100%; background-color:#f0f0f0; border-radius:5px; height:20px;">
-            <div style="width:{battery}%; background-color:{color}; height:20px; border-radius:5px; text-align:center; color:white; line-height:20px; font-size:12px;">
-                {battery}%
-            </div>
+    battery = _battery_percent(battery_level)
+    if battery is None:
+        return "No data"
+
+    # Determine color based on level
+    if battery >= 80:
+        color = "green"
+    elif battery >= 50:
+        color = "orange"
+    else:
+        color = "red"
+
+    # Create HTML for progress bar
+    html = f"""
+    <div style="width:100%; background-color:#f0f0f0; border-radius:5px; height:20px;">
+        <div style="width:{battery}%; background-color:{color}; height:20px; border-radius:5px; text-align:center; color:white; line-height:20px; font-size:12px;">
+            {battery:g}%
         </div>
-        """
-        return html
-    except Exception as e:
-        return f"Error: {str(e)}"
+    </div>
+    """
+    return html
 
 def format_time_ago(timestamp):
     """Format a datetime as a human-readable 'time ago' string"""
@@ -492,10 +519,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                 # Convert to numeric values and handle NaN and empty strings
                 display_df = display_df.with_columns([
                     pl.col('lastBattaryVal')
-                    .map_elements(lambda x: 
-                        0.0 if x is None or x == '' or not x 
-                        else float(x) / 100.0
-                    , return_dtype=pl.Float64)
+                    .map_elements(_battery_fraction, return_dtype=pl.Float64)
                     .alias('Battery Level')
                 ])
             
@@ -741,14 +765,8 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                         # Clean and convert battery values
                         # Handle both string and numeric types for battery values
                         battery_df = watch_history.with_columns(
-                            pl.when(pl.col('lastBattaryVal').cast(pl.Utf8).str.contains('%'))
-                            .then(
-                                pl.col('lastBattaryVal')
-                                .cast(pl.Utf8)
-                                .str.replace('%', '')
-                                .cast(pl.Float64, strict=False)
-                            )
-                            .otherwise(pl.col('lastBattaryVal').cast(pl.Float64, strict=False))
+                            pl.col('lastBattaryVal')
+                            .map_elements(_battery_percent, return_dtype=pl.Float64)
                             .alias('battery_num')
                         ).select(['lastCheck', 'battery_num']).drop_nulls()
                         

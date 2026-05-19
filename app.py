@@ -6,8 +6,7 @@ import time
 from controllers.auth_controller import AuthenticationController
 from controllers.user_controller import UserController
 
-from utils.fitbit_oauth import exchange_code_for_tokens
-from utils.fitbit_token_store import resolve_state, is_state_used, mark_state_used, save_tokens_for_watch
+from utils.fitbit_callback import handle_fitbit_callback
 from utils.google_health_callback import handle_google_health_callback
 
 # Set up app configuration
@@ -17,65 +16,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
-def handle_fitbit_callback(auth_controller: AuthenticationController) -> bool:
-    """
-    Handles Fitbit OAuth callback even if participant is NOT logged into our app.
-    Returns True if it handled a callback (and we should stop further rendering).
-    """
-    qp = st.query_params
-    if qp.get("fitbit_callback") != "1":
-        return False
-
-    code = qp.get("code")
-    state = qp.get("state")
-    if not code or not state:
-        st.error("OAuth callback missing code/state")
-        return True
-
-    sp = auth_controller.get_spreadsheet()
-    if sp is None:
-        st.error("Could not connect to spreadsheet for OAuth callback")
-        return True
-
-    # prevent replay
-    if is_state_used(sp, state):
-        st.error("This OAuth link was already used. Please generate a new one.")
-        return True
-
-    state_row = resolve_state(sp, state)
-    if not state_row:
-        st.error("Unknown state. Please generate a new connect link from the lab app.")
-        return True
-
-    watch_name = state_row.get("watchName")
-    if not watch_name:
-        st.error("State record missing watchName")
-        return True
-
-    # Exchange code -> tokens
-    try:
-        token_json = exchange_code_for_tokens(code)
-    except Exception as e:
-        st.error(f"Token exchange failed: {e}")
-        return True
-
-    # Store tokens for this watch
-    try:
-        save_tokens_for_watch(sp, watch_name=watch_name, token_json=token_json)
-        mark_state_used(sp, state=state, watch_name=watch_name)
-    except Exception as e:
-        st.error(f"Failed to store tokens: {e}")
-        return True
-
-    st.success(f"✅ Watch '{watch_name}' connected successfully. You can close this tab.")
-    # clear params to avoid re-processing on rerun
-    try:
-        st.query_params.clear()
-    except Exception:
-        pass
-    return True
-
 
 def main():
     """Main application function - handles authentication and session state"""
