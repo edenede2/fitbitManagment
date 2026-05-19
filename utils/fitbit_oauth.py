@@ -6,17 +6,33 @@ import base64
 import uuid
 import time
 import requests
-import streamlit as st
+
+from model.config import get_secrets
 
 AUTH_URL = "https://www.fitbit.com/oauth2/authorize"
 TOKEN_URL = "https://api.fitbit.com/oauth2/token"
 
 def _cfg():
+    secrets = get_secrets()
+    client_id = secrets.get("FITBIT_CLIENT_ID") or secrets.get("fitbit_client_id")
+    client_secret = secrets.get("FITBIT_CLIENT_SECRET") or secrets.get("fitbit_client_secret")
+    redirect_uri = secrets.get("FITBIT_REDIRECT_URI") or secrets.get("fitbit_redirect_uri")
+    scopes = (secrets.get("FITBIT_SCOPES") or secrets.get("fitbit_scopes") or "").strip()
+    missing = [
+        name for name, value in (
+            ("FITBIT_CLIENT_ID", client_id),
+            ("FITBIT_CLIENT_SECRET", client_secret),
+            ("FITBIT_REDIRECT_URI", redirect_uri),
+        )
+        if not value
+    ]
+    if missing:
+        raise ValueError(f"Missing Fitbit OAuth secrets: {', '.join(missing)}")
     return (
-        st.secrets["FITBIT_CLIENT_ID"],
-        st.secrets["FITBIT_CLIENT_SECRET"],
-        st.secrets["FITBIT_REDIRECT_URI"],
-        st.secrets.get("FITBIT_SCOPES", "").strip(),
+        client_id,
+        client_secret,
+        redirect_uri,
+        scopes,
     )
 
 def new_state() -> str:
@@ -49,7 +65,6 @@ def exchange_code_for_tokens(code: str) -> dict:
         "code": code,
         "redirect_uri": redirect_uri,
     }
-
     r = requests.post(TOKEN_URL, data=data, headers=headers, timeout=20)
     r.raise_for_status()
     return r.json()

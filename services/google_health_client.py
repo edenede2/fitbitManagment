@@ -173,13 +173,13 @@ class GoogleHealthClient:
         end_dt = datetime.now(timezone.utc)
         start_dt = end_dt - timedelta(days=3)
         filter_expr = (
-            f'sleep.interval.start_time >= "{start_dt.isoformat().replace("+00:00", "Z")}" '
-            f'AND sleep.interval.end_time <= "{end_dt.isoformat().replace("+00:00", "Z")}"'
+            f'sleep.interval.end_time >= "{start_dt.isoformat().replace("+00:00", "Z")}" '
+            f'AND sleep.interval.end_time < "{end_dt.isoformat().replace("+00:00", "Z")}"'
         )
         points = self.list_data_points("sleep", filter_expr=filter_expr, page_size=1000)
         sleep_points = sorted(
             points,
-            key=lambda item: self._extract_interval(item)[0] or "",
+            key=lambda item: self._extract_interval(item)[1] or self._extract_interval(item)[0] or "",
             reverse=True,
         )
         if not sleep_points:

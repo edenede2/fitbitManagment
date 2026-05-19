@@ -3,7 +3,15 @@ import json
 from pathlib import Path
 
 def get_secrets():
-    """Get secrets from either Streamlit or a local JSON file."""
+    """Get secrets from the local server file, Streamlit, or a local JSON file."""
+    streamlit_secrets_path = Path(__file__).resolve().parent.parent / ".streamlit" / "secrets.toml"
+    if streamlit_secrets_path.exists():
+        try:
+            import toml
+            return toml.load(streamlit_secrets_path)
+        except Exception as e:
+            raise RuntimeError(f"Failed to load local Streamlit secrets from {streamlit_secrets_path}: {e}")
+
     try:
         # Try to import Streamlit
         import streamlit as st

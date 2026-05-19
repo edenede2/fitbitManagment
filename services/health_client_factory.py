@@ -11,12 +11,19 @@ class HealthClientFactory:
     @staticmethod
     def from_watch_row(spreadsheet, row: dict[str, Any]):
         watch_name = row.get("name") or row.get("watchName")
-        provider = str(row.get("oauth_type") or row.get("provider") or "fitbit").strip() or "fitbit"
+        provider = (
+            str(row.get("oauth_type") or row.get("provider") or "fitbit")
+            .strip()
+            .lower()
+            .replace("-", "_")
+            .replace(" ", "_")
+        ) or "fitbit"
 
-        if provider == "fitbit":
+        if provider in {"fitbit", "fitbit_web_api", "fitbit_api"}:
             return None
 
-        if provider == "google_health":
+        if provider in {"google", "google_health", "google_health_api", "health"}:
+            provider = "google_health"
             oauth_client_key = row.get("oauth_client_key") or "google_health_staging"
             cfg = get_oauth_client_config(spreadsheet, oauth_client_key)
 
