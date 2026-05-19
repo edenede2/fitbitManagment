@@ -203,6 +203,17 @@ def fetch_watch_data(watch_name, signal_type, start_date, end_date, should_fetch
         st.error(f"General error in fetch_watch_data: {str(e)}")
         return pd.DataFrame()
 
+def _normalize_signal_frame(data):
+    if data is None or data.empty:
+        return pd.DataFrame()
+
+    data = data.copy()
+    if 'syncDate' in data.columns:
+        data['syncDate'] = pd.to_datetime(data['syncDate'], errors='coerce')
+        data = data.dropna(subset=['syncDate']).sort_values('syncDate')
+    return data
+
+
 # Add a cache decorator for watch details
 def cached_get_watch_details(watch_name):
     if "fitbit_watches" in st.session_state:
@@ -486,20 +497,16 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                 with st.spinner(f"Fetching {selected_signal} data for {len(date_range)} days...",show_time=True):
                     # Add a progress bar
                     progress_bar = st.progress(0)
-                    if signal_column not in ["sleep_duration", "missing_values"]:
-                        # Process each date
+                    if signal_column in ["HR", "steps"]:
+                        day_frames = []
+                        st.session_state.loaded_dates = []
+
                         for i, single_date in enumerate(date_range):
-                            # Update progress
-                            progress_bar.progress((i+1)/len(date_range))
+                            progress_bar.progress((i + 1) / len(date_range))
 
-                            # Format date for display
                             date_str = single_date.strftime("%Y-%m-%d")
-                            st.text(f"Processing {date_str} ({i+1}/{len(date_range)})")
+                            st.text(f"Processing {date_str} ({i + 1}/{len(date_range)})")
 
-                            # Unique key for this date's data
-                            day_data_key = f"{st.session_state.selected_watch}_{signal_column}_{date_str}"
-
-                            # Fetch data
                             day_data = fetch_watch_data(
                                 st.session_state.selected_watch,
                                 signal_column,
@@ -507,13 +514,16 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                                 single_date,
                                 should_fetch=True
                             )
+                            day_data = _normalize_signal_frame(day_data)
 
-                            # Store in session state
                             if not day_data.empty:
+                                day_data_key = f"{st.session_state.selected_watch}_{signal_column}_{date_str}"
                                 st.session_state[day_data_key] = day_data
-                                if date_str not in st.session_state.loaded_dates:
-                                    st.session_state.loaded_dates.append(date_str)
-                                all_data = pd.concat([all_data, day_data])
+                                st.session_state.loaded_dates.append(date_str)
+                                day_frames.append(day_data)
+
+                        if day_frames:
+                            all_data = pd.concat(day_frames, ignore_index=True)
                     else:
                         # Special case for sleep data
                         st.text(f"Processing {signal_column} data for {st.session_state.selected_watch} from {start_date} to {end_date}")

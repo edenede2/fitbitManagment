@@ -161,11 +161,15 @@ class RequestBuilder:
             
         day_requests = []
         current_date = start_date
+        original_start_time = self.params.get('start_time', '00:00')
+        original_end_time = self.params.get('end_time', '23:59')
         
         while current_date <= end_date:
             day_params = self.params.copy()
             day_params['start_date'] = current_date.strftime(self.date_format)
             day_params['end_date'] = current_date.strftime(self.date_format)
+            day_params['start_time'] = original_start_time if current_date == start_date else '00:00'
+            day_params['end_time'] = original_end_time if current_date == end_date else '23:59'
             
             day_requests.append(day_params)
             
