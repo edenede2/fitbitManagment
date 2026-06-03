@@ -9,7 +9,6 @@ from utils.google_health_oauth import (
 )
 from utils.health_oauth_clients import get_oauth_client_config
 from utils.health_token_store import (
-    HEALTH_STATES_TAB,
     log_health_api_event,
     mark_oauth_state_used,
     resolve_oauth_state,
@@ -36,27 +35,11 @@ def handle_google_health_callback(auth_controller) -> bool:
     Returns True if the current request was handled as a Google Health callback.
     """
     qp = st.query_params
+    if qp.get("google_health_callback") != "1":
+        return False
+
     state = qp.get("state")
     code = qp.get("code")
-
-    if qp.get("google_health_callback") != "1":
-        if qp.get("fitbit_callback") == "1" or not code or not state:
-            return False
-
-        sp_probe = _get_callback_spreadsheet()
-        if sp_probe is None:
-            return False
-        try:
-            ws = sp_probe.get_gspread_connection().worksheet(HEALTH_STATES_TAB)
-            matches = [
-                row for row in ws.get_all_records()
-                if str(row.get("state", "")) == str(state)
-                and str(row.get("provider", "")) == "google_health"
-            ]
-            if not matches:
-                return False
-        except Exception:
-            return False
 
     error = qp.get("error")
     if error:

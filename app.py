@@ -53,12 +53,7 @@ def main():
                 if user_email is None:
                     st.error("Could not retrieve user email. Please refresh and try again.")
                     st.stop()
-                user_project = st.secrets.get(user_email.split('@')[0], 'None')
-                if user_project is not None:
-                    user_project = user_project.split(',')[0]
-                user_role = st.secrets.get(user_email.split('@')[0], 'Guest')
-                if user_role != 'Guest':
-                    user_role = user_role.split(',')[1].strip()
+                user_role, user_project = auth_controller.get_user_access(user_email)
 
                 # user = UserController().get_user_by_email(user_email)
                 
@@ -71,10 +66,6 @@ def main():
             else:
                 # Demo mode
                 st.session_state.user_email = "demo@example.com"
-            
-            # Display logout button
-            st.sidebar.button("Logout", on_click=auth_controller.logout_user)
-            st.sidebar.info("To log out, click the 'Logout' button above.")
             
             # Add page descriptions
             st.sidebar.markdown("## App Pages")
@@ -116,7 +107,6 @@ def main():
         
         # Show login instructions
         st.info("Use the sidebar to log in. Click the 'login with google' button to authenticate.")
-        st.sidebar.button("login with google", on_click=auth_controller.login_with_google)
         
         # Add page descriptions for non-logged in users
         st.markdown("## Features Available After Login:")
