@@ -216,8 +216,13 @@ def get_active_watches():
         # Convert to DataFrame and filter for active watches
         df = fitbit_sheet.to_dataframe(engine="pandas")
 
-        # Filter for active watches (isActive != 'FALSE')
-        active_watches = df[df['isActive'].str.upper() != 'FALSE'].copy() if 'isActive' in df.columns else df
+        # Filter for active watches (isActive != 'FALSE').
+        # Google Sheets can return mixed bool/string values, so normalize first.
+        if 'isActive' in df.columns:
+            active_mask = df['isActive'].fillna('').astype(str).str.strip().str.upper() != 'FALSE'
+            active_watches = df[active_mask].copy()
+        else:
+            active_watches = df.copy()
 
         print(f"Found {len(active_watches)} active watches")
 

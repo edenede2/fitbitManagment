@@ -1262,32 +1262,38 @@ def hourly_data_collection():
             # Update log using ServerLogFile - passing inactive watches to reset their counters
             log_file = ServerLogFile()
 
-            # First, only update the log sheet (with replace strategy)
-            result = log_file.update_log_sheet(spreadsheet, watch_data, reset_total_for_watches=newly_inactive_watches)
-
-            # Step 1: First get existing FitbitLog data to ensure proper structure
-            if "FitbitLog" not in spreadsheet.sheets:
-                # Create the sheet if it doesn't exist
-                fitbit_log_sheet = spreadsheet.get_sheet("FitbitLog", "log")
-            else:
-                fitbit_log_sheet = spreadsheet.sheets["FitbitLog"]
-
-            # Ensure fitbit_log_sheet.data is a list of dictionaries
-            if not isinstance(fitbit_log_sheet.data, list):
-                # Initialize as empty list if not already a list
-                fitbit_log_sheet.data = []
-
-            # Step 2: Prepare new log entries (but don't update the sheet yet)
+            # Prepare the provider-aware snapshots once. This is the expensive API step.
             new_log_entries = log_file.prepare_log_entries(spreadsheet, watch_data, reset_total_for_watches=newly_inactive_watches)
+            result = True
 
-            # Step 3: If we have new entries, manually append them to the sheet data
             if new_log_entries:
-                # Add new entries to the sheet's data directly
-                fitbit_log_sheet.data.extend(new_log_entries)
+                try:
+                    latest_entries_by_watch = {}
+                    for entry in new_log_entries:
+                        watch_id = entry.get('ID', '')
+                        if watch_id:
+                            latest_entries_by_watch[watch_id] = entry
 
-                # Step 4: Now save with rewrite mode to ensure proper data structure
-                GoogleSheetsAdapter.save(spreadsheet, "FitbitLog", mode="rewrite")
-                print(f"[{datetime.datetime.now()}] Added {len(new_log_entries)} new entries to FitbitLog")
+                    log_df = pl.DataFrame(list(latest_entries_by_watch.values()))
+                    spreadsheet.update_sheet("log", log_df, strategy="replace")
+                    GoogleSheetsAdapter.save(spreadsheet, "log", mode="rewrite")
+                    print(f"Updated log sheet with {len(latest_entries_by_watch)} latest entries (one per watch)")
+                except Exception as e:
+                    result = False
+                    print(f"Error updating log sheet: {e}")
+                    print(f"Error details: {traceback.format_exc()}")
+
+                try:
+                    # Save only the newly collected rows to the append-only history sheet.
+                    fitbit_log_sheet = spreadsheet.get_sheet("FitbitLog", "log")
+                    fitbit_log_sheet.data = new_log_entries
+                    GoogleSheetsAdapter.save(spreadsheet, "FitbitLog", mode="append")
+                    print(f"[{datetime.datetime.now()}] Added {len(new_log_entries)} new entries to FitbitLog")
+                except Exception as e:
+                    result = False
+                    print(f"Error appending new entries to FitbitLog: {e}")
+                    print(f"Error details: {traceback.format_exc()}")
+
             else:
                 print(f"[{datetime.datetime.now()}] No new entries to add to FitbitLog")
 

@@ -91,10 +91,10 @@ def choose_provider(row: Dict[str, Any], spreadsheet=None) -> Tuple[str, str]:
     explicit_fitbit = provider in FITBIT_PROVIDER_NAMES or oauth_type in FITBIT_PROVIDER_NAMES
     explicit_google = provider in GOOGLE_PROVIDER_NAMES or oauth_type in GOOGLE_PROVIDER_NAMES
 
-    if explicit_google and row_google_available:
-        return "google_health", "spreadsheet provider is Google Health"
     if explicit_fitbit and has_value(token) and not fitbit_expired:
         return "fitbit", "spreadsheet provider is Fitbit Web API and token is valid"
+    if explicit_google and row_google_available:
+        return "google_health", "spreadsheet provider is Google Health"
 
     google_available = row_google_available or google_health_available(row, spreadsheet)
     if google_available and (fitbit_expired or not has_value(token)):
@@ -289,6 +289,17 @@ def fitbit_snapshot(row: Dict[str, Any]) -> Dict[str, Any]:
     else:
         watch = WatchFactory.create_from_details(row)
     watch.update_device_info()
+    sleep_start, sleep_end = (
+        watch.get_last_sleep_start_end()
+        if hasattr(watch, "get_last_sleep_start_end")
+        else ("", "")
+    )
+    sleep_duration = ""
+    if sleep_start and sleep_end:
+        sleep_start_dt = _parse_datetime(sleep_start)
+        sleep_end_dt = _parse_datetime(sleep_end)
+        if sleep_start_dt and sleep_end_dt:
+            sleep_duration = (sleep_end_dt - sleep_start_dt).total_seconds() / 3600
     return {
         **row,
         "provider": "fitbit",
@@ -296,9 +307,9 @@ def fitbit_snapshot(row: Dict[str, Any]) -> Dict[str, Any]:
         "battery_supported": True,
         "HR": watch.get_current_hourly_HR() if hasattr(watch, "get_current_hourly_HR") else "",
         "syncDate": watch.last_sync_time.isoformat() if getattr(watch, "last_sync_time", None) else "",
-        "sleep_start": watch.get_last_sleep_start_end()[0] if hasattr(watch, "get_last_sleep_start_end") else "",
-        "sleep_end": watch.get_last_sleep_start_end()[1] if hasattr(watch, "get_last_sleep_start_end") else "",
-        "sleep_duration": watch.get_last_sleep_duration() if hasattr(watch, "get_last_sleep_duration") else "",
+        "sleep_start": sleep_start or "",
+        "sleep_end": sleep_end or "",
+        "sleep_duration": sleep_duration or "",
         "steps": watch.get_current_hourly_steps() if hasattr(watch, "get_current_hourly_steps") else "",
     }
 

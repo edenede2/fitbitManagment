@@ -390,7 +390,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                     filtered_df = filtered_df.filter(pl.col('project').is_in(selected_projects))
             
             # Get the latest record for each watch
-            latest_df = filtered_df.sort("lastCheck", descending=True).unique(subset=["watchName"], keep="first")
+            latest_df = filtered_df.sort("lastCheck", descending=True).unique(subset=["project", "watchName"], keep="first")
             
             # Display summary metrics
             col1, col2, col3, col4 = st.columns(4)
@@ -462,7 +462,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
             def safe_int_convert(val):
                 """Safely convert a value to int with error handling"""
                 try:
-                    if pd.isna(val) or val == '' or not val:
+                    if pd.isna(val) or val == '' or str(val).strip().lower() in {"nan", "none", "null"}:
                         return 'N/A'
                     return int(float(val))  # Convert to float first for strings like '72.0'
                 except (ValueError, TypeError):
@@ -522,9 +522,21 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                     .map_elements(_battery_fraction, return_dtype=pl.Float64)
                     .alias('Battery Level')
                 ])
+                display_df = display_df.with_columns([
+                    pl.col('lastBattaryVal')
+                    .map_elements(
+                        lambda value: (
+                            "N/A"
+                            if _battery_percent(value) is None
+                            else f"{_battery_percent(value):g}%"
+                        ),
+                        return_dtype=pl.Utf8,
+                    )
+                    .alias('Battery')
+                ])
             
             # Define columns for display
-            display_columns = ['watchName', 'project', 'Battery Level', 'Heart Rate', 'Sleep', 'Steps','lastSynced']
+            display_columns = ['watchName', 'project', 'Battery', 'Heart Rate', 'Sleep', 'Steps', 'Last Sync']
             display_columns = [col for col in display_columns if col in display_df.columns]
             
             # Use column config to define column formats
@@ -541,13 +553,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                     help="Is the watch currently assigned to a student?",
                     disabled=True
                 ),
-                "Battery Level": st.column_config.ProgressColumn(
-                    "Battery",
-                    help="Battery level of the watch",
-                    format="percent",
-                    min_value=0,
-                    max_value=1.0
-                ),
+                "Battery": "Battery",
                 "Last Sync": "Last Sync",
                 "Heart Rate": "Heart Rate",
                 "Sleep": "Sleep Duration",
@@ -560,7 +566,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
             else:
                 assigned_watches = []
             
-            display_df = display_df.filter(pl.col('Last Sync').is_not_null()).filter(pl.col('is_active') == True)
+            display_df = display_df.filter(pl.col('is_active') == True)
             # Display using st.dataframe with column config
             # st.dataframe(
             #     display_df[display_columns],

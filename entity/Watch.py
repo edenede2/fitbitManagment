@@ -986,7 +986,13 @@ class WatchFactory:
         name = details.get('name') or details.get('watchName')
         project_name = details.get('project')
         token = details.get('token')
-        provider = str(details.get('oauth_type') or details.get('provider') or 'fitbit').strip() or 'fitbit'
+        provider = (
+            str(details.get('oauth_type') or details.get('provider') or 'fitbit')
+            .strip()
+            .lower()
+            .replace("-", "_")
+            .replace(" ", "_")
+        ) or 'fitbit'
         health_client = None
 
         if name:
@@ -995,7 +1001,7 @@ class WatchFactory:
 
                 auth_controller = AuthenticationController()
                 sp = auth_controller.get_spreadsheet()
-                if provider == 'google_health':
+                if provider in {'google', 'google_health', 'google_health_api', 'health'}:
                     from services.health_client_factory import HealthClientFactory
                     health_client = HealthClientFactory.from_watch_row(sp, details)
                     token = token or ""
