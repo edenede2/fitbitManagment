@@ -21,6 +21,18 @@ class AuthenticationController:
             st.session_state.user_project = None
         if 'user_data' not in st.session_state:
             st.session_state.user_data = None
+
+    def get_user_access(self, user_email: str) -> tuple[str, str]:
+        """Return (role, project) from Streamlit secrets for a user email."""
+        username = user_email.split('@')[0]
+        access_value = st.secrets.get(username, 'Guest')
+        if access_value == 'Guest':
+            return 'Guest', 'None'
+
+        parts = [part.strip() for part in str(access_value).split(',')]
+        role = parts[0] if len(parts) > 0 and parts[0] else 'Guest'
+        project = parts[1] if len(parts) > 1 and parts[1] else 'None'
+        return role, project
     
     def render_auth_ui(self):
         """Render authentication UI in the sidebar"""
@@ -44,9 +56,7 @@ class AuthenticationController:
                             st.login("google")
                         return
                     st.write(f"Logged in as: {user_email}")
-                    # Display user role information
-                    user_role = st.secrets.get(user_email.split('@')[0], 'Guest')
-                    user_project = st.secrets.get(f"{user_email.split('@')[0]}", 'None')
+                    user_role, user_project = self.get_user_access(user_email)
                 else:
                     # For demo mode
                     st.write(f"Demo mode as: Guest")
@@ -54,24 +64,20 @@ class AuthenticationController:
                     user_role = 'Admin'
                     user_project = 'Admin'
                 
-                if user_role != 'Guest':
-                    user_role = user_role.split(',')[0]
-                
-
-                # st.write(f"Project: {user_role.split(',')[1]}")
-                # if user_project is not None:
-                #     user_project = user_project.split(',')[1]
                 st.session_state.user_email = user_email
                 st.session_state.user_role = user_role
                 st.session_state.user_project = user_project
                 
-                st.write(f"Role: {user_project}")
-                st.write(f"Project: {user_role}")
+                st.write(f"Role: {user_role}")
+                st.write(f"Project: {user_project}")
 
                 # Display logout button
                 if st.button("Logout", key="logout_button"):
                     self.logout_user()
             else:
+                if st.button("login with google", key="google_login_button"):
+                    self.login_with_google()
+
                 # Demo login options
                 st.subheader("Demo Login")
                 
@@ -208,16 +214,14 @@ class AuthenticationController:
     def logout_user(self):
         """Log out the current user"""
         # Clear session state
-        for key in ['user_email', 'user_role', 'user_project', 'user_data']:
+        for key in ['user_email', 'user_role', 'user_project', 'user_data', 'spreadsheet', 'fibro_spreadsheet', 'demo_spreadsheet']:
             if key in st.session_state:
                 del st.session_state[key]
         
-        # Use st.logout() directly as mentioned by user
         try:
             st.logout()
         except Exception as e:
             # Fallback in case the function isn't available in this Streamlit version
             st.warning("Could not perform automatic logout. Please refresh the page.")
             st.info("To completely log out, please use the logout option in the upper right menu.")
-        
-        st.rerun()
+            st.rerun()
