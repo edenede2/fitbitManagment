@@ -11,7 +11,7 @@ from google.oauth2.service_account import Credentials
 import uuid
 import streamlit as st
 from entity.Watch import Watch, WatchFactory  # Remove FitbitAPI as it doesn't exist
-from entity.HealthDataProvider import collect_watch_snapshot, clean_row
+from entity.HealthDataProvider import SnapshotContext, clean_row, collect_watch_snapshot, collect_watch_snapshots_batch
 import traceback  # Add import for traceback
 from utils.sheets_cache import sheets_cache  # Import sheets_cache
 
@@ -608,6 +608,7 @@ class GoogleSheetsAdapter:
                 "user", "project", "fitbit", "log", "bulldog", "EMA", "FitbitLog",
                 "fitbit_alerts_config", "qualtrics_alerts_config", "late_nums", "suspicious_nums",
                 "EMA", "student_fitbit", "chats", "for_analysis", "appsheet_alerts_config",
+                "fitbit_oauth_tokens",
                 "health_oauth_clients", "health_oauth_states", "health_oauth_state_used",
                 "health_oauth_tokens", "health_reauth_queue", "health_api_logs",
                 "health_webhook_events"
@@ -1691,26 +1692,29 @@ class ServerLogFile:
             print(f"Error getting previous log entries: {e}")
             print(traceback.format_exc())
 
-        # Process each row from the Fitbit data
+        # Fetch API snapshots for all active rows first, using one preloaded Sheets context.
+        active_rows = []
+        for row in fitbit_data.iter_rows(named=True):
+            row = clean_row(row)
+            is_active = str(row.get('isActive', '')).upper() != 'FALSE'
+            if is_active:
+                active_rows.append(row)
+
+        snapshot_context = SnapshotContext(spreadsheet)
+        snapshot_rows = collect_watch_snapshots_batch(
+            active_rows,
+            spreadsheet,
+            context=snapshot_context,
+        )
+
+        # Process each already-fetched snapshot into log entries.
         new_log_entries = []
 
-        for row in fitbit_data.iter_rows(named=True):
+        for row in snapshot_rows:
             # Create watch ID for matching
             watch_id = str(row.get('id', row.get('deviceId', '')))
             if not watch_id and 'project' in row and 'name' in row:
                 watch_id = f"{row.get('project', '')}-{row.get('name', '')}"
-
-            # Skip inactive watches
-            is_active = str(row.get('isActive', '')).upper() != 'FALSE'
-            if not is_active:
-                continue
-
-            # Try to update watch data via the configured health API provider
-            try:
-                row = collect_watch_snapshot(row, spreadsheet)
-                print(f"Successfully updated data for watch {row.get('name', '')} from {row.get('provider', 'unknown')}")
-            except Exception as e:
-                print(f"Error updating watch {row.get('name', '')} via health API provider: {e}")
 
             # Get previous log entry if available to keep track of failure counters
             prev_entry = previous_log_entries.get(watch_id, {})

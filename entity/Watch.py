@@ -37,6 +37,18 @@ URL_DICT = {
 }
 
 
+class ApiRateLimitError(RuntimeError):
+    """Raised when a health provider rate-limits an API request."""
+
+    def __init__(self, message: str, *, retry_after: Optional[int] = None):
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+class ApiAuthError(RuntimeError):
+    """Raised when a health provider rejects the current access token."""
+
+
 # ===== Data Types and Enums =====
 
 class DataType(Enum):
@@ -576,6 +588,20 @@ class Watch:
         # Execute the request
         response = requests.get(request['url'], headers=request['headers'])
         
+        if response.status_code == 401:
+            raise ApiAuthError(f"Fitbit API auth failed fetching {endpoint_type}: {response.status_code}")
+
+        if response.status_code == 429:
+            retry_after = response.headers.get("Retry-After")
+            try:
+                retry_after = int(retry_after) if retry_after else None
+            except (TypeError, ValueError):
+                retry_after = None
+            raise ApiRateLimitError(
+                f"Fitbit API rate limit fetching {endpoint_type}: {response.status_code}",
+                retry_after=retry_after,
+            )
+
         if response.status_code != 200:
             print(f"Error fetching {endpoint_type} data: {response.status_code}")
             return {}
@@ -644,6 +670,20 @@ class Watch:
                 
             response = requests.get(url, headers=headers)
             
+            if response.status_code == 401:
+                raise ApiAuthError(f"Fitbit API auth failed fetching {endpoint_type} for {params.get('start_date')}: {response.status_code}")
+
+            if response.status_code == 429:
+                retry_after = response.headers.get("Retry-After")
+                try:
+                    retry_after = int(retry_after) if retry_after else None
+                except (TypeError, ValueError):
+                    retry_after = None
+                raise ApiRateLimitError(
+                    f"Fitbit API rate limit fetching {endpoint_type} for {params.get('start_date')}: {response.status_code}",
+                    retry_after=retry_after,
+                )
+
             if response.status_code != 200:
                 print(f"Error fetching {endpoint_type} data for {params.get('start_date')}: {response.status_code}")
                 continue
