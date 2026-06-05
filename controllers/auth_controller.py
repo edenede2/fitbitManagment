@@ -1,8 +1,8 @@
 import streamlit as st
 from entity.Sheet import Spreadsheet, GoogleSheetsAdapter
 from utils.sheets_cache import sheets_cache
-import time
 from model.config import get_secrets
+from utils.rate_limit_ui import show_rate_limit_notice
 
 class AuthenticationController:
     """Controller handling user authentication and authorization"""
@@ -96,10 +96,13 @@ class AuthenticationController:
                 GoogleSheetsAdapter.connect(self.fibro_spreadsheet)
             return self.fibro_spreadsheet
         except Exception as e:
-            st.error(f"Error connecting to Fibro spreadsheet: {e}")
-            # Add a delay to prevent rapid retries on rate limits
-            if "429" in str(e) or "Quota exceeded" in str(e):
-                time.sleep(2)
+            if not show_rate_limit_notice(
+                e,
+                provider="google_sheets",
+                key="fibro_spreadsheet",
+                context="connecting to the Fibro spreadsheet",
+            ):
+                st.error(f"Error connecting to Fibro spreadsheet: {e}")
             return None
         
     @sheets_cache(timeout=300)
@@ -113,10 +116,13 @@ class AuthenticationController:
                 GoogleSheetsAdapter.connect(self.fibro_spreadsheet)
             return self.fibro_spreadsheet
         except Exception as e:
-            st.error(f"Error connecting to demo Fibro spreadsheet: {e}")
-            # Add a delay to prevent rapid retries on rate limits
-            if "429" in str(e) or "Quota exceeded" in str(e):
-                time.sleep(2)
+            if not show_rate_limit_notice(
+                e,
+                provider="google_sheets",
+                key="demo_fibro_spreadsheet",
+                context="connecting to the demo Fibro spreadsheet",
+            ):
+                st.error(f"Error connecting to demo Fibro spreadsheet: {e}")
             return None
         
 
@@ -137,10 +143,13 @@ class AuthenticationController:
                 st.session_state.spreadsheet = self.main_spreadsheet
             return self.main_spreadsheet
         except Exception as e:
-            st.error(f"Error connecting to spreadsheet: {e}")
-            # Add a delay to prevent rapid retries on rate limits
-            if "429" in str(e) or "Quota exceeded" in str(e):
-                time.sleep(2)
+            if not show_rate_limit_notice(
+                e,
+                provider="google_sheets",
+                key="main_spreadsheet",
+                context="connecting to the spreadsheet",
+            ):
+                st.error(f"Error connecting to spreadsheet: {e}")
             return None
     
     @sheets_cache(timeout=300)
@@ -154,10 +163,13 @@ class AuthenticationController:
                 GoogleSheetsAdapter.connect(self.main_spreadsheet)
             return self.main_spreadsheet
         except Exception as e:
-            st.error(f"Error connecting to spreadsheet: {e}")
-            # Add a delay to prevent rapid retries on rate limits
-            if "429" in str(e) or "Quota exceeded" in str(e):
-                time.sleep(2)
+            if not show_rate_limit_notice(
+                e,
+                provider="google_sheets",
+                key="demo_spreadsheet",
+                context="connecting to the demo spreadsheet",
+            ):
+                st.error(f"Error connecting to spreadsheet: {e}")
             return None
     
     def get_user_details(self, user_email: str) -> tuple:
