@@ -15,6 +15,7 @@ from utils.health_oauth_clients import (
     suggest_google_health_redirect_uri,
     upsert_oauth_client_config,
 )
+from utils.rate_limit_ui import show_rate_limit_notice
 
 st.set_page_config(page_title="OAuth Connect", page_icon="🔑", layout="wide")
 
@@ -53,7 +54,13 @@ def _active_google_client_rows():
     try:
         return load_active_oauth_clients(sp, provider="google_health")
     except Exception as e:
-        st.warning(f"Could not load Google Health OAuth clients: {e}")
+        if not show_rate_limit_notice(
+            e,
+            provider="google_sheets",
+            key="oauth_connect_google_clients",
+            context="loading Google Health OAuth clients",
+        ):
+            st.warning(f"Could not load Google Health OAuth clients: {e}")
         return []
 
 
@@ -134,21 +141,31 @@ if is_admin:
                         st.error("Redirect URI is required")
                         st.stop()
 
-                    upsert_oauth_client_config(
-                        sp,
-                        client_key=client_key.strip(),
-                        provider="google_health",
-                        enviroment=enviroment,
-                        client_id=parsed_client["client_id"],
-                        client_secret=parsed_client["client_secret"],
-                        credentials_json_raw=raw_json,
-                        redirect_uri=redirect_uri.strip(),
-                        auth_uri=parsed_client["auth_uri"],
-                        token_uri=parsed_client["token_uri"],
-                        scopes=scopes,
-                        status=status,
-                        notes=notes,
-                    )
+                    try:
+                        upsert_oauth_client_config(
+                            sp,
+                            client_key=client_key.strip(),
+                            provider="google_health",
+                            enviroment=enviroment,
+                            client_id=parsed_client["client_id"],
+                            client_secret=parsed_client["client_secret"],
+                            credentials_json_raw=raw_json,
+                            redirect_uri=redirect_uri.strip(),
+                            auth_uri=parsed_client["auth_uri"],
+                            token_uri=parsed_client["token_uri"],
+                            scopes=scopes,
+                            status=status,
+                            notes=notes,
+                        )
+                    except Exception as e:
+                        if not show_rate_limit_notice(
+                            e,
+                            provider="google_sheets",
+                            key="save_google_oauth_client",
+                            context="saving the OAuth client",
+                        ):
+                            raise
+                        st.stop()
                     st.success(f"Saved OAuth client `{client_key.strip()}`.")
             except Exception as e:
                 st.error(f"Could not parse/save OAuth client JSON: {e}")
@@ -206,7 +223,17 @@ if st.button("Add watch & generate link"):
         ("reauth_link_created_at", ""),
         ("isActive", "TRUE" if is_active else "FALSE"),
     ])
-    GoogleSheetsAdapter.append_rows(sp, "fitbit", [row])
+    try:
+        GoogleSheetsAdapter.append_rows(sp, "fitbit", [row])
+    except Exception as e:
+        if not show_rate_limit_notice(
+            e,
+            provider="google_sheets",
+            key="register_watch",
+            context="registering the watch",
+        ):
+            st.error(f"Failed to register watch: {e}")
+        st.stop()
 
     # 2) Generate OAuth state & authorization URL
     try:
@@ -220,7 +247,12 @@ if st.button("Add watch & generate link"):
             created_by=st.session_state.get("user_email"),
         )
     except Exception as e:
-        st.error(f"Failed to generate authorization link: {e}")
+        if not show_rate_limit_notice(
+            e,
+            key="new_watch_authorization_link",
+            context="generating the authorization link",
+        ):
+            st.error(f"Failed to generate authorization link: {e}")
         st.stop()
 
     st.success(f"Watch **{watch_name}** registered! Open the link below in an **incognito** window while logged into the participant account.")
@@ -269,7 +301,12 @@ if st.button("Generate link for existing watch"):
             created_by=st.session_state.get("user_email"),
         )
     except Exception as e:
-        st.error(f"Failed to generate authorization link: {e}")
+        if not show_rate_limit_notice(
+            e,
+            key="existing_watch_authorization_link",
+            context="generating the authorization link",
+        ):
+            st.error(f"Failed to generate authorization link: {e}")
         st.stop()
 
     st.success(f"Authorization link generated for **{existing_watch.strip()}**.")

@@ -2,6 +2,9 @@ from typing import Dict, List, Optional
 import pandas as pd
 from entity.Sheet import Spreadsheet, GoogleSheetsAdapter
 import streamlit as st
+from utils.rate_limit_ui import show_rate_limit_notice
+
+
 class UserController:
     """Controller for user-related operations"""
     
@@ -20,6 +23,12 @@ class UserController:
             user_sheet = spreadsheet.get_sheet("user", sheet_type="user")
             return user_sheet.to_dataframe()
         except Exception as e:
+            show_rate_limit_notice(
+                e,
+                provider="google_sheets",
+                key="user_controller_users",
+                context="loading users",
+            )
             print(f"Error getting users: {e}")
             return pd.DataFrame()
     

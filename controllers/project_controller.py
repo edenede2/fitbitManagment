@@ -3,6 +3,7 @@ import pandas as pd
 import streamlit as st
 from entity.Sheet import Spreadsheet, GoogleSheetsAdapter
 from entity.Watch import WatchFactory
+from utils.rate_limit_ui import show_rate_limit_notice
 
 class ProjectController:
     """Controller for project-related operations"""
@@ -29,6 +30,12 @@ class ProjectController:
             project_sheet = spreadsheet.get_sheet("project", sheet_type="project")
             return project_sheet.to_dataframe()
         except Exception as e:
+            show_rate_limit_notice(
+                e,
+                provider="google_sheets",
+                key="project_controller_projects",
+                context="loading projects",
+            )
             print(f"Error getting projects: {e}")
             return pd.DataFrame()
     
@@ -58,6 +65,12 @@ class ProjectController:
                 # Filter for this project
                 return fitbit_df[fitbit_df['project'] == project_name]
         except Exception as e:
+            show_rate_limit_notice(
+                e,
+                provider="google_sheets",
+                key=f"project_controller_watches_{project_name}",
+                context="loading watches",
+            )
             print(f"Error getting watches for project {project_name}: {e}")
             return pd.DataFrame()
     
@@ -102,6 +115,12 @@ class ProjectController:
                 return details
             return None
         except Exception as e:
+            show_rate_limit_notice(
+                e,
+                provider="google_sheets",
+                key=f"project_controller_watch_details_{watch_name}",
+                context="loading watch details",
+            )
             print(f"Error getting details for watch {watch_name}: {e}")
             return None
             
@@ -130,5 +149,11 @@ class ProjectController:
             # Filter for these watches
             return fitbit_df[fitbit_df['name'].isin(watch_names)]
         except Exception as e:
+            show_rate_limit_notice(
+                e,
+                provider="google_sheets",
+                key=f"project_controller_student_watches_{student_email}",
+                context="loading student watches",
+            )
             print(f"Error getting watches for student {student_email}: {e}")
             return pd.DataFrame()

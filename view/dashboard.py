@@ -640,7 +640,13 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                         try:
                             spreadsheet(combined_data)
                         except Exception as e:
-                            st.error(f"Error with spreadsheet: {str(e)}")
+                            if not show_rate_limit_notice(
+                                e,
+                                provider="google_sheets",
+                                key="mitosheet_combined_data",
+                                context="rendering spreadsheet data",
+                            ):
+                                st.error(f"Error with spreadsheet: {str(e)}")
                             st.dataframe(combined_data, width="stretch")
 
                         if signal_column == "HR":
@@ -672,7 +678,13 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                                     try:
                                         spreadsheet(st.session_state[day_data_key])
                                     except Exception as e:
-                                        st.error(f"Error with spreadsheet: {str(e)}")
+                                        if not show_rate_limit_notice(
+                                            e,
+                                            provider="google_sheets",
+                                            key=f"mitosheet_{day_data_key}",
+                                            context="rendering daily spreadsheet data",
+                                        ):
+                                            st.error(f"Error with spreadsheet: {str(e)}")
                                         st.dataframe(st.session_state[day_data_key])
 
                                     # Create visualization

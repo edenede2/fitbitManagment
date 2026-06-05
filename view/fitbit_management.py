@@ -360,8 +360,14 @@ def save_changes(edited_df: pl.DataFrame, fitbit_sheet: Any, spreadsheet: Spread
         # Add timestamp
         st.write(f"Last updated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     except Exception as e:
-        st.error(f"Error saving changes: {str(e)}")
-        st.exception(e)
+        if not show_rate_limit_notice(
+            e,
+            provider="google_sheets",
+            key="fitbit_management_save",
+            context="saving Fitbit device changes",
+        ):
+            st.error(f"Error saving changes: {str(e)}")
+            st.exception(e)
 
 # Initialize session state variables if they don't exist
 if 'add_new_device' not in st.session_state:
