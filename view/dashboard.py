@@ -18,6 +18,7 @@ from entity.Sheet import Spreadsheet, GoogleSheetsAdapter
 from entity.Watch import Watch, WatchFactory
 from model.config import get_secrets
 from entity.AsyncSheetsManager import AsyncSheetsManager
+from utils.rate_limit_ui import show_rate_limit_notice
 
 # Increase cache time to reduce API calls
 # @st.cache_data(ttl=1800)  # Cache for 30 minutes instead of 5
@@ -113,7 +114,12 @@ def fetch_watch_data(watch_name, signal_type, start_date, end_date, should_fetch
                     df = df.rename(columns={'value': 'HR'})
                     df['syncDate'] = df['datetime']
             except Exception as hr_error:
-                st.error(f"Heart Rate API error: {str(hr_error)}")
+                if not show_rate_limit_notice(
+                    hr_error,
+                    key=f"hr_{watch_name}",
+                    context="fetching heart rate data",
+                ):
+                    st.error(f"Heart Rate API error: {str(hr_error)}")
                 return pd.DataFrame()
 
         elif signal_type == "steps":
@@ -170,7 +176,12 @@ def fetch_watch_data(watch_name, signal_type, start_date, end_date, should_fetch
                     # Sort by date
                     df = df.sort_values('date')
             except Exception as e:
-                st.error(f"Error fetching missing values: {str(e)}")
+                if not show_rate_limit_notice(
+                    e,
+                    key=f"missing_values_{watch_name}",
+                    context="scanning missing values",
+                ):
+                    st.error(f"Error fetching missing values: {str(e)}")
                 df = pd.DataFrame()
 
         elif signal_type == "sleep_duration":
@@ -200,7 +211,12 @@ def fetch_watch_data(watch_name, signal_type, start_date, end_date, should_fetch
 
         return df
     except Exception as e:
-        st.error(f"General error in fetch_watch_data: {str(e)}")
+        if not show_rate_limit_notice(
+            e,
+            key=f"watch_data_{watch_name}_{signal_type}",
+            context="fetching watch data",
+        ):
+            st.error(f"General error in fetch_watch_data: {str(e)}")
         return pd.DataFrame()
 
 def _normalize_signal_frame(data):
@@ -268,27 +284,14 @@ def get_available_watches(user_email, user_role, user_project):
         return watches_df
     except Exception as e:
         elapsed_time = time.time() - start_time
-        st.error(f"Error getting watches after {elapsed_time:.2f} seconds: {e}")
-
-        # If we need to retry, only wait if it's a rate limit error
-        if "rate limit" in str(e).lower() or "quota" in str(e).lower():
-            st.warning("API limit reached. Waiting to retry...")
-            time.sleep(2)
-
-            # Retry with timing
-            retry_start = time.time()
-            try:
-                watches_df = cached_get_watches(user_email, user_role, user_project)
-                retry_elapsed = time.time() - retry_start
-                st.info(f"Retry succeeded in {retry_elapsed:.2f} seconds")
-                return watches_df
-            except Exception as retry_e:
-                retry_elapsed = time.time() - retry_start
-                st.error(f"Retry failed after {retry_elapsed:.2f} seconds: {retry_e}")
-                return pd.DataFrame()
-        else:
-            # For non-rate-limit errors, return empty frame immediately
-            return pd.DataFrame()
+        if not show_rate_limit_notice(
+            e,
+            provider="google_sheets",
+            key=f"available_watches_{user_role}_{user_project}",
+            context="loading the watch list",
+        ):
+            st.error(f"Error getting watches after {elapsed_time:.2f} seconds: {e}")
+        return pd.DataFrame()
 
 def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> None:
     """
@@ -302,7 +305,17 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
     # Time the entire dashboard loading process
     dashboard_start_time = time.time()
     if "fitbit_watches" not in st.session_state:
-        df = sp.get_sheet("fitbit", sheet_type="fitbit").to_dataframe("polars")
+        try:
+            df = sp.get_sheet("fitbit", sheet_type="fitbit").to_dataframe("polars")
+        except Exception as e:
+            if not show_rate_limit_notice(
+                e,
+                provider="google_sheets",
+                key="dashboard_fitbit_sheet",
+                context="loading Fitbit watches",
+            ):
+                st.error(f"Error loading Fitbit watches: {e}")
+            return
         dict_details_by_name = {}
         for row in df.iter_rows(named=True):
             # Debug what watches exist
@@ -778,7 +791,12 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                             if 'lastSleepDuration' not in st.session_state.watch_details[st.session_state.selected_watch]:
                                 st.session_state.watch_details[st.session_state.selected_watch]['lastSleepDuration'] = ""
                     except Exception as e:
-                        st.error(f"Error with watch data: {e}")
+                        if not show_rate_limit_notice(
+                            e,
+                            key=f"device_refresh_{st.session_state.selected_watch}",
+                            context="refreshing device data",
+                        ):
+                            st.error(f"Error with watch data: {e}")
 
                 if refresh_device:
                     st.info("Using freshly fetched data from Fitbit API")

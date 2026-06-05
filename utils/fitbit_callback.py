@@ -10,6 +10,7 @@ from utils.fitbit_token_store import (
     resolve_state,
     save_tokens_for_watch,
 )
+from utils.rate_limit_ui import show_rate_limit_notice
 
 
 def _get_callback_spreadsheet(auth_controller=None) -> Spreadsheet | None:
@@ -75,14 +76,26 @@ def handle_fitbit_callback(auth_controller=None) -> bool:
     try:
         token_json = exchange_code_for_tokens(code)
     except Exception as e:
-        st.error(f"Token exchange failed: {e}")
+        if not show_rate_limit_notice(
+            e,
+            provider="fitbit",
+            key="fitbit_token_exchange",
+            context="connecting to Fitbit",
+        ):
+            st.error(f"Token exchange failed: {e}")
         return True
 
     try:
         save_tokens_for_watch(sp, watch_name=watch_name, token_json=token_json)
         mark_state_used(sp, state=state, watch_name=watch_name)
     except Exception as e:
-        st.error(f"Failed to store tokens: {e}")
+        if not show_rate_limit_notice(
+            e,
+            provider="google_sheets",
+            key="fitbit_token_store",
+            context="saving Fitbit OAuth tokens",
+        ):
+            st.error(f"Failed to store tokens: {e}")
         return True
 
     st.success(f"Fitbit watch '{watch_name}' connected successfully. You can close this tab.")

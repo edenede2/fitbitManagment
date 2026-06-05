@@ -5,6 +5,7 @@ from typing import Dict, List, Any, Optional
 import datetime
 import polars as pl
 from utils.health_oauth_clients import load_active_oauth_clients
+from utils.rate_limit_ui import show_rate_limit_notice
 
 
 def _google_oauth_client_label(row: dict) -> str:
@@ -18,7 +19,13 @@ def _select_google_oauth_client_key(spreadsheet: Spreadsheet, key: str) -> str:
     try:
         clients = load_active_oauth_clients(spreadsheet, provider="google_health")
     except Exception as e:
-        st.warning(f"Could not load Google Health OAuth clients: {e}")
+        if not show_rate_limit_notice(
+            e,
+            provider="google_sheets",
+            key="google_oauth_clients",
+            context="loading Google Health OAuth clients",
+        ):
+            st.warning(f"Could not load Google Health OAuth clients: {e}")
         clients = []
 
     if not clients:
@@ -100,8 +107,14 @@ def load_fitbit_datatable(user_email: str, user_role: str, user_project: str, sp
                 display_manager_interface(fitbit_df, user_df, fitbit_sheet, spreadsheet, user_project,original_fitbit_df)
             
     except Exception as e:
-        st.error(f"Error loading Fitbit devices: {str(e)}")
-        st.exception(e)
+        if not show_rate_limit_notice(
+            e,
+            provider="google_sheets",
+            key="fitbit_management_devices",
+            context="loading Fitbit devices",
+        ):
+            st.error(f"Error loading Fitbit devices: {str(e)}")
+            st.exception(e)
 
 def display_admin_interface(fitbit_df: pl.DataFrame, user_df: pl.DataFrame, 
                            fitbit_sheet: Any, spreadsheet: Spreadsheet) -> None:
