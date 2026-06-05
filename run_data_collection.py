@@ -10,6 +10,7 @@ import pandas as pd  # Add explicit pandas import
 import json  # Add import for watch status tracking
 
 import smtplib
+import unicodedata
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 # Add project root to Python path if necessary
@@ -42,6 +43,10 @@ def load_runtime_config():
         "SENDER_EMAIL_PASSWORD": ("sender_email_password", "SENDER_EMAIL_PASSWORD"),
         "SMTP_SERVER": ("smtp_server", "SMTP_SERVER"),
         "SMTP_PORT": ("smtp_port", "SMTP_PORT"),
+        "FITBIT_CLIENT_ID": ("FITBIT_CLIENT_ID", "fitbit_client_id"),
+        "FITBIT_CLIENT_SECRET": ("FITBIT_CLIENT_SECRET", "fitbit_client_secret"),
+        "FITBIT_REDIRECT_URI": ("FITBIT_REDIRECT_URI", "fitbit_redirect_uri"),
+        "FITBIT_SCOPES": ("FITBIT_SCOPES", "fitbit_scopes"),
     }
     for env_key, secret_keys in env_mappings.items():
         if os.getenv(env_key):
@@ -418,6 +423,16 @@ def save_to_csv(data: pl.DataFrame) -> None:
         print(f"Created new history CSV file with {len(data)} records")
 
 
+def _clean_email_address(email_address):
+    """Remove invisible/control characters that SMTP cannot encode in RCPT commands."""
+    cleaned = "".join(
+        char
+        for char in str(email_address or "")
+        if unicodedata.category(char) not in {"Cf", "Cc"}
+    ).strip()
+    return cleaned
+
+
 def send_email_alert(recipient_email, subject, message_body):
     """
     Sends an email alert to the specified recipient.
@@ -444,8 +459,17 @@ def send_email_alert(recipient_email, subject, message_body):
         if not sender_email or not sender_password:
             print("Missing email configuration in environment variables")
             return False
-        if "," in recipient_email:
-            for recipient in recipient_email.split(","):
+        recipients = [
+            _clean_email_address(recipient)
+            for recipient in str(recipient_email or "").split(",")
+        ]
+        recipients = [recipient for recipient in recipients if recipient]
+        if not recipients:
+            print("No valid recipient email configured")
+            return False
+
+        if len(recipients) > 1:
+            for recipient in recipients:
                 # Create email message
                 message = MIMEMultipart("alternative")
                 message["Subject"] = subject
@@ -454,7 +478,7 @@ def send_email_alert(recipient_email, subject, message_body):
                 # message["To"] = "edenede2@gmail.com"
 
                 # Create HTML version of the message
-                html_part = MIMEText(message_body, "html")
+                html_part = MIMEText(message_body, "html", "utf-8")
                 message.attach(html_part)
 
                 # Connect to SMTP server and send email
@@ -467,6 +491,7 @@ def send_email_alert(recipient_email, subject, message_body):
                 print(f"Successfully sent email alert to {recipient}")
             return True
         else:
+            recipient_email = recipients[0]
             # Create email message
             message = MIMEMultipart("alternative")
             message["Subject"] = subject
@@ -474,7 +499,7 @@ def send_email_alert(recipient_email, subject, message_body):
             message["To"] = recipient_email
 
             # Create HTML version of the message
-            html_part = MIMEText(message_body, "html")
+            html_part = MIMEText(message_body, "html", "utf-8")
             message.attach(html_part)
 
             # Connect to SMTP server and send email

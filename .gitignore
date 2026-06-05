@@ -11,3 +11,5 @@ reports/
 generateKey.ipynb
 *.log
 *.csv
+stsecrets.txt
+stsecters.txt

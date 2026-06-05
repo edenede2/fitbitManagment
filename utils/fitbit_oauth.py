@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from urllib.parse import urlencode
 import base64
+import os
 import uuid
 import time
 import requests
@@ -13,11 +14,31 @@ AUTH_URL = "https://www.fitbit.com/oauth2/authorize"
 TOKEN_URL = "https://api.fitbit.com/oauth2/token"
 
 def _cfg():
-    secrets = get_secrets()
-    client_id = secrets.get("FITBIT_CLIENT_ID") or secrets.get("fitbit_client_id")
-    client_secret = secrets.get("FITBIT_CLIENT_SECRET") or secrets.get("fitbit_client_secret")
-    redirect_uri = secrets.get("FITBIT_REDIRECT_URI") or secrets.get("fitbit_redirect_uri")
-    scopes = (secrets.get("FITBIT_SCOPES") or secrets.get("fitbit_scopes") or "").strip()
+    try:
+        secrets = get_secrets()
+    except Exception:
+        secrets = {}
+    client_id = (
+        os.getenv("FITBIT_CLIENT_ID")
+        or secrets.get("FITBIT_CLIENT_ID")
+        or secrets.get("fitbit_client_id")
+    )
+    client_secret = (
+        os.getenv("FITBIT_CLIENT_SECRET")
+        or secrets.get("FITBIT_CLIENT_SECRET")
+        or secrets.get("fitbit_client_secret")
+    )
+    redirect_uri = (
+        os.getenv("FITBIT_REDIRECT_URI")
+        or secrets.get("FITBIT_REDIRECT_URI")
+        or secrets.get("fitbit_redirect_uri")
+    )
+    scopes = (
+        os.getenv("FITBIT_SCOPES")
+        or secrets.get("FITBIT_SCOPES")
+        or secrets.get("fitbit_scopes")
+        or ""
+    ).strip()
     missing = [
         name for name, value in (
             ("FITBIT_CLIENT_ID", client_id),

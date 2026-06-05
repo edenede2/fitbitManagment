@@ -157,20 +157,32 @@ class SnapshotContext:
                 return access_token
 
             if refresh_token:
-                new_tokens = refresh_tokens(refresh_token)
-                save_tokens_for_watch(self.spreadsheet, watch_name=watch_name, token_json=new_tokens)
-                expires_in = int(new_tokens.get("expires_in", 0) or 0)
-                updated_row = {
-                    **token_row,
-                    "access_token": new_tokens.get("access_token", ""),
-                    "refresh_token": new_tokens.get("refresh_token", refresh_token),
-                    "expires_at": str(now_ts() + max(expires_in - 30, 0)),
-                    "scope": new_tokens.get("scope", token_row.get("scope", "")),
-                    "fitbit_user_id": new_tokens.get("user_id", token_row.get("fitbit_user_id", "")),
-                    "created_at": str(now_ts()),
-                }
-                self.fitbit_tokens_by_watch[watch_name] = updated_row
-                return str(updated_row.get("access_token") or "")
+                try:
+                    new_tokens = refresh_tokens(refresh_token)
+                    save_tokens_for_watch(self.spreadsheet, watch_name=watch_name, token_json=new_tokens)
+                    expires_in = int(new_tokens.get("expires_in", 0) or 0)
+                    updated_row = {
+                        **token_row,
+                        "access_token": new_tokens.get("access_token", ""),
+                        "refresh_token": new_tokens.get("refresh_token", refresh_token),
+                        "expires_at": str(now_ts() + max(expires_in - 30, 0)),
+                        "scope": new_tokens.get("scope", token_row.get("scope", "")),
+                        "fitbit_user_id": new_tokens.get("user_id", token_row.get("fitbit_user_id", "")),
+                        "created_at": str(now_ts()),
+                    }
+                    self.fitbit_tokens_by_watch[watch_name] = updated_row
+                    return str(updated_row.get("access_token") or "")
+                except Exception as exc:
+                    if access_token and not force_refresh:
+                        print(
+                            f"Fitbit token refresh failed for {watch_name}; "
+                            f"trying existing OAuth access token before marking failed: {exc}"
+                        )
+                        return access_token
+                    raise
+
+            if access_token:
+                return access_token
 
         token = row.get("token")
         if has_value(token):
@@ -516,11 +528,11 @@ def _fitbit_snapshot_with_token(row: Dict[str, Any], token: str) -> Dict[str, An
         project=str(row.get("project") or ""),
         token=str(token),
     )
-    watch.update_device_info()
-    hr = watch.get_current_hourly_HR() if hasattr(watch, "get_current_hourly_HR") else ""
-    steps = watch.get_current_hourly_steps() if hasattr(watch, "get_current_hourly_steps") else ""
+    watch.update_device_info(force_fetch=True)
+    hr = watch.get_current_hourly_HR(force_fetch=True) if hasattr(watch, "get_current_hourly_HR") else ""
+    steps = watch.get_current_hourly_steps(force_fetch=True) if hasattr(watch, "get_current_hourly_steps") else ""
     sleep_start, sleep_end = (
-        watch.get_last_sleep_start_end()
+        watch.get_last_sleep_start_end(force_fetch=True)
         if hasattr(watch, "get_last_sleep_start_end")
         else ("", "")
     )
@@ -560,11 +572,11 @@ def fitbit_snapshot(row: Dict[str, Any], context: SnapshotContext | None = None)
         return _fitbit_snapshot_with_token(row, str(token))
 
     watch = WatchFactory.create_from_details(row)
-    watch.update_device_info()
-    hr = watch.get_current_hourly_HR() if hasattr(watch, "get_current_hourly_HR") else ""
-    steps = watch.get_current_hourly_steps() if hasattr(watch, "get_current_hourly_steps") else ""
+    watch.update_device_info(force_fetch=True)
+    hr = watch.get_current_hourly_HR(force_fetch=True) if hasattr(watch, "get_current_hourly_HR") else ""
+    steps = watch.get_current_hourly_steps(force_fetch=True) if hasattr(watch, "get_current_hourly_steps") else ""
     sleep_start, sleep_end = (
-        watch.get_last_sleep_start_end()
+        watch.get_last_sleep_start_end(force_fetch=True)
         if hasattr(watch, "get_last_sleep_start_end")
         else ("", "")
     )
