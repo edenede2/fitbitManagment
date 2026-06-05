@@ -14,6 +14,7 @@ from utils.health_token_store import (
     resolve_oauth_state,
     save_google_health_tokens_for_watch,
 )
+from utils.rate_limit_ui import show_rate_limit_notice
 
 
 def _get_callback_spreadsheet() -> Spreadsheet | None:
@@ -111,7 +112,12 @@ def handle_google_health_callback(auth_controller) -> bool:
             )
         except Exception:
             pass
-        st.error(f"Google Health OAuth callback failed: {exc}")
+        if not show_rate_limit_notice(
+            exc,
+            key="google_health_callback",
+            context="finishing Google Health connection",
+        ):
+            st.error(f"Google Health OAuth callback failed: {exc}")
         return True
 
     st.success(f"Google Health connected successfully for watch '{watch_name}'. You can close this tab.")
