@@ -1,6 +1,5 @@
 import streamlit as st
 from pathlib import Path
-import time
 
 # Import controllers
 from controllers.auth_controller import AuthenticationController
@@ -8,6 +7,7 @@ from controllers.user_controller import UserController
 
 from utils.fitbit_callback import handle_fitbit_callback
 from utils.google_health_callback import handle_google_health_callback
+from utils.rate_limit_ui import show_rate_limit_notice
 
 # Set up app configuration
 st.set_page_config(
@@ -95,10 +95,12 @@ def main():
             st.write("Click the 'Logout' button in the sidebar to log out.")
             
         except Exception as e:
-            if "429" in str(e) or "Quota exceeded" in str(e):
-                st.error("Google Sheets API rate limit exceeded. Please wait a moment and try again.")
-                time.sleep(2)
-            else:
+            if not show_rate_limit_notice(
+                e,
+                provider="google_sheets",
+                key="main_app",
+                context="loading the app data",
+            ):
                 st.error(f"An error occurred: {e}")
     else:
         # Not logged in - show welcome screen
