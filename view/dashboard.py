@@ -50,7 +50,7 @@ def prefetch_watch_data(user_email, user_role, user_project):
         # Silent fail for background tasks
         return pd.DataFrame()
 
-def fetch_watch_data(watch_name, signal_type, start_date, end_date, should_fetch=False):
+def fetch_watch_data(watch_name, signal_type, start_date, end_date, should_fetch=False, spreadsheet=None):
     """
     Get data for a specific watch without using any Streamlit widgets.
     This function can be safely cached.
@@ -74,7 +74,7 @@ def fetch_watch_data(watch_name, signal_type, start_date, end_date, should_fetch
 
     try:
         # Create a Watch object using the factory
-        watch = WatchFactory.create_from_details(watch_details)
+        watch = WatchFactory.create_from_details(watch_details, spreadsheet=spreadsheet)
         df = pd.DataFrame()
 
         # Map signal type to appropriate endpoint and method
@@ -525,7 +525,8 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                                 signal_column,
                                 single_date,
                                 single_date,
-                                should_fetch=True
+                                should_fetch=True,
+                                spreadsheet=sp,
                             )
                             day_data = _normalize_signal_frame(day_data)
 
@@ -549,7 +550,8 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                             signal_column,
                             start_date,
                             end_date,
-                            should_fetch=True
+                            should_fetch=True,
+                            spreadsheet=sp,
                         )
                         st.write(sleep_data)
                         # Store in session state
@@ -764,7 +766,10 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                 # Create Watch object and update with latest information from API only when refresh is clicked
                 if st.session_state.watch_details[st.session_state.selected_watch]:
                     try:
-                        watch = WatchFactory.create_from_details(st.session_state.watch_details[st.session_state.selected_watch])
+                        watch = WatchFactory.create_from_details(
+                            st.session_state.watch_details[st.session_state.selected_watch],
+                            spreadsheet=sp,
+                        )
 
                         # Only make API calls when refresh button is clicked
                         if refresh_device:

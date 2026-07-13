@@ -18,7 +18,7 @@ def _install_module_stub(name, **attrs):
 try:
     import requests  # noqa: F401
 except ModuleNotFoundError:
-    _install_module_stub("requests", get=Mock())
+    _install_module_stub("requests", get=Mock(), post=Mock())
 
 try:
     import pandas  # noqa: F401
@@ -47,6 +47,7 @@ _install_module_stub(
 _install_module_stub("controllers.auth_controller", AuthenticationController=Mock())
 
 from entity.Watch import ApiRequestError, URL_DICT, Watch, WatchFactory
+from utils.fitbit_oauth import FitbitOAuthError, refresh_tokens
 import utils.fitbit_token_store as fitbit_token_store
 
 
@@ -61,6 +62,10 @@ class FakeResponse:
         if isinstance(self._payload, Exception):
             raise self._payload
         return self._payload
+
+    @property
+    def ok(self):
+        return 200 <= self.status_code < 400
 
 
 class FitbitWebApiRecoveryTests(unittest.TestCase):
@@ -145,6 +150,26 @@ class FitbitWebApiRecoveryTests(unittest.TestCase):
         refresh_tokens.assert_called_once_with("refresh-token")
         save_tokens.assert_called_once()
 
+    def test_refresh_token_error_includes_sanitized_fitbit_body(self):
+        with patch(
+            "utils.fitbit_oauth._cfg",
+            return_value=("client-id", "client-secret", "redirect-uri", "settings heartrate"),
+        ), patch(
+            "utils.fitbit_oauth.requests.post",
+            return_value=FakeResponse(
+                400,
+                text='{"errors":[{"errorType":"invalid_grant","message":"Refresh token invalid: refresh-secret"}]}',
+            ),
+        ):
+            with self.assertRaises(FitbitOAuthError) as raised:
+                refresh_tokens("refresh-secret")
+
+        message = str(raised.exception)
+        self.assertIn("invalid_grant", message)
+        self.assertIn("Refresh token invalid", message)
+        self.assertNotIn("refresh-secret", message)
+        self.assertNotIn("client-secret", message)
+
     def test_factory_uses_legacy_token_only_when_no_oauth_row_exists(self):
         fake_spreadsheet = object()
 
@@ -164,6 +189,26 @@ class FitbitWebApiRecoveryTests(unittest.TestCase):
         get_latest_tokens.assert_called_once_with(fake_spreadsheet, "watch-1")
         get_legacy_fitbit_token.assert_called_once_with(fake_spreadsheet, "watch-1")
         get_valid_access_token.assert_not_called()
+
+    def test_factory_uses_supplied_spreadsheet_for_oauth_lookup(self):
+        supplied_spreadsheet = object()
+
+        with patch("controllers.auth_controller.AuthenticationController") as auth_controller, patch(
+            "utils.fitbit_token_store.get_latest_tokens",
+            return_value={"access_token": "old", "refresh_token": "refresh"},
+        ) as get_latest_tokens, patch(
+            "utils.fitbit_token_store.get_valid_access_token",
+            return_value="oauth-token",
+        ) as get_valid_access_token:
+            watch = WatchFactory.create_from_details(
+                {"name": "watch-1", "project": "demo", "token": "stale-token"},
+                spreadsheet=supplied_spreadsheet,
+            )
+
+        self.assertEqual(watch.token, "oauth-token")
+        get_latest_tokens.assert_called_once_with(supplied_spreadsheet, "watch-1")
+        get_valid_access_token.assert_called_once_with(supplied_spreadsheet, "watch-1")
+        auth_controller.assert_not_called()
 
     def test_factory_does_not_hide_broken_oauth_row_with_legacy_token(self):
         fake_spreadsheet = object()

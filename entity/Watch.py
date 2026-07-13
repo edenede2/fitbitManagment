@@ -1104,7 +1104,7 @@ class Watch:
 
 class WatchFactory:
     @staticmethod
-    def create_from_details(details: Dict) -> Watch:
+    def create_from_details(details: Dict, spreadsheet=None) -> Watch:
         """Factory for creating Watch objects"""
         name = details.get('name') or details.get('watchName')
         project_name = details.get('project')
@@ -1120,10 +1120,12 @@ class WatchFactory:
         token_refresher = None
 
         if name:
-            from controllers.auth_controller import AuthenticationController
+            sp = spreadsheet
+            if sp is None:
+                from controllers.auth_controller import AuthenticationController
 
-            auth_controller = AuthenticationController()
-            sp = auth_controller.get_spreadsheet()
+                auth_controller = AuthenticationController()
+                sp = auth_controller.get_spreadsheet()
             if provider in {'google', 'google_health', 'google_health_api', 'health'}:
                 from services.health_client_factory import HealthClientFactory
                 health_client = HealthClientFactory.from_watch_row(sp, details)

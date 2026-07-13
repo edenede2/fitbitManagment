@@ -13,6 +13,11 @@ from model.config import get_secrets
 AUTH_URL = "https://www.fitbit.com/oauth2/authorize"
 TOKEN_URL = "https://api.fitbit.com/oauth2/token"
 
+
+class FitbitOAuthError(RuntimeError):
+    """Raised when Fitbit rejects an OAuth token exchange or refresh request."""
+
+
 def _cfg():
     try:
         secrets = get_secrets()
@@ -77,6 +82,22 @@ def _basic_auth_header(client_id: str, client_secret: str) -> dict:
     b64 = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
     return {"Authorization": f"Basic {b64}"}
 
+def _redact_oauth_text(text: str, *secrets: str) -> str:
+    text = " ".join(str(text or "").strip().split())
+    for secret in secrets:
+        if secret and len(str(secret)) > 6:
+            text = text.replace(str(secret), "[redacted]")
+    return text[:500]
+
+def _raise_for_oauth_response(response, action: str, *secrets: str) -> None:
+    if response.ok:
+        return
+    response_text = _redact_oauth_text(getattr(response, "text", ""), *secrets)
+    message = f"Fitbit token {action} failed: {response.status_code}"
+    if response_text:
+        message = f"{message}. Response: {response_text}"
+    raise FitbitOAuthError(message)
+
 def exchange_code_for_tokens(code: str) -> dict:
     client_id, client_secret, redirect_uri, _ = _cfg()
     headers = _basic_auth_header(client_id, client_secret)
@@ -87,7 +108,7 @@ def exchange_code_for_tokens(code: str) -> dict:
         "redirect_uri": redirect_uri,
     }
     r = requests.post(TOKEN_URL, data=data, headers=headers, timeout=20)
-    r.raise_for_status()
+    _raise_for_oauth_response(r, "exchange", code, client_secret)
     return r.json()
 
 def refresh_tokens(refresh_token: str) -> dict:
@@ -97,7 +118,7 @@ def refresh_tokens(refresh_token: str) -> dict:
     data = {"grant_type": "refresh_token", "refresh_token": refresh_token}
 
     r = requests.post(TOKEN_URL, data=data, headers=headers, timeout=20)
-    r.raise_for_status()
+    _raise_for_oauth_response(r, "refresh", refresh_token, client_secret)
     return r.json()
 
 def now_ts() -> int:
