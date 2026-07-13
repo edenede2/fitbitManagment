@@ -116,10 +116,10 @@ def get_legacy_fitbit_token(sp: Spreadsheet, watch_name: str) -> str:
 
     return token
 
-def get_valid_access_token(sp: Spreadsheet, watch_name: str) -> str:
+def get_valid_access_token(sp: Spreadsheet, watch_name: str, *, force_refresh: bool = False) -> str:
     """
     Returns a valid access token for this watch.
-    If expired -> refresh and store new token row, then return new token.
+    If expired, or force_refresh=True, refresh and store new token row, then return new token.
     """
     tok = get_latest_tokens(sp, watch_name)
     if not tok:
@@ -127,12 +127,15 @@ def get_valid_access_token(sp: Spreadsheet, watch_name: str) -> str:
 
     access_token = tok.get("access_token", "")
     refresh_token_val = tok.get("refresh_token", "")
-    expires_at = int(tok.get("expires_at", 0) or 0)
+    try:
+        expires_at = int(tok.get("expires_at", 0) or 0)
+    except (TypeError, ValueError):
+        expires_at = 0
 
     if not access_token or not refresh_token_val:
         raise ValueError(f"Tokens incomplete for watch '{watch_name}'")
 
-    if now_ts() < expires_at:
+    if not force_refresh and now_ts() < expires_at:
         return access_token
 
     # Refresh
