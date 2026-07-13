@@ -13,3 +13,4 @@ generateKey.ipynb
 *.csv
 stsecrets.txt
 stsecters.txt
+*.DS_Store
