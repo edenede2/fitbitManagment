@@ -30,6 +30,7 @@ if project_root not in sys.path:
 
 # Import entity components directly
 from entity.Sheet import Spreadsheet, GoogleSheetsAdapter
+from utils.fitbit_token_store import get_latest_tokens, get_valid_access_token
 
 # Configuration
 FITBIT_ZIP_SAVE_PATH = Path("/media/psylab-6028/DATA1/FitbitData")
@@ -189,7 +190,11 @@ def update_download_tracking(tracking_df, watch_name, data_type, download_dateti
 
     return tracking_df
 
-def get_active_watches():
+def _normalize_active_watches_for_polars(active_watches):
+    """Normalize mixed Google Sheets values before converting to Polars."""
+    return active_watches.fillna("").astype(str)
+
+def get_active_watches(return_spreadsheet=False):
     """
     Get active watches from the Google Sheets spreadsheet.
     Uses the same logic as run_data_collection.py
@@ -226,12 +231,18 @@ def get_active_watches():
 
         print(f"Found {len(active_watches)} active watches")
 
-        # Convert to polars DataFrame for return
-        return pl.from_pandas(active_watches)
+        active_watches = _normalize_active_watches_for_polars(active_watches)
+        active_watches_df = pl.from_pandas(active_watches)
+
+        if return_spreadsheet:
+            return active_watches_df, spreadsheet
+        return active_watches_df
 
     except Exception as e:
         print(f"Error retrieving active watches: {e}")
         print(traceback.format_exc())
+        if return_spreadsheet:
+            return pl.DataFrame(), None
         return pl.DataFrame()
 
 def calculate_date_ranges(start_date, end_date, max_days_per_request):
@@ -880,7 +891,26 @@ def download_watch_data(watch_name, token, data_type, start_date, end_date):
         print(traceback.format_exc())
         return None, None
 
-def process_watch_data_downloads(watch_row, tracking_df, initial_days=None):
+def _resolve_watch_access_token(watch_row, spreadsheet=None):
+    watch_name = str(watch_row.get('name', '') or '').strip()
+    legacy_token = str(watch_row.get('token', '') or '').strip()
+
+    if not watch_name:
+        return ""
+
+    if spreadsheet is not None:
+        oauth_tokens = None
+        try:
+            oauth_tokens = get_latest_tokens(spreadsheet, watch_name)
+        except ValueError:
+            oauth_tokens = None
+
+        if oauth_tokens:
+            return get_valid_access_token(spreadsheet, watch_name)
+
+    return legacy_token
+
+def process_watch_data_downloads(watch_row, tracking_df, initial_days=None, spreadsheet=None):
     """
     Process data downloads for a single watch.
 
@@ -893,7 +923,11 @@ def process_watch_data_downloads(watch_row, tracking_df, initial_days=None):
         pd.DataFrame: Updated tracking DataFrame
     """
     watch_name = watch_row.get('name', '')
-    token = watch_row.get('token', '')
+    try:
+        token = _resolve_watch_access_token(watch_row, spreadsheet)
+    except Exception as e:
+        print(f"Could not resolve OAuth token for watch {watch_name}: {e}")
+        return tracking_df
 
     if not watch_name or not token:
         print(f"Missing name or token for watch: {watch_row}")
@@ -983,7 +1017,7 @@ def hourly_fitbit_data_collection(initial_days=None):
         print(f"Loaded download tracking with {len(tracking_df)} records")
 
         # Get active watches from spreadsheet
-        active_watches_df = get_active_watches()
+        active_watches_df, spreadsheet = get_active_watches(return_spreadsheet=True)
 
         if active_watches_df.is_empty():
             print("No active watches found")
@@ -994,7 +1028,12 @@ def hourly_fitbit_data_collection(initial_days=None):
         # Process each active watch
         for watch_row in active_watches_df.iter_rows(named=True):
             try:
-                tracking_df = process_watch_data_downloads(watch_row, tracking_df, initial_days)
+                tracking_df = process_watch_data_downloads(
+                    watch_row,
+                    tracking_df,
+                    initial_days,
+                    spreadsheet=spreadsheet,
+                )
 
                 # Save tracking after each watch to preserve progress
                 save_download_tracking(tracking_df)

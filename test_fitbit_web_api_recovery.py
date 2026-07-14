@@ -11,8 +11,15 @@ def _install_module_stub(name, **attrs):
     module = types.ModuleType(name)
     for attr_name, attr_value in attrs.items():
         setattr(module, attr_name, attr_value)
-    sys.modules.setdefault(name, module)
-    return sys.modules[name]
+    installed = sys.modules.setdefault(name, module)
+    if "." in name:
+        parent_name, child_name = name.rsplit(".", 1)
+        parent = sys.modules.get(parent_name)
+        if parent is None:
+            parent = types.ModuleType(parent_name)
+            sys.modules[parent_name] = parent
+        setattr(parent, child_name, installed)
+    return installed
 
 
 try:

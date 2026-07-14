@@ -1312,8 +1312,15 @@ def hourly_data_collection():
                     # Save only the newly collected rows to the append-only history sheet.
                     fitbit_log_sheet = spreadsheet.get_sheet("FitbitLog", "log")
                     fitbit_log_sheet.data = new_log_entries
-                    GoogleSheetsAdapter.save(spreadsheet, "FitbitLog", mode="append")
-                    print(f"[{datetime.datetime.now()}] Added {len(new_log_entries)} new entries to FitbitLog")
+                    saved_fitbit_log = GoogleSheetsAdapter.save(spreadsheet, "FitbitLog", mode="append")
+                    if saved_fitbit_log:
+                        print(f"[{datetime.datetime.now()}] Added {len(new_log_entries)} new entries to FitbitLog")
+                    else:
+                        result = False
+                        print(
+                            f"[{datetime.datetime.now()}] Failed to append {len(new_log_entries)} "
+                            "new entries to FitbitLog"
+                        )
                 except Exception as e:
                     result = False
                     print(f"Error appending new entries to FitbitLog: {e}")

@@ -713,6 +713,60 @@ class GoogleSheetsAdapter:
         pass
 
     @staticmethod
+    def _recent_row_limit(sheet_name: str) -> Optional[int]:
+        bounded_sheets = {
+            item.strip().lower()
+            for item in os.getenv(
+                "GOOGLE_SHEETS_BOUNDED_HISTORY_SHEETS",
+                "FitbitLog,suspicious_nums,late_nums",
+            ).split(",")
+            if item.strip()
+        }
+        if sheet_name.lower() not in bounded_sheets:
+            return None
+        try:
+            limit = int(os.getenv("GOOGLE_SHEETS_RECENT_ROW_LIMIT", "1000") or "1000")
+        except ValueError:
+            limit = 1000
+        return limit if limit > 0 else None
+
+    @staticmethod
+    def _prune_worksheet_to_recent_rows(worksheet, max_rows: int, incoming_count: int = 0) -> None:
+        """
+        Keep room for incoming rows while preserving only the most recent existing rows.
+
+        Row 1 is treated as the header. Data rows above the retention window are deleted
+        in one Sheets request, which avoids a full read/rewrite of large history sheets.
+        """
+        if max_rows <= 0:
+            return
+
+        try:
+            used_rows = len(worksheet.col_values(1))
+        except Exception as exc:
+            print(f"Could not count rows before pruning {worksheet.title}: {exc}")
+            return
+
+        existing_data_rows = max(used_rows - 1, 0)
+        rows_to_keep_before_append = max(max_rows - max(incoming_count, 0), 0)
+        rows_to_delete = existing_data_rows - rows_to_keep_before_append
+        if rows_to_delete > 0:
+            delete_start = 2
+            delete_end = 1 + rows_to_delete
+            print(
+                f"Pruning {rows_to_delete} old rows from {worksheet.title}; "
+                f"keeping at most {max_rows} recent rows"
+            )
+            worksheet.delete_rows(delete_start, delete_end)
+
+        target_rows = max_rows + 1
+        try:
+            if getattr(worksheet, "row_count", target_rows) > target_rows:
+                worksheet.resize(rows=target_rows)
+        except Exception as exc:
+            print(f"Could not resize {worksheet.title} after pruning: {exc}")
+
+    @staticmethod
     def save(spreadsheet: Spreadsheet, sheet_name: str = None, mode: str = 'auto'):
         """
         Save changes back to Google Sheets.
@@ -754,12 +808,12 @@ class GoogleSheetsAdapter:
                             headers = list(sheet.data[0][0].keys()) if sheet.data[0] else []
                         else:
                             print(f"Unexpected data format in sheet {sheet_name}")
-                            return
+                            return False
 
                         # Verify headers are valid
                         if not headers:
                             print(f"No headers found for sheet {sheet_name}")
-                            return
+                            return False
 
                         # Different save strategies
                         if save_mode == 'rewrite':
@@ -788,6 +842,7 @@ class GoogleSheetsAdapter:
                         elif save_mode == 'append':
                             # Append-only strategy - add only new records
                             print(f"Using APPEND strategy for {sheet_name}")
+                            recent_row_limit = GoogleSheetsAdapter._recent_row_limit(sheet_name)
 
                             # Make sure headers match
                             existing_headers = worksheet.row_values(1)
@@ -807,18 +862,19 @@ class GoogleSheetsAdapter:
                                     save_mode = 'rewrite'
                                     # Call the method again with rewrite mode
                                     GoogleSheetsAdapter.save(spreadsheet, sheet_name, 'rewrite')
-                                    return
+                                    return False
 
                             # Get existing data for comparison (if we need it)
                             if sheet_name.lower() == 'fitbitlog':
                                 # For FitbitLog, we know we just want to append all data
-                                # Find the last row with data
                                 try:
-                                    last_row = len(worksheet.get_all_values())
-                                    if last_row <= 1:  # Only header or empty
-                                        start_row = 1  # Start after header
-                                    else:
-                                        start_row = last_row
+                                    incoming_count = len(sheet.data)
+                                    if recent_row_limit:
+                                        GoogleSheetsAdapter._prune_worksheet_to_recent_rows(
+                                            worksheet,
+                                            recent_row_limit,
+                                            incoming_count=incoming_count,
+                                        )
 
                                     # Add all new rows
                                     batch_size = 100
@@ -827,6 +883,8 @@ class GoogleSheetsAdapter:
                                     for item in sheet.data:
                                         row = [item.get(header, '') for header in headers]
                                         all_rows.append(row)
+                                    if recent_row_limit:
+                                        all_rows = all_rows[-recent_row_limit:]
 
                                     # Send in batches
                                     for i in range(0, len(all_rows), batch_size):
@@ -836,7 +894,14 @@ class GoogleSheetsAdapter:
                                 except Exception as e:
                                     print(f"Error during append: {e}")
                                     print(traceback.format_exc())
+                                    return False
                             else:
+                                if recent_row_limit:
+                                    GoogleSheetsAdapter._prune_worksheet_to_recent_rows(
+                                        worksheet,
+                                        recent_row_limit,
+                                        incoming_count=len(sheet.data),
+                                    )
                                 # For other sheets, check what's already there and only add new
                                 existing_data = worksheet.get_all_records()
 
@@ -870,6 +935,8 @@ class GoogleSheetsAdapter:
                                     for item in new_records:
                                         row = [item.get(header, '') for header in headers]
                                         all_rows.append(row)
+                                    if recent_row_limit:
+                                        all_rows = all_rows[-recent_row_limit:]
 
                                     # Send in batches
                                     for i in range(0, len(all_rows), batch_size):
@@ -998,7 +1065,7 @@ class GoogleSheetsAdapter:
                                 print(traceback.format_exc())
                                 # Fall back to rewrite if update fails
                                 print(f"Falling back to rewrite strategy")
-                                GoogleSheetsAdapter.save(spreadsheet, sheet_name, 'rewrite')
+                                return GoogleSheetsAdapter.save(spreadsheet, sheet_name, 'rewrite')
 
                     except gspread.exceptions.WorksheetNotFound:
                         # For new worksheets, create it and use full write
@@ -1041,10 +1108,14 @@ class GoogleSheetsAdapter:
                     except Exception as retry_error:
                         print(f"Retry also failed for sheet {sheet_name}: {retry_error}")
                         print(f"Retry error details: {traceback.format_exc()}")
+                        return False
+                return True
+            return False
         else:
             # Update all sheets
             for sheet_name in spreadsheet.sheets:
                 GoogleSheetsAdapter.save(spreadsheet, sheet_name, mode)
+            return True
 
     @staticmethod
     def _hash_record(record):
