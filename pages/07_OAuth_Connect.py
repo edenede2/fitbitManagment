@@ -86,6 +86,56 @@ def _select_google_client_key(label: str, *, key: str) -> str:
     return str(selected.get("client_key") or "")
 
 
+def _upsert_fitbit_watch_row(spreadsheet, row: OrderedDict, *, overwrite: bool = False) -> str:
+    """
+    Add or intentionally overwrite a watch row in the fitbit sheet.
+
+    Existing token values are not preserved when overwrite=True; the connect
+    flow is expected to replace them in the OAuth callback.
+    """
+    watch_name = str(row.get("name") or "").strip()
+    existing = GoogleSheetsAdapter.get_rows(spreadsheet, "fitbit", "name", name=watch_name)
+    if existing and not overwrite:
+        raise ValueError(f"Watch '{watch_name}' already exists")
+
+    if not existing:
+        GoogleSheetsAdapter.append_rows(spreadsheet, "fitbit", [row])
+        return "added"
+
+    workbook = spreadsheet.get_gspread_connection()
+    ws = workbook.worksheet("fitbit")
+    headers = [str(header or "").strip() for header in ws.row_values(1)]
+    missing_headers = [key for key in row.keys() if key not in headers]
+    if missing_headers:
+        headers = headers + missing_headers
+        ws.resize(cols=len(headers))
+        ws.update("1:1", [headers])
+
+    name_col = headers.index("name") + 1
+    row_number = None
+    for idx, value in enumerate(ws.col_values(name_col), start=1):
+        if idx == 1:
+            continue
+        if str(value).strip() == watch_name:
+            row_number = idx
+            break
+
+    if row_number is None:
+        GoogleSheetsAdapter.append_rows(spreadsheet, "fitbit", [row])
+        return "added"
+
+    updates = []
+    for col_idx, header in enumerate(headers, start=1):
+        if header in row:
+            updates.append({
+                "range": f"fitbit!{GoogleSheetsAdapter._col_num_to_letter(col_idx)}{row_number}",
+                "values": [[row.get(header, "")]],
+            })
+    if updates:
+        workbook.values_batch_update({"data": updates, "valueInputOption": "RAW"})
+    return "overwritten"
+
+
 is_admin = str(st.session_state.get("user_role", "")).strip() == "Admin"
 
 if is_admin:
@@ -191,6 +241,14 @@ if provider == "google_health":
     )
     purpose = st.selectbox("Purpose", options=["connect", "reauth", "test"])
 is_active = st.checkbox("Active", value=True)
+overwrite_existing = st.checkbox(
+    "Overwrite existing watch row if this watch name already exists",
+    value=False,
+    help=(
+        "Use this for reauthorization/replacement. The existing fitbit row with this "
+        "watch name will be updated before generating the OAuth link."
+    ),
+)
 
 if st.button("Add watch & generate link"):
     if not new_watch or not new_watch.strip():
@@ -199,13 +257,7 @@ if st.button("Add watch & generate link"):
 
     watch_name = new_watch.strip()
 
-    # Validate the watch doesn't already exist
-    existing = GoogleSheetsAdapter.get_rows(sp, "fitbit", "name", name=watch_name)
-    if existing:
-        st.warning(f"Watch **{watch_name}** already exists in the fitbit sheet.")
-        st.stop()
-
-    # 1) Register the watch in the fitbit sheet
+    # 1) Register or intentionally overwrite the watch in the fitbit sheet.
     row = OrderedDict([
         ("project", project.strip()),
         ("name", watch_name),
@@ -224,7 +276,17 @@ if st.button("Add watch & generate link"):
         ("isActive", "TRUE" if is_active else "FALSE"),
     ])
     try:
-        GoogleSheetsAdapter.append_rows(sp, "fitbit", [row])
+        watch_row_action = _upsert_fitbit_watch_row(
+            sp,
+            row,
+            overwrite=overwrite_existing,
+        )
+    except ValueError:
+        st.warning(
+            f"Watch **{watch_name}** already exists in the fitbit sheet. "
+            "Enable overwrite if you want to replace that row before generating the link."
+        )
+        st.stop()
     except Exception as e:
         if not show_rate_limit_notice(
             e,
@@ -255,7 +317,16 @@ if st.button("Add watch & generate link"):
             st.error(f"Failed to generate authorization link: {e}")
         st.stop()
 
-    st.success(f"Watch **{watch_name}** registered! Open the link below in an **incognito** window while logged into the participant account.")
+    if watch_row_action == "overwritten":
+        st.success(
+            f"Watch **{watch_name}** overwritten. Open the link below in an "
+            "**incognito** window while logged into the participant account."
+        )
+    else:
+        st.success(
+            f"Watch **{watch_name}** registered! Open the link below in an "
+            "**incognito** window while logged into the participant account."
+        )
     st.code(url)
     st.link_button("Open authorization", url)
 
