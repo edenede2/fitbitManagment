@@ -18,9 +18,8 @@ from utils.rate_limit_ui import show_rate_limit_notice
 
 
 def _get_callback_spreadsheet() -> Spreadsheet | None:
-    if st.session_state.get("spreadsheet") is not None:
-        return st.session_state.spreadsheet
-
+    # Always use the dedicated production source. Interactive guest/authenticated
+    # session objects are deliberately ignored for participant callbacks.
     spreadsheet_key = st.secrets.get("spreadsheet_key", "")
     if not spreadsheet_key:
         return None
@@ -64,6 +63,9 @@ def handle_google_health_callback(auth_controller) -> bool:
         project = state_row["project"]
 
         cfg = get_oauth_client_config(sp, oauth_client_key)
+        # Consume the validated one-time state before the external exchange.
+        # A failed exchange therefore requires a newly generated link.
+        mark_oauth_state_used(sp, state_row=state_row, code=code)
         token_data = exchange_code_for_google_health_tokens(
             code=code,
             client_id=cfg.client_id,
@@ -87,7 +89,6 @@ def handle_google_health_callback(auth_controller) -> bool:
             token_data=token_data,
             identity=identity,
         )
-        mark_oauth_state_used(sp, state_row=state_row, code=code)
 
         log_health_api_event(
             sp,

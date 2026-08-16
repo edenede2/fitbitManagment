@@ -1,4 +1,4 @@
-# Fitbit Management System
+# Wearable Research Manager
 
 A comprehensive system for managing Fitbit device data, user information, and project details using Google Sheets as a database backend.
 

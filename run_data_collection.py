@@ -970,7 +970,7 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
 
             #  Close the HTML
             html += """
-                <p>This is an automated alert from the Fitbit Management System.</p>
+                <p>This is an automated alert from Wearable Research Manager.</p>
             </body>
             </html>
             """
@@ -1094,7 +1094,7 @@ def check_qualtrics_alerts(suspicious_numbers, config_data):
                 # Close the HTML
                 html += """
                     </table>
-                    <p>This is an automated alert from the Fitbit Management System.</p>
+                    <p>This is an automated alert from Wearable Research Manager.</p>
                 </body>
                 </html>
                 """
@@ -1202,7 +1202,7 @@ def check_late_nums_alerts(late_numbers:pl.DataFrame, config_data:pl.DataFrame):
                 # Close the HTML
                 html += """
                     </table>
-                    <p>This is an automated alert from the Fitbit Management System.</p>
+                    <p>This is an automated alert from Wearable Research Manager.</p>
                 </body>
                 </html>
                 """

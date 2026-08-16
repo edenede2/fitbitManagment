@@ -7,6 +7,7 @@ from datetime import date, timedelta
 from st_aggrid import AgGrid, GridUpdateMode 
 from st_aggrid.grid_options_builder import GridOptionsBuilder
 from controllers.agGridHelper import aggrid_polars
+from utils.access_control import require_write_access
 
 def load_spreadsheet() -> Spreadsheet:
     """Load the spreadsheet with all configuration data"""
@@ -111,6 +112,7 @@ def get_user_qualtrics_config(spreadsheet:Spreadsheet, user_email):
 
 def save_fitbit_config(spreadsheet:Spreadsheet, config_data):
     """Save Fitbit configuration for the current user"""
+    require_write_access()
     
     # Get the current configuration sheet
     fitbit_config_sheet = spreadsheet.get_sheet("fitbit_alerts_config", "fitbit_alerts_config")
@@ -205,6 +207,7 @@ def save_fitbit_config(spreadsheet:Spreadsheet, config_data):
 
 def save_qualtrics_config(spreadsheet:Spreadsheet, config_data):
     """Save Qualtrics configuration for the current user"""
+    require_write_access()
     # Get the qualtrics alerts config sheet
     config_df = pl.DataFrame(config_data)
 
@@ -246,6 +249,7 @@ def get_user_appsheet_config(spreadsheet:Spreadsheet, user_email):
 
 def save_appsheet_config(spreadsheet:Spreadsheet, config_data):
     """Save AppSheet configuration for the current user"""
+    require_write_access()
     # Get the qualtrics alerts config sheet
     config_df = pl.DataFrame(config_data)
 

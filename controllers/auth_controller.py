@@ -1,8 +1,16 @@
 import streamlit as st
 from entity.Sheet import Spreadsheet, GoogleSheetsAdapter
 from utils.sheets_cache import sheets_cache
-from model.config import get_secrets
 from utils.rate_limit_ui import show_rate_limit_notice
+from utils.access_control import (
+    AccessContext,
+    clear_data_session_state,
+    render_demo_banner,
+    render_legal_links,
+    require_real_data_access,
+    resolve_access_context,
+)
+from utils.demo_data import create_demo_spreadsheet
 
 class AuthenticationController:
     """Controller handling user authentication and authorization"""
@@ -21,11 +29,13 @@ class AuthenticationController:
             st.session_state.user_project = None
         if 'user_data' not in st.session_state:
             st.session_state.user_data = None
+        if 'demo_mode' not in st.session_state:
+            st.session_state.demo_mode = False
 
     def get_user_access(self, user_email: str) -> tuple[str, str]:
         """Return (role, project) from Streamlit secrets for a user email."""
         username = user_email.split('@')[0]
-        access_value = st.secrets.get(username, 'Guest')
+        access_value = self._lookup_secret(username)
         if access_value == 'Guest':
             return 'Guest', 'None'
 
@@ -68,65 +78,44 @@ class AuthenticationController:
                         return result
         return 'Guest'
 
+    def get_access_context(self) -> AccessContext:
+        return resolve_access_context(self.get_user_access)
+
     def render_auth_ui(self):
         """Render authentication UI in the sidebar"""
+        context = self.get_access_context()
         with st.sidebar:
             st.title("👤 User Access")
-            
-            # Check if the user is authenticated through Streamlit or in demo mode
-            try:
-                is_streamlit_logged_in = st.user is not None and hasattr(st.user, 'is_logged_in') and st.user.is_logged_in
-            except Exception:
-                is_streamlit_logged_in = False
-            
-            is_logged_in = is_streamlit_logged_in or st.session_state.get('user_role') is not None
-            
-            if is_logged_in:
-                if is_streamlit_logged_in:
-                    user_email = getattr(st.user, 'email', None)
-                    if user_email is None:
-                        st.error("Could not retrieve user email. Please try logging in again.")
-                        if st.button("Retry Login"):
-                            st.login("google")
-                        return
-                    st.write(f"Logged in as: {user_email}")
-                    # Display user role information
-                    email_prefix = st.user.email.split('@')[0]
-                    # Handle dotted email prefixes (TOML parses dots as nested tables)
-                    user_role = self._lookup_secret(email_prefix)
-                    user_project = user_role
-                else:
-                    # For demo mode
-                    st.write(f"Demo mode as: Guest")
-                    user_email = st.session_state.get('user_email', 'guest@example.com')
-                    user_role = 'Admin'
-                    user_project = 'Admin'
-                
-                st.session_state.user_email = user_email
-                st.session_state.user_role = user_role
-                st.session_state.user_project = user_project
-                
-                st.write(f"Role: {user_role}")
-                st.write(f"Project: {user_project}")
-
-                # Display logout button
+            if context.is_authenticated:
+                st.write(f"Logged in as: {context.email}")
+                st.write(f"Role: {context.role}")
+                st.write(f"Project: {context.project}")
                 if st.button("Logout", key="logout_button"):
                     self.logout_user()
+            elif context.is_guest:
+                st.write("Demo mode as: Guest")
+                st.write("Role: Guest")
+                st.write("Project: Demo")
+                render_demo_banner()
+                if st.button("Exit demo", key="logout_button"):
+                    self.logout_user()
             else:
-                if st.button("login with google", key="google_login_button"):
+                if st.button("Login with Google", key="google_login_button"):
                     self.login_with_google()
+                st.subheader("Guest demonstration")
+                st.caption("Explore fictional examples without accessing production data.")
+                if st.button("Open read-only guest demo"):
+                    self.demo_login()
 
-                # Demo login options
-                st.subheader("Demo Login")
-                
-                if st.button("Guest Demo"):
-                    self.demo_login("guest@example.com", "Guest", "Admin")
+            st.divider()
+            render_legal_links()
     
 
     @sheets_cache(timeout=300)
     def get_fibro_spreasheet(self):
         """Get or create the Fibro spreadsheet connection"""
         try:
+            require_real_data_access()
             if not self.fibro_spreadsheet:
                 # Use st.secrets to get the spreadsheet key
                 spreadsheet_key = st.secrets.get("fibro_ema_sheet", "")
@@ -146,22 +135,7 @@ class AuthenticationController:
     @sheets_cache(timeout=300)
     def get_demo_ema_spreadsheet(self):
         """Get or create the demo Fibro spreadsheet connection"""
-        try:
-            if not self.fibro_spreadsheet:
-                # Use st.secrets to get the spreadsheet key
-                spreadsheet_key = st.secrets.get("demo_fibro", "")
-                self.fibro_spreadsheet = Spreadsheet(name="Fibro EMA Database", api_key=spreadsheet_key)
-                GoogleSheetsAdapter.connect(self.fibro_spreadsheet)
-            return self.fibro_spreadsheet
-        except Exception as e:
-            if not show_rate_limit_notice(
-                e,
-                provider="google_sheets",
-                key="demo_fibro_spreadsheet",
-                context="connecting to the demo Fibro spreadsheet",
-            ):
-                st.error(f"Error connecting to demo Fibro spreadsheet: {e}")
-            return None
+        return create_demo_spreadsheet()
         
 
 
@@ -169,6 +143,7 @@ class AuthenticationController:
     def get_spreadsheet(self):
         """Get or create the main spreadsheet connection"""
         try:
+            require_real_data_access()
             if st.session_state.get("spreadsheet") is not None:
                 self.main_spreadsheet = st.session_state.spreadsheet
                 return self.main_spreadsheet
@@ -193,22 +168,7 @@ class AuthenticationController:
     @sheets_cache(timeout=300)
     def get_demo_spreadsheet(self):
         """Get or create the demo spreadsheet connection"""
-        try:
-            if not self.main_spreadsheet:
-                # Use st.secrets to get the spreadsheet key
-                spreadsheet_key = st.secrets.get("demo_key", "")
-                self.main_spreadsheet = Spreadsheet(name="Fitbit Database", api_key=spreadsheet_key)
-                GoogleSheetsAdapter.connect(self.main_spreadsheet)
-            return self.main_spreadsheet
-        except Exception as e:
-            if not show_rate_limit_notice(
-                e,
-                provider="google_sheets",
-                key="demo_spreadsheet",
-                context="connecting to the demo spreadsheet",
-            ):
-                st.error(f"Error connecting to spreadsheet: {e}")
-            return None
+        return create_demo_spreadsheet()
     
     def get_user_details(self, user_email: str) -> tuple:
         """Get user details from spreadsheet"""
@@ -249,29 +209,26 @@ class AuthenticationController:
         # This is a placeholder that will trigger Streamlit's built-in authentication
         st.login("google")
     
-    def demo_login(self, email: str, role: str, project: str):
-        """Set up a demo login with specified role and project"""
+    def demo_login(self):
+        """Start the isolated guest demonstration."""
+        email = "guest@example.invalid"
+        clear_data_session_state()
+        st.session_state.demo_mode = True
         st.session_state.user_email = email
-        st.session_state.user_role = 'Admin'
-        st.session_state.user_project = 'Admin'
+        st.session_state.user_role = 'Guest'
+        st.session_state.user_project = 'Demo'
         st.session_state.user_data = {
             'email': email,
-            'role': 'Admin',
-            'projects': ['Admin']
+            'role': 'Guest',
+            'projects': ['Demo']
         }
         st.rerun()
     
     def logout_user(self):
         """Log out the current user"""
-        # Clear session state
-        for key in ['user_email', 'user_role', 'user_project', 'user_data', 'spreadsheet', 'fibro_spreadsheet', 'demo_spreadsheet']:
-            if key in st.session_state:
-                del st.session_state[key]
-        
+        st.session_state.clear()
         try:
             st.logout()
-        except Exception as e:
+        except Exception:
             # Fallback in case the function isn't available in this Streamlit version
-            st.warning("Could not perform automatic logout. Please refresh the page.")
-            st.info("To completely log out, please use the logout option in the upper right menu.")
             st.rerun()

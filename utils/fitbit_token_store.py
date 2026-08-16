@@ -17,7 +17,8 @@ FITBIT_SHEET = "fitbit"  # where watchName is registered (and linked to project)
 
 def _append(sp: Spreadsheet, tab: str, row: OrderedDict) -> None:
     # IMPORTANT: append_rows writes values by dict order -> keep OrderedDict aligned with header order
-    GoogleSheetsAdapter.append_rows(sp, tab, [row])
+    if not GoogleSheetsAdapter.append_rows(sp, tab, [row]):
+        raise RuntimeError(f"Could not persist OAuth data in {tab}")
 
 def _update_fitbit_token(sp: Spreadsheet, watch_name: str, access_token: str) -> None:
     """Directly update the 'token' column in the fitbit sheet for the given watch.
@@ -47,12 +48,21 @@ def _update_fitbit_token(sp: Spreadsheet, watch_name: str, access_token: str) ->
     except Exception as e:
         print(f"[fitbit_token_store] Failed to update fitbit sheet token: {e}")
 
-def save_state(sp: Spreadsheet, *, state: str, watch_name: str, project: str) -> None:
+def save_state(
+    sp: Spreadsheet,
+    *,
+    state: str,
+    watch_name: str,
+    project: str,
+    ttl_seconds: int = 48 * 60 * 60,
+) -> None:
+    created_at = now_ts()
     row = OrderedDict([
         ("state", state),
         ("watchName", watch_name),
         ("project", project),
-        ("created_at", str(now_ts())),
+        ("created_at", str(created_at)),
+        ("expires_at", str(created_at + ttl_seconds)),
     ])
     _append(sp, OAUTH_STATES_TAB, row)
 
@@ -73,7 +83,18 @@ def resolve_state(sp: Spreadsheet, state: str) -> Optional[Dict[str, Any]]:
     rows = GoogleSheetsAdapter.get_rows(sp, OAUTH_STATES_TAB, "state", state=state)
     if not rows:
         return None
-    return rows[-1]
+    state_row = rows[-1]
+    try:
+        expires_at = int(state_row.get("expires_at", 0) or 0)
+        if not expires_at:
+            created_at = int(state_row.get("created_at", 0) or 0)
+            expires_at = created_at + (48 * 60 * 60) if created_at else 0
+    except (TypeError, ValueError):
+        return None
+
+    if not expires_at or now_ts() > expires_at:
+        return None
+    return state_row
 
 def save_tokens_for_watch(sp: Spreadsheet, *, watch_name: str, token_json: dict) -> None:
     expires_in = int(token_json.get("expires_in", 0) or 0)
