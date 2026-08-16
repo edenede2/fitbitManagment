@@ -1,13 +1,13 @@
 import streamlit as st
 from pathlib import Path
-import time
 
 # Import controllers
 from controllers.auth_controller import AuthenticationController
 from controllers.user_controller import UserController
 
-from utils.fitbit_oauth import exchange_code_for_tokens
-from utils.fitbit_token_store import resolve_state, is_state_used, mark_state_used, save_tokens_for_watch
+from utils.fitbit_callback import handle_fitbit_callback
+from utils.google_health_callback import handle_google_health_callback
+from utils.rate_limit_ui import show_rate_limit_notice
 
 # Set up app configuration
 st.set_page_config(
@@ -17,70 +17,14 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-def handle_fitbit_callback(auth_controller: AuthenticationController) -> bool:
-    """
-    Handles Fitbit OAuth callback even if participant is NOT logged into our app.
-    Returns True if it handled a callback (and we should stop further rendering).
-    """
-    qp = st.query_params
-    if qp.get("fitbit_callback") != "1":
-        return False
-
-    code = qp.get("code")
-    state = qp.get("state")
-    if not code or not state:
-        st.error("OAuth callback missing code/state")
-        return True
-
-    sp = auth_controller.get_spreadsheet()
-    if sp is None:
-        st.error("Could not connect to spreadsheet for OAuth callback")
-        return True
-
-    # prevent replay
-    if is_state_used(sp, state):
-        st.error("This OAuth link was already used. Please generate a new one.")
-        return True
-
-    state_row = resolve_state(sp, state)
-    if not state_row:
-        st.error("Unknown state. Please generate a new connect link from the lab app.")
-        return True
-
-    watch_name = state_row.get("watchName")
-    if not watch_name:
-        st.error("State record missing watchName")
-        return True
-
-    # Exchange code -> tokens
-    try:
-        token_json = exchange_code_for_tokens(code)
-    except Exception as e:
-        st.error(f"Token exchange failed: {e}")
-        return True
-
-    # Store tokens for this watch
-    try:
-        save_tokens_for_watch(sp, watch_name=watch_name, token_json=token_json)
-        mark_state_used(sp, state=state, watch_name=watch_name)
-    except Exception as e:
-        st.error(f"Failed to store tokens: {e}")
-        return True
-
-    st.success(f"✅ Watch '{watch_name}' connected successfully. You can close this tab.")
-    # clear params to avoid re-processing on rerun
-    try:
-        st.query_params.clear()
-    except Exception:
-        pass
-    return True
-
 def main():
     """Main application function - handles authentication and session state"""
     # Initialize authentication controller
     auth_controller = AuthenticationController()
     
     # 1) handle callback FIRST (no login required)
+    if handle_google_health_callback(auth_controller):
+        st.stop()
     if handle_fitbit_callback(auth_controller):
         st.stop()
     # Handle authentication in sidebar
@@ -109,12 +53,7 @@ def main():
                 if user_email is None:
                     st.error("Could not retrieve user email. Please refresh and try again.")
                     st.stop()
-                user_project = st.secrets.get(user_email.split('@')[0], 'None')
-                if user_project is not None:
-                    user_project = user_project.split(',')[0]
-                user_role = st.secrets.get(user_email.split('@')[0], 'Guest')
-                if user_role != 'Guest':
-                    user_role = user_role.split(',')[1].strip()
+                user_role, user_project = auth_controller.get_user_access(user_email)
 
                 # user = UserController().get_user_by_email(user_email)
                 
@@ -127,10 +66,6 @@ def main():
             else:
                 # Demo mode
                 st.session_state.user_email = "demo@example.com"
-            
-            # Display logout button
-            st.sidebar.button("Logout", on_click=auth_controller.logout_user)
-            st.sidebar.info("To log out, click the 'Logout' button above.")
             
             # Add page descriptions
             st.sidebar.markdown("## App Pages")
@@ -160,10 +95,12 @@ def main():
             st.write("Click the 'Logout' button in the sidebar to log out.")
             
         except Exception as e:
-            if "429" in str(e) or "Quota exceeded" in str(e):
-                st.error("Google Sheets API rate limit exceeded. Please wait a moment and try again.")
-                time.sleep(2)
-            else:
+            if not show_rate_limit_notice(
+                e,
+                provider="google_sheets",
+                key="main_app",
+                context="loading the app data",
+            ):
                 st.error(f"An error occurred: {e}")
     else:
         # Not logged in - show welcome screen
@@ -172,7 +109,6 @@ def main():
         
         # Show login instructions
         st.info("Use the sidebar to log in. Click the 'login with google' button to authenticate.")
-        st.sidebar.button("login with google", on_click=auth_controller.login_with_google)
         
         # Add page descriptions for non-logged in users
         st.markdown("## Features Available After Login:")
@@ -191,4 +127,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

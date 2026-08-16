@@ -1,14 +1,31 @@
 # pages/🔑 OAuth Connect.py
 import streamlit as st
 from controllers.auth_controller import AuthenticationController
-from utils.fitbit_oauth import new_state, build_authorize_url
-from utils.fitbit_token_store import save_state
 from collections import OrderedDict
 from entity.Sheet import GoogleSheetsAdapter
+from utils.fitbit_callback import handle_fitbit_callback
+from utils.google_health_callback import handle_google_health_callback
+from utils.health_connect_links import create_health_connect_link
+from utils.health_oauth_clients import (
+    DEFAULT_GOOGLE_HEALTH_SCOPES,
+    load_active_oauth_clients,
+    make_default_client_key,
+    parse_google_oauth_client_json,
+    scopes_to_string,
+    suggest_google_health_redirect_uri,
+    upsert_oauth_client_config,
+)
+from utils.rate_limit_ui import show_rate_limit_notice
 
 st.set_page_config(page_title="OAuth Connect", page_icon="🔑", layout="wide")
 
 auth_controller = AuthenticationController()
+
+if handle_google_health_callback(auth_controller):
+    st.stop()
+if handle_fitbit_callback(auth_controller):
+    st.stop()
+
 auth_controller.render_auth_ui()
 
 # Require login
@@ -30,14 +47,208 @@ if sp is None:
     st.error("Could not connect to spreadsheet")
     st.stop()
 
-st.title("🔑 Connect Demo Account to a Watch (Fitbit OAuth)")
+st.title("🔑 Connect Account to a Watch")
+
+
+def _active_google_client_rows():
+    try:
+        return load_active_oauth_clients(sp, provider="google_health")
+    except Exception as e:
+        if not show_rate_limit_notice(
+            e,
+            provider="google_sheets",
+            key="oauth_connect_google_clients",
+            context="loading Google Health OAuth clients",
+        ):
+            st.warning(f"Could not load Google Health OAuth clients: {e}")
+        return []
+
+
+def _client_label(row: dict) -> str:
+    env = row.get("enviroment") or row.get("environment") or "staging"
+    notes = row.get("notes") or row.get("client_id") or ""
+    suffix = f" - {notes}" if notes else ""
+    return f"{row.get('client_key', '')} ({env}){suffix}"
+
+
+def _select_google_client_key(label: str, *, key: str) -> str:
+    client_rows = _active_google_client_rows()
+    if not client_rows:
+        st.warning("No active Google Health OAuth clients found in health_oauth_clients.")
+        return st.text_input(label, value="google_health_staging", key=key)
+
+    selected = st.selectbox(
+        label,
+        options=client_rows,
+        format_func=_client_label,
+        key=key,
+    )
+    return str(selected.get("client_key") or "")
+
+
+def _upsert_fitbit_watch_row(spreadsheet, row: OrderedDict, *, overwrite: bool = False) -> str:
+    """
+    Add or intentionally overwrite a watch row in the fitbit sheet.
+
+    Existing token values are not preserved when overwrite=True; the connect
+    flow is expected to replace them in the OAuth callback.
+    """
+    watch_name = str(row.get("name") or "").strip()
+    existing = GoogleSheetsAdapter.get_rows(spreadsheet, "fitbit", "name", name=watch_name)
+    if existing and not overwrite:
+        raise ValueError(f"Watch '{watch_name}' already exists")
+
+    if not existing:
+        GoogleSheetsAdapter.append_rows(spreadsheet, "fitbit", [row])
+        return "added"
+
+    workbook = spreadsheet.get_gspread_connection()
+    ws = workbook.worksheet("fitbit")
+    headers = [str(header or "").strip() for header in ws.row_values(1)]
+    missing_headers = [key for key in row.keys() if key not in headers]
+    if missing_headers:
+        headers = headers + missing_headers
+        ws.resize(cols=len(headers))
+        ws.update("1:1", [headers])
+
+    name_col = headers.index("name") + 1
+    row_number = None
+    for idx, value in enumerate(ws.col_values(name_col), start=1):
+        if idx == 1:
+            continue
+        if str(value).strip() == watch_name:
+            row_number = idx
+            break
+
+    if row_number is None:
+        GoogleSheetsAdapter.append_rows(spreadsheet, "fitbit", [row])
+        return "added"
+
+    updates = []
+    for col_idx, header in enumerate(headers, start=1):
+        if header in row:
+            updates.append({
+                "range": f"fitbit!{GoogleSheetsAdapter._col_num_to_letter(col_idx)}{row_number}",
+                "values": [[row.get(header, "")]],
+            })
+    if updates:
+        workbook.values_batch_update({"data": updates, "valueInputOption": "RAW"})
+    return "overwritten"
+
+
+is_admin = str(st.session_state.get("user_role", "")).strip() == "Admin"
+
+if is_admin:
+    with st.expander("Admin: upload Google OAuth client JSON"):
+        uploaded_client = st.file_uploader(
+            "Google OAuth client JSON",
+            type=["json"],
+            key="google_oauth_client_json",
+        )
+
+        if uploaded_client is not None:
+            try:
+                raw_json = uploaded_client.getvalue().decode("utf-8")
+                parsed_client = parse_google_oauth_client_json(raw_json)
+                redirect_uris = parsed_client.get("redirect_uris") or []
+                default_env = "staging"
+                default_client_key = make_default_client_key(parsed_client, default_env)
+
+                st.write(f"Client ID: `{parsed_client['client_id']}`")
+                if redirect_uris:
+                    redirect_uri = st.selectbox(
+                        "Redirect URI from JSON",
+                        options=redirect_uris,
+                        key="uploaded_redirect_uri_select",
+                    )
+                else:
+                    redirect_uri = ""
+                suggested_redirect_uri = suggest_google_health_redirect_uri(redirect_uri)
+                if redirect_uri != suggested_redirect_uri:
+                    st.warning(
+                        "The JSON redirect URI is Streamlit's internal login callback. "
+                        "Google Health OAuth must use the app callback URI below, and that exact URI must be added in Google Cloud."
+                    )
+
+                with st.form("save_google_oauth_client_form"):
+                    client_key = st.text_input("Client key", value=default_client_key)
+                    enviroment = st.selectbox("Environment", options=["dev", "staging", "production"], index=1)
+                    redirect_uri = st.text_input("Redirect URI to save", value=suggested_redirect_uri)
+                    scopes = st.text_area(
+                        "Scopes",
+                        value=scopes_to_string(DEFAULT_GOOGLE_HEALTH_SCOPES),
+                        height=90,
+                    )
+                    status = st.selectbox("Status", options=["active", "disabled", "rotated"])
+                    notes = st.text_input("Notes", value=parsed_client.get("project_id", ""))
+                    save_client = st.form_submit_button("Save OAuth client")
+
+                if save_client:
+                    if not client_key.strip():
+                        st.error("Client key is required")
+                        st.stop()
+                    if not redirect_uri.strip():
+                        st.error("Redirect URI is required")
+                        st.stop()
+
+                    try:
+                        upsert_oauth_client_config(
+                            sp,
+                            client_key=client_key.strip(),
+                            provider="google_health",
+                            enviroment=enviroment,
+                            client_id=parsed_client["client_id"],
+                            client_secret=parsed_client["client_secret"],
+                            credentials_json_raw=raw_json,
+                            redirect_uri=redirect_uri.strip(),
+                            auth_uri=parsed_client["auth_uri"],
+                            token_uri=parsed_client["token_uri"],
+                            scopes=scopes,
+                            status=status,
+                            notes=notes,
+                        )
+                    except Exception as e:
+                        if not show_rate_limit_notice(
+                            e,
+                            provider="google_sheets",
+                            key="save_google_oauth_client",
+                            context="saving the OAuth client",
+                        ):
+                            raise
+                        st.stop()
+                    st.success(f"Saved OAuth client `{client_key.strip()}`.")
+            except Exception as e:
+                st.error(f"Could not parse/save OAuth client JSON: {e}")
+else:
+    st.caption("Only admin users can upload Google OAuth client JSON.")
 
 # ── Single form: add a new watch and generate an OAuth link ──
 st.subheader("Add a new watch & generate authorization link")
 
 new_watch = st.text_input("Watch name (unique)", placeholder="e.g., NOVA_013")
 project = st.text_input("Project", value=str(st.session_state.get("user_project", "")))
+provider = st.selectbox(
+    "Provider",
+    options=["fitbit", "google_health"],
+    format_func=lambda value: "Fitbit legacy" if value == "fitbit" else "Google Health",
+)
+oauth_client_key = ""
+purpose = "connect"
+if provider == "google_health":
+    oauth_client_key = _select_google_client_key(
+        "Google Cloud project / OAuth client",
+        key="new_google_oauth_client_key",
+    )
+    purpose = st.selectbox("Purpose", options=["connect", "reauth", "test"])
 is_active = st.checkbox("Active", value=True)
+overwrite_existing = st.checkbox(
+    "Overwrite existing watch row if this watch name already exists",
+    value=False,
+    help=(
+        "Use this for reauthorization/replacement. The existing fitbit row with this "
+        "watch name will be updated before generating the OAuth link."
+    ),
+)
 
 if st.button("Add watch & generate link"):
     if not new_watch or not new_watch.strip():
@@ -46,26 +257,129 @@ if st.button("Add watch & generate link"):
 
     watch_name = new_watch.strip()
 
-    # Validate the watch doesn't already exist
-    existing = GoogleSheetsAdapter.get_rows(sp, "fitbit", "name", name=watch_name)
-    if existing:
-        st.warning(f"Watch **{watch_name}** already exists in the fitbit sheet.")
-        st.stop()
-
-    # 1) Register the watch in the fitbit sheet
+    # 1) Register or intentionally overwrite the watch in the fitbit sheet.
     row = OrderedDict([
         ("project", project.strip()),
         ("name", watch_name),
         ("token", ""),
+        ("oauth_type", provider),
+        ("provider", provider),
+        ("oauth_client_key", oauth_client_key),
+        ("auth_status", "not_connected"),
+        ("health_user_id", ""),
+        ("legacy_fitbit_user_id", ""),
+        ("last_successful_fetch_at", ""),
+        ("last_data_timestamp", ""),
+        ("last_auth_error", ""),
+        ("reauth_link", ""),
+        ("reauth_link_created_at", ""),
         ("isActive", "TRUE" if is_active else "FALSE"),
     ])
-    GoogleSheetsAdapter.append_rows(sp, "fitbit", [row])
+    try:
+        watch_row_action = _upsert_fitbit_watch_row(
+            sp,
+            row,
+            overwrite=overwrite_existing,
+        )
+    except ValueError:
+        st.warning(
+            f"Watch **{watch_name}** already exists in the fitbit sheet. "
+            "Enable overwrite if you want to replace that row before generating the link."
+        )
+        st.stop()
+    except Exception as e:
+        if not show_rate_limit_notice(
+            e,
+            provider="google_sheets",
+            key="register_watch",
+            context="registering the watch",
+        ):
+            st.error(f"Failed to register watch: {e}")
+        st.stop()
 
     # 2) Generate OAuth state & authorization URL
-    state = new_state()
-    save_state(sp, state=state, watch_name=watch_name, project=project.strip())
-    url = build_authorize_url(state)
+    try:
+        url = create_health_connect_link(
+            sp,
+            watchName=watch_name,
+            project=project.strip(),
+            provider=provider,
+            oauth_client_key=oauth_client_key,
+            purpose=purpose,
+            created_by=st.session_state.get("user_email"),
+        )
+    except Exception as e:
+        if not show_rate_limit_notice(
+            e,
+            key="new_watch_authorization_link",
+            context="generating the authorization link",
+        ):
+            st.error(f"Failed to generate authorization link: {e}")
+        st.stop()
 
-    st.success(f"Watch **{watch_name}** registered! Open the link below in an **incognito** window while logged into the participant demo account.")
+    if watch_row_action == "overwritten":
+        st.success(
+            f"Watch **{watch_name}** overwritten. Open the link below in an "
+            "**incognito** window while logged into the participant account."
+        )
+    else:
+        st.success(
+            f"Watch **{watch_name}** registered! Open the link below in an "
+            "**incognito** window while logged into the participant account."
+        )
+    st.code(url)
+    st.link_button("Open authorization", url)
+
+st.subheader("Generate a new link for an existing watch")
+existing_watch = st.text_input("Existing watch name", key="existing_watch_name")
+existing_project = st.text_input(
+    "Existing watch project",
+    value=str(st.session_state.get("user_project", "")),
+    key="existing_watch_project",
+)
+existing_provider = st.selectbox(
+    "Existing watch provider",
+    options=["fitbit", "google_health"],
+    format_func=lambda value: "Fitbit legacy" if value == "fitbit" else "Google Health",
+    key="existing_provider",
+)
+existing_client_key = ""
+existing_purpose = "reauth"
+if existing_provider == "google_health":
+    existing_client_key = _select_google_client_key(
+        "Existing watch Google Cloud project / OAuth client",
+        key="existing_client_key",
+    )
+    existing_purpose = st.selectbox(
+        "Existing watch link purpose",
+        options=["reauth", "connect", "test"],
+        key="existing_purpose",
+    )
+
+if st.button("Generate link for existing watch"):
+    if not existing_watch or not existing_watch.strip():
+        st.error("Existing watch name is required")
+        st.stop()
+
+    try:
+        url = create_health_connect_link(
+            sp,
+            watchName=existing_watch.strip(),
+            project=existing_project.strip(),
+            provider=existing_provider,
+            oauth_client_key=existing_client_key,
+            purpose=existing_purpose,
+            created_by=st.session_state.get("user_email"),
+        )
+    except Exception as e:
+        if not show_rate_limit_notice(
+            e,
+            key="existing_watch_authorization_link",
+            context="generating the authorization link",
+        ):
+            st.error(f"Failed to generate authorization link: {e}")
+        st.stop()
+
+    st.success(f"Authorization link generated for **{existing_watch.strip()}**.")
     st.code(url)
     st.link_button("Open authorization", url)

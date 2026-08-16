@@ -10,6 +10,7 @@ import pandas as pd  # Add explicit pandas import
 import json  # Add import for watch status tracking
 
 import smtplib
+import unicodedata
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 # Add project root to Python path if necessary
@@ -21,17 +22,51 @@ if project_root not in sys.path:
 from entity.Sheet import Spreadsheet, GoogleSheetsAdapter, ServerLogFile, SheetFactory
 from entity.Watch import Watch, WatchFactory
 from dotenv import load_dotenv
+from model.config import get_secrets
+
+def load_runtime_config():
+    """
+    Load cron/runtime configuration from .env and the local Streamlit secrets file.
+    The Streamlit Cloud app has its own secrets; this server uses .streamlit/secrets.toml.
+    """
+    load_dotenv()
+    try:
+        secrets = get_secrets()
+    except Exception as e:
+        print(f"Warning: could not load local secrets.toml: {e}")
+        return
+
+    env_mappings = {
+        "SPREADSHEET_KEY": ("spreadsheet_key",),
+        "BULLDOG_SPREADSHEET_KEY": ("bulldog_spreadsheet_key", "buldog_spreadsheet_key"),
+        "SENDER_EMAIL_ADDRESS": ("sender_email_address", "SENDER_EMAIL_ADDRESS"),
+        "SENDER_EMAIL_PASSWORD": ("sender_email_password", "SENDER_EMAIL_PASSWORD"),
+        "SMTP_SERVER": ("smtp_server", "SMTP_SERVER"),
+        "SMTP_PORT": ("smtp_port", "SMTP_PORT"),
+        "FITBIT_CLIENT_ID": ("FITBIT_CLIENT_ID", "fitbit_client_id"),
+        "FITBIT_CLIENT_SECRET": ("FITBIT_CLIENT_SECRET", "fitbit_client_secret"),
+        "FITBIT_REDIRECT_URI": ("FITBIT_REDIRECT_URI", "fitbit_redirect_uri"),
+        "FITBIT_SCOPES": ("FITBIT_SCOPES", "fitbit_scopes"),
+    }
+    for env_key, secret_keys in env_mappings.items():
+        if os.getenv(env_key):
+            continue
+        for secret_key in secret_keys:
+            value = secrets.get(secret_key, "")
+            if value:
+                os.environ[env_key] = str(value)
+                break
 
 def get_watch_status_history():
     """
     Load watch status history from a local JSON file.
     This tracks which watches were active in previous runs.
-    
+
     Returns:
         dict: Dictionary mapping watch IDs to their previous status
     """
     status_file = Path(project_root) / "data" / "watch_status_history.json"
-    
+
     if status_file.exists():
         try:
             with open(status_file, 'r') as f:
@@ -45,15 +80,15 @@ def get_watch_status_history():
 def save_watch_status_history(status_data):
     """
     Save watch status history to a local JSON file.
-    
+
     Args:
         status_data (dict): Dictionary mapping watch IDs to their status
     """
     status_file = Path(project_root) / "data" / "watch_status_history.json"
-    
+
     # Create directory if it doesn't exist
     status_file.parent.mkdir(parents=True, exist_ok=True)
-    
+
     try:
         with open(status_file, 'w') as f:
             json.dump(status_data, f)
@@ -69,36 +104,36 @@ def analyze_whatsapp_messages():
     Updates the LateNums and SuspiciousNums sheets accordingly.
     """
     print(f"[{datetime.datetime.now()}] Starting WhatsApp message analysis...")
-    
+
     try:
-        # Load environment variables for API keys
-        load_dotenv()
-        
+        # Load environment variables and local server secrets for API keys
+        load_runtime_config()
+
         # Get spreadsheet keys from environment
         spreadsheet_key = os.getenv("SPREADSHEET_KEY")
         bulldog_spreadsheet_key = os.getenv("BULLDOG_SPREADSHEET_KEY")
-        
+
         if not spreadsheet_key or not bulldog_spreadsheet_key:
             print("Missing required spreadsheet keys in environment variables")
             return False
-        
+
         # Create spreadsheet instances
         alert_spreadsheet = Spreadsheet(name="FitbitData", api_key=spreadsheet_key)
         GoogleSheetsAdapter.connect(alert_spreadsheet)
-        
+
         whatsapp_spreadsheet = Spreadsheet(name="BulldogData", api_key=bulldog_spreadsheet_key)
         GoogleSheetsAdapter.connect(whatsapp_spreadsheet)
-        
+
         # Get required sheets
         bulldog_sheet = whatsapp_spreadsheet.get_sheet("bulldog", sheet_type="bulldog")
         alert_sheet = alert_spreadsheet.get_sheet("EMA", sheet_type="EMA")
-        
+
         # Get the existing suspicious and late number sheets to check for accepted entries
         existing_suspicious_nums = None
         existing_late_nums = None
         existing_suspicious_nums_df = None
         existing_late_nums_df = None
-        
+
         try:
             if "suspicious_nums" in alert_spreadsheet.sheets:
                 existing_suspicious_nums = alert_spreadsheet.get_sheet("suspicious_nums", sheet_type="suspicious_nums")
@@ -109,7 +144,7 @@ def analyze_whatsapp_messages():
                         pl.col('accepted').cast(pl.Utf8).alias('accepted')
                     )
                 print(f"Loaded suspicious_nums sheet with schema: {existing_suspicious_nums_df.schema}")
-            
+
             if "late_nums" in alert_spreadsheet.sheets:
                 existing_late_nums = alert_spreadsheet.get_sheet("late_nums", sheet_type="late_nums")
                 existing_late_nums_df = existing_late_nums.to_dataframe(engine="polars")
@@ -122,31 +157,31 @@ def analyze_whatsapp_messages():
         except Exception as e:
             print(f"Error retrieving existing number sheets: {e}")
             print(traceback.format_exc())
-        
+
         # Get threshold from qualtrics_alerts_config or use default
         hours_threshold = 48  # Default threshold
         config_sheet = alert_spreadsheet.get_sheet("qualtrics_alerts_config", sheet_type="qualtrics_alerts_config")
         config_df = config_sheet.to_dataframe(engine="polars")
-        
+
         if not config_df.is_empty() and 'hoursThr' in config_df.columns:
             try:
                 hours_threshold = float(config_df.select(pl.col('hoursThr')).row(0)[0])
                 print(f"Using hours threshold from config: {hours_threshold}")
             except (ValueError, IndexError) as e:
                 print(f"Error reading threshold from config, using default: {e}")
-        
+
         # Use AlertAnalyzer to identify late responses and suspicious numbers
         from entity.Sheet import AlertAnalyzer
         recent_messages, suspicious_numbers = AlertAnalyzer.analyze_whatsapp_messages(
             bulldog_sheet, alert_sheet, hours_threshold
         )
-        
+
         # Prepare late responses data (messages within threshold but close to expiring)
         late_threshold = hours_threshold * 0.75  # Consider "late" when 75% of time has passed
         late_responses = recent_messages.filter(
             pl.col('hours_left') < (hours_threshold - late_threshold)
         ).select([ 'phone', 'time', 'hours_left'])
-        
+
         # Format late responses for the LateNums sheet
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         late_nums_data = []
@@ -157,7 +192,7 @@ def analyze_whatsapp_messages():
                 try:
                     # Safely filter with type handling
                     matches = existing_late_nums_df.filter(
-                        (pl.col('nums').cast(pl.Utf8) == str(row['phone'])) & 
+                        (pl.col('nums').cast(pl.Utf8) == str(row['phone'])) &
                         (pl.col('accepted').cast(pl.Utf8).str.to_uppercase() == 'TRUE')
                     )
                     if not matches.is_empty():
@@ -165,7 +200,7 @@ def analyze_whatsapp_messages():
                 except Exception as e:
                     print(f"Error filtering late_nums: {e}")
                     # Continue without filtering
-            
+
             if not should_skip:
                 late_nums_data.append({
                     'nums': row['phone'],
@@ -174,7 +209,7 @@ def analyze_whatsapp_messages():
                     'lastUpdated': now,
                     'accepted': 'FALSE'
                 })
-        
+
         # Format suspicious numbers for the SuspiciousNums sheet
         suspicious_nums_data = []
         for row in suspicious_numbers.iter_rows(named=True):
@@ -184,7 +219,7 @@ def analyze_whatsapp_messages():
                 try:
                     # Safely filter with type handling
                     matches = existing_suspicious_nums_df.filter(
-                        (pl.col('nums').cast(pl.Utf8) == str(row['phone'])) & 
+                        (pl.col('nums').cast(pl.Utf8) == str(row['phone'])) &
                         (pl.col('accepted').cast(pl.Utf8).str.to_uppercase() == 'TRUE')
                     )
                     if not matches.is_empty():
@@ -192,7 +227,7 @@ def analyze_whatsapp_messages():
                 except Exception as e:
                     print(f"Error filtering suspicious_nums: {e}")
                     # Continue without filtering
-            
+
             if not should_skip:
                 # Check if 'endDate' exists, otherwise use current time
                 filled_time = row.get('endDate', now) if hasattr(row, 'get') else now
@@ -202,7 +237,7 @@ def analyze_whatsapp_messages():
                     'lastUpdated': now,
                     'accepted': row.get('accepted', 'FALSE')
                 })
-        
+
         # Make sure we have the sheets before updating
         try:
             # Update LateNums sheet
@@ -212,14 +247,14 @@ def analyze_whatsapp_messages():
                     print("Creating late_nums sheet")
                     late_nums_sheet = SheetFactory.create_sheet("late_nums", "late_nums")
                     alert_spreadsheet.sheets["late_nums"] = late_nums_sheet
-                
+
                 # Update sheet data
                 alert_spreadsheet.sheets["late_nums"].data = late_nums_data
                 GoogleSheetsAdapter.save(alert_spreadsheet, "late_nums")
                 print(f"Updated LateNums sheet with {len(late_nums_data)} records")
             else:
                 print("No late responses found")
-            
+
             # Update SuspiciousNums sheet
             if suspicious_nums_data:
                 # Check if sheet exists and create if not
@@ -227,7 +262,7 @@ def analyze_whatsapp_messages():
                     print("Creating suspicious_nums sheet")
                     suspicious_nums_sheet = SheetFactory.create_sheet("suspicious_nums", "suspicious_nums")
                     alert_spreadsheet.sheets["suspicious_nums"] = suspicious_nums_sheet
-                
+
                 # Update sheet data - use direct assignment instead of update_sheet with append
                 alert_spreadsheet.update_sheet("suspicious_nums", suspicious_nums_data, strategy="append")
                 # alert_spreadsheet.sheets["suspicious_nums"].data = suspicious_nums_data
@@ -238,98 +273,104 @@ def analyze_whatsapp_messages():
         except Exception as sheet_error:
             print(f"Error updating sheets: {sheet_error}")
             print(traceback.format_exc())
-        
+
         # Generate a report
         report = AlertAnalyzer.generate_alert_report(recent_messages, suspicious_numbers)
-        
+
         # Save report to file
         report_dir = Path(project_root) / "reports"
         report_dir.mkdir(parents=True, exist_ok=True)
         report_file = report_dir / f"whatsapp_report_{datetime.datetime.now().strftime('%Y-%m-%d')}.txt"
         with open(report_file, "w") as f:
             f.write(report)
-        
+
         print(f"[{datetime.datetime.now()}] WhatsApp message analysis completed successfully")
         print(f"Report saved to {report_file}")
         return True
-    
+
     except Exception as e:
         print(f"Error during WhatsApp message analysis: {e}")
         print(traceback.format_exc())
         return False
-    
+
 def get_watch_details(spreadsheet:Spreadsheet) -> pl.DataFrame:
     """
     Fetches watch details from the spreadsheet and returns them as a Polars DataFrame.
     Only returns active watches.
-    
+
     Returns:
         pl.DataFrame: A DataFrame containing active watch details.
     """
     # Load environment variables for API key
     # load_dotenv()
-    
+
     # # Get spreadsheet key from environment
     # spreadsheet_key = os.getenv("SPREADSHEET_KEY")
     # if not spreadsheet_key:
     #     raise ValueError("SPREADSHEET_KEY not found in environment variables")
-    
+
     # Create new Spreadsheet instance directly
     # spreadsheet = Spreadsheet(name="FitbitData", api_key=spreadsheet_key)
     # GoogleSheetsAdapter.connect(spreadsheet)
-    
+
     # Get the fitbit sheet
     fitbit_sheet = spreadsheet.get_sheet("fitbit", sheet_type="fitbit")
-    
+
     # Convert to DataFrame and filter for active watches
     df = fitbit_sheet.to_dataframe(engine="pandas")
-    
+
     # Ensure consistent column naming - rename 'name' column to match expected format
     if 'name' in df.columns and 'project' in df.columns:
         # Copy to avoid SettingWithCopyWarning
         df = df.copy()
         # Ensure both name and project columns exist and use consistent names
         print(f"DataFrame columns before: {df.columns.tolist()}")
-    
 
-    active_watches = df[df['isActive'].str.upper() != 'FALSE'].copy() if 'isActive' in df.columns else df
-    
+
+    if 'isActive' in df.columns:
+        active_mask = df['isActive'].astype(str).str.upper() != 'FALSE'
+        active_watches = df[active_mask].copy()
+    else:
+        active_watches = df.copy()
+
     # Log the result for debugging
     print(f"Found {len(active_watches)} active watches with columns: {active_watches.columns.tolist()}")
-    
-    # Convert to polars DataFrame for return
+
+    # Google Sheets can mix booleans, ints, and strings in OAuth columns; normalize
+    # before handing the data to Polars so the cron job does not stop before API work.
+    active_watches = active_watches.fillna("").astype(str)
     return pl.from_pandas(active_watches)
 
 def save_to_csv(data: pl.DataFrame) -> None:
     """
     Saves watch data to a CSV file, appending to existing data.
-    
+
     Args:
         data (pl.DataFrame): The watch data to save.
     """
     # Create directory if it doesn't exist
     csv_dir = Path(project_root) / "data"
     csv_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Convert all data to strings to avoid type mismatches
     data_str = data.select([
         pl.col(col).cast(pl.Utf8) for col in data.columns
     ])
-    
+
     # Create filename with today's date
     today = datetime.datetime.now().strftime("%Y-%m-%d")
     csv_file = csv_dir / f"fitbit_data_{today}.csv"
-    
+
     # Append or create CSV file
     if csv_file.exists():
         try:
             existing_data = pl.read_csv(csv_file)
-            
+
             # Ensure column types are consistent by converting all to strings
             existing_data_str = existing_data.select([
                 pl.col(col).cast(pl.Utf8) for col in existing_data.columns
             ])
-            
+
             # Check if schemas match (column names)
             if set(existing_data_str.columns) != set(data_str.columns):
                 print(f"Warning: Column mismatch between existing data and new data")
@@ -337,7 +378,7 @@ def save_to_csv(data: pl.DataFrame) -> None:
                 common_cols = list(set(existing_data_str.columns).intersection(set(data_str.columns)))
                 existing_data_str = existing_data_str.select(common_cols)
                 data_str = data_str.select(common_cols)
-            
+
             combined_data = pl.concat([existing_data_str, data_str], how="vertical")
             combined_data.write_csv(csv_file)
             print(f"Updated daily CSV file with {len(data)} new records")
@@ -349,18 +390,18 @@ def save_to_csv(data: pl.DataFrame) -> None:
     else:
         data_str.write_csv(csv_file)
         print(f"Created new daily CSV file with {len(data)} records")
-    
+
     # Also save to a complete history file
     history_file = csv_dir / "fitbit_data_complete.csv"
     if history_file.exists():
         try:
             existing_data = pl.read_csv(history_file)
-            
+
             # Ensure column types are consistent
             existing_data_str = existing_data.select([
                 pl.col(col).cast(pl.Utf8) for col in existing_data.columns
             ])
-            
+
             # Check if schemas match
             if set(existing_data_str.columns) != set(data_str.columns):
                 print(f"Warning: Column mismatch between history data and new data")
@@ -368,7 +409,7 @@ def save_to_csv(data: pl.DataFrame) -> None:
                 common_cols = list(set(existing_data_str.columns).intersection(set(data_str.columns)))
                 existing_data_str = existing_data_str.select(common_cols)
                 data_str = data_str.select(common_cols)
-                
+
             combined_data = pl.concat([existing_data_str, data_str], how="vertical")
             combined_data.write_csv(history_file)
             print(f"Updated history CSV file with {len(data)} new records")
@@ -382,68 +423,91 @@ def save_to_csv(data: pl.DataFrame) -> None:
         print(f"Created new history CSV file with {len(data)} records")
 
 
+def _clean_email_address(email_address):
+    """Remove invisible/control characters that SMTP cannot encode in RCPT commands."""
+    cleaned = "".join(
+        char
+        for char in str(email_address or "")
+        if unicodedata.category(char) not in {"Cf", "Cc"}
+    ).strip()
+    return cleaned
+
+
 def send_email_alert(recipient_email, subject, message_body):
     """
     Sends an email alert to the specified recipient.
-    
+
     Args:
         recipient_email: Email address to send the alert to
         subject: Email subject line
         message_body: HTML content of the email
-    
+
     Returns:
         bool: True if email was sent successfully, False otherwise
     """
+    if not r"fitbit" in subject.lower():
+        print("Skipping email alert: subject does not contain 'fitbit'")
+        return False
     try:
         # Load SMTP configuration from environment variables
-        load_dotenv()
+        load_runtime_config()
         sender_email = os.getenv("SENDER_EMAIL_ADDRESS")
         sender_password = os.getenv("SENDER_EMAIL_PASSWORD")
         smtp_server = os.getenv("SMTP_SERVER", "smtp.gmail.com")
         smtp_port = int(os.getenv("SMTP_PORT", "587"))
-        
+
         if not sender_email or not sender_password:
             print("Missing email configuration in environment variables")
             return False
-        if "," in recipient_email:
-            for recipient in recipient_email.split(","):
+        recipients = [
+            _clean_email_address(recipient)
+            for recipient in str(recipient_email or "").split(",")
+        ]
+        recipients = [recipient for recipient in recipients if recipient]
+        if not recipients:
+            print("No valid recipient email configured")
+            return False
+
+        if len(recipients) > 1:
+            for recipient in recipients:
                 # Create email message
                 message = MIMEMultipart("alternative")
                 message["Subject"] = subject
                 message["From"] = sender_email
                 message["To"] = recipient
                 # message["To"] = "edenede2@gmail.com"
-                
+
                 # Create HTML version of the message
-                html_part = MIMEText(message_body, "html")
+                html_part = MIMEText(message_body, "html", "utf-8")
                 message.attach(html_part)
-                
+
                 # Connect to SMTP server and send email
                 with smtplib.SMTP(smtp_server, smtp_port) as server:
                     server.starttls()
                     server.login(sender_email, sender_password)
                     server.sendmail(sender_email, recipient, message.as_string())
                     # server.sendmail(sender_email, "edenede2@gmail.com", message.as_string())
-                
+
                 print(f"Successfully sent email alert to {recipient}")
             return True
         else:
+            recipient_email = recipients[0]
             # Create email message
             message = MIMEMultipart("alternative")
             message["Subject"] = subject
             message["From"] = sender_email
             message["To"] = recipient_email
-            
+
             # Create HTML version of the message
-            html_part = MIMEText(message_body, "html")
+            html_part = MIMEText(message_body, "html", "utf-8")
             message.attach(html_part)
-            
+
             # Connect to SMTP server and send email
             with smtplib.SMTP(smtp_server, smtp_port) as server:
                 server.starttls()
                 server.login(sender_email, sender_password)
                 server.sendmail(sender_email, recipient_email, message.as_string())
-            
+
             print(f"Successfully sent email alert to {recipient_email}")
             return True
     except Exception as e:
@@ -454,19 +518,19 @@ def send_email_alert(recipient_email, subject, message_body):
 def is_end_date_passed(end_date_str):
     """
     Check if the given end date has passed.
-    
+
     Args:
         end_date_str: End date string in various possible formats
-        
+
     Returns:
         bool: True if end date has passed or cannot be parsed, False otherwise
     """
     if not end_date_str:
         # No end date means it never expires
         return False
-        
+
     current_date = datetime.datetime.now().date()
-    
+
     # Try different date formats
     for date_format in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y"):
         try:
@@ -475,7 +539,7 @@ def is_end_date_passed(end_date_str):
             return current_date > end_date
         except ValueError:
             continue
-    
+
     # If we couldn't parse the date, log a warning and assume it's not passed
     print(f"Warning: Could not parse end date '{end_date_str}'")
     return False
@@ -483,27 +547,27 @@ def is_end_date_passed(end_date_str):
 def get_student_email_for_watch(users:pl.DataFrame, fitbit_data:pl.DataFrame, watch_name):
     """
     Get student email for a specific watch if available.
-    
+
     Args:
         fitbit_data: DataFrame containing fitbit data
         watch_name: Name of the watch to find student email for
-        
+
     Returns:
         str: Student email or None if not found
     """
     if fitbit_data.is_empty():
         return None
-        
+
     # Make sure both required columns exist
     if 'name' not in fitbit_data.columns or 'currentStudent' not in fitbit_data.columns:
         return None
-    
+
     # Find the watch in the data
     matching_watches = fitbit_data.filter(pl.col('name') == watch_name)
-    
+
     if matching_watches.is_empty():
         return None
-    
+
     # Get the student email from the first match
     student_name = matching_watches.select('currentStudent').row(0)[0]
     print(f"Found student name for watch {watch_name}: {student_name}")
@@ -511,33 +575,33 @@ def get_student_email_for_watch(users:pl.DataFrame, fitbit_data:pl.DataFrame, wa
     # Only return if there's an actual value
     if student_name and str(student_name).strip():
         return str(student_email).strip()
-    
+
     return None
 
 def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_data=None):
     """
     Check Fitbit data against alert thresholds and send email alerts.
     Only processes the most recent log entry for each watch.
-    
+
     Args:
         log_data: DataFrame containing Fitbit log data
         config_data: DataFrame containing alert configuration
         fitbit_data: Optional DataFrame containing Fitbit device data with student emails
-        
+
     Returns:
         dict: Summary of alerts sent
     """
     alerts_sent = {}
-    
+
     try:
         # Skip if either data frame is empty
         if log_data.is_empty() or config_data.is_empty():
             print("No data available for Fitbit alerts check")
             return alerts_sent
-        
+
         # Current date for checking end dates
         current_date = datetime.datetime.now().date()
-        
+
         # Get most recent log entry for each watch
         # First ensure lastCheck is properly formatted as datetime for sorting
         try:
@@ -547,18 +611,18 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
         except Exception as e:
             print(f"Warning: Could not convert lastCheck to datetime: {e}")
             # If conversion fails, keep original format
-        
+
         # Group by watchName and get the most recent entry for each watch
         print("Finding most recent log entry for each watch...")
-        
+
         # Create a dictionary to store the most recent entry for each watch
         most_recent_logs = {}
         watch_names = log_data.get_column('watchName').unique()
-        
+
         for watch_name in watch_names:
             # Filter logs for this watch
             watch_logs = log_data.filter(pl.col('watchName') == watch_name)
-            
+
             # Sort by lastCheck in descending order
             if 'lastCheck' in watch_logs.columns:
                 try:
@@ -572,36 +636,36 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
                         ).sort('lastCheck', descending=True)
                     except:
                         print(f"Warning: Could not sort logs by lastCheck for watch {watch_name}")
-            
+
             # Get the first (most recent) row
             if not watch_logs.is_empty():
                 most_recent_logs[watch_name] = watch_logs.row(0, named=True)
-        
+
         print(f"Found most recent log entries for {len(most_recent_logs)} watches")
-        
+
         # Changed approach: Collect watches by recipient instead of sending individual emails
         watches_by_recipient = {}
-        
+
         # Process only the most recent log entry for each watch
         for watch_name, log_row in most_recent_logs.items():
             project = log_row.get('project', '')
-            
+
             if not project:
                 continue
-                
+
             # Find the most specific configuration for this watch
             watch_specific_config = None
             project_config = None
-            
+
             for config_row in config_data.iter_rows(named=True):
                 if config_row.get('project', '') != project:
                     continue
-                    
+
                 # Check if end date has passed
                 end_date = config_row.get('endDate', '')
                 if is_end_date_passed(end_date):
                     continue
-                
+
                 # Check if this config is specific to this watch
                 config_watch = config_row.get('watch', '')
                 if config_watch and config_watch == watch_name:
@@ -611,12 +675,12 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
                 elif not config_watch:
                     # This is a project-wide config - save it but keep looking for watch-specific
                     project_config = config_row
-            
+
             # Use watch-specific config if available, otherwise use project config
             config = watch_specific_config or project_config
             if not config:
                 continue
-                
+
             # Get thresholds from config
             current_sync_thr = int(config.get('currentSyncThr', 0) or 0)
             total_sync_thr = int(config.get('totalSyncThr', 0) or 0)
@@ -627,39 +691,39 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
             current_steps_thr = int(config.get('currentStepsThr', 0) or 0)
             total_steps_thr = int(config.get('totalStepsThr', 0) or 0)
             battery_thr = int(config.get('batteryThr', 0) or 0)
-            
+
             # Check if any threshold has been exceeded
             alert_needed = False
             alert_reasons = []
-            
+
             if current_sync_thr > 0 and int(log_row.get('CurrentFailedSync', 0) or 0) >= current_sync_thr:
                 alert_needed = True
                 alert_reasons.append("Current Sync")
             elif total_sync_thr > 0 and int(log_row.get('TotalFailedSync', 0) or 0) >= total_sync_thr:
                 alert_needed = True
                 alert_reasons.append("Total Sync")
-                
+
             if current_hr_thr > 0 and int(log_row.get('CurrentFailedHR', 0) or 0) >= current_hr_thr:
                 alert_needed = True
                 alert_reasons.append("Current HR")
             elif total_hr_thr > 0 and int(log_row.get('TotalFailedHR', 0) or 0) >= total_hr_thr:
                 alert_needed = True
                 alert_reasons.append("Total HR")
-                
+
             if current_sleep_thr > 0 and int(log_row.get('CurrentFailedSleep', 0) or 0) >= current_sleep_thr:
                 alert_needed = True
                 alert_reasons.append("Current Sleep")
             elif total_sleep_thr > 0 and int(log_row.get('TotalFailedSleep', 0) or 0) >= total_sleep_thr:
                 alert_needed = True
                 alert_reasons.append("Total Sleep")
-                
+
             if current_steps_thr > 0 and int(log_row.get('CurrentFailedSteps', 0) or 0) >= current_steps_thr:
                 alert_needed = True
                 alert_reasons.append("Current Steps")
             elif total_steps_thr > 0 and int(log_row.get('TotalFailedSteps', 0) or 0) >= total_steps_thr:
                 alert_needed = True
                 alert_reasons.append("Total Steps")
-            
+
             # Check battery level if available
             if battery_thr > 0 and log_row.get('lastBattaryVal', ''):
                 try:
@@ -669,11 +733,11 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
                         alert_reasons.append(f"Battery ({battery_level}%)")
                 except (ValueError, TypeError):
                     pass  # Skip battery check if value cannot be converted
-            
+
             if alert_needed:
                 # Determine recipients
                 recipients = []
-                
+
                 # First check if config has an email, otherwise use manager
                 config_email = config.get('email', '')
                 if config_email and config_email.strip():
@@ -682,7 +746,7 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
                     manager_email = config.get('manager', '')
                     if manager_email and manager_email.strip():
                         recipients.append(manager_email.strip())
-                
+
                 # Add student email if available
                 student_email = None
                 if fitbit_data is not None:
@@ -690,12 +754,12 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
                     student_email = get_student_email_for_watch(users, fitbit_data, watch_name)
                     if student_email:
                         recipients.append(student_email)
-                
+
                 # Only collect if we have recipients
                 if recipients:
                     # Create combined recipient key
                     recipient_key = ",".join(sorted(recipients))
-                    
+
                     # Initialize recipient's watch list if needed
                     if recipient_key not in watches_by_recipient:
                         watches_by_recipient[recipient_key] = {
@@ -703,26 +767,26 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
                             'project': project,
                             'watches': []
                         }
-                    
+
                     # Add this watch to the recipient's list
                     watches_by_recipient[recipient_key]['watches'].append({
-                        'watch_name': watch_name, 
+                        'watch_name': watch_name,
                         'project': project,
                         'log_row': log_row,
                         'config': config,
                         'alert_reasons': alert_reasons
                     })
-        
+
         # Now send one consolidated email per recipient group
         for recipient_key, recipient_data in watches_by_recipient.items():
             recipients = recipient_data['recipients']
             watches = recipient_data['watches']
             project = recipient_data['project']
-            
+
             # Don't send if no watches to report
             if not watches:
                 continue
-                
+
             # Create consolidated alert message
             html = f"""
             <html>
@@ -742,7 +806,7 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
             </head>
             <body>
                 <h2>Fitbit Alert: Multiple Watches Need Attention</h2>
-                
+
                 <div class="summary">
                     <h3>Summary</h3>
                     <p>Project: {project}</p>
@@ -750,14 +814,14 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
                     <p>Watches affected: {", ".join([w['watch_name'] for w in watches])}</p>
                 </div>
             """
-            
+
             # Add details for each watch
             for watch_data in watches:
                 watch_name = watch_data['watch_name']
                 log_row = watch_data['log_row']
                 config = watch_data['config']
                 alert_reasons = watch_data['alert_reasons']
-                
+
                 # Get thresholds from config
                 current_sync_thr = int(config.get('currentSyncThr', 0) or 0)
                 total_sync_thr = int(config.get('totalSyncThr', 0) or 0)
@@ -768,12 +832,12 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
                 current_steps_thr = int(config.get('currentStepsThr', 0) or 0)
                 total_steps_thr = int(config.get('totalStepsThr', 0) or 0)
                 battery_thr = int(config.get('batteryThr', 0) or 0)
-                
+
                 html += f"""
                 <div class="watch-section">
                     <h3>Watch: {watch_name}</h3>
                     <p class="alert">Alert reasons: {", ".join(alert_reasons)}</p>
-                    
+
                     <table>
                         <tr>
                             <th>Watch Name</th>
@@ -788,7 +852,7 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
                             <td>{log_row.get('lastSynced', 'Unknown')}</td>
                         </tr>
                     </table>
-                    
+
                     <h4>Alert Details</h4>
                     <table>
                         <tr>
@@ -799,7 +863,7 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
                             <th>Last Value</th>
                         </tr>
                 """
-                
+
                 # Add sync information
                 if current_sync_thr > 0 or total_sync_thr > 0:
                     html += f"""
@@ -811,7 +875,7 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
                         <td>{log_row.get('lastSynced', 'Unknown')}</td>
                     </tr>
                     """
-                
+
                 # Add HR information
                 if current_hr_thr > 0 or total_hr_thr > 0:
                     html += f"""
@@ -823,7 +887,7 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
                         <td>{log_row.get('lastHRVal', 'Unknown')}</td>
                     </tr>
                     """
-                
+
                 # Add Sleep information
                 if current_sleep_thr > 0 or total_sleep_thr > 0:
                     html += f"""
@@ -835,7 +899,7 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
                         <td>{log_row.get('lastSleepDur', 'Unknown')}</td>
                     </tr>
                     """
-                
+
                 # Add Steps information
                 if current_steps_thr > 0 or total_steps_thr > 0:
                     html += f"""
@@ -847,7 +911,7 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
                         <td>{log_row.get('lastStepsVal', 'Unknown')}</td>
                     </tr>
                     """
-                
+
                 # Add Battery information
                 if battery_thr > 0:
                     html += f"""
@@ -859,7 +923,7 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
                         <td>{log_row.get('lastBattaryVal', 'Unknown')}%</td>
                     </tr>
                     """
-                
+
                 # Close the watch section
                 html += """
                     </table>
@@ -870,27 +934,27 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
                 <div style="margin-top: 20px; padding: 15px; background-color: #f5f5f5; border-radius: 5px; border-left: 4px solid #4CAF50;">
                     <h3 style="margin-top: 0; color: #2e7d32;">Access Your Dashboards</h3>
                     <p>For detailed monitoring, please visit one of our dashboards:</p>
-                    
+
                     <div style="display: flex; margin: 20px 0;">
-                        <a href="https://fitbitmanagment.streamlit.app/Dashboard" 
-                           style="display: inline-block; background-color: #2196F3; color: white; padding: 10px 20px; 
+                        <a href="https://fitbitmanagment.streamlit.app/Dashboard"
+                           style="display: inline-block; background-color: #2196F3; color: white; padding: 10px 20px;
                                   text-decoration: none; border-radius: 4px; margin-right: 15px; font-weight: bold;">
                            ↗️ New Dashboard
                         </a>
-                        
-                        <a href="https://fitbitestapipy.streamlit.app/" 
-                           style="display: inline-block; background-color: #757575; color: white; padding: 10px 20px; 
+
+                        <a href="https://fitbitestapipy.streamlit.app/"
+                           style="display: inline-block; background-color: #757575; color: white; padding: 10px 20px;
                                   text-decoration: none; border-radius: 4px; font-weight: bold;">
                            ↗️ Legacy Dashboard
                         </a>
                     </div>
-                    
+
                     <p><em>Note: The legacy dashboard is being phased out. Please use the new dashboard for future reference.</em></p>
                 </div>
-                
+
                 <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd;">
                     <p>For any questions, please contact the project manager or the system administrator:</p>
-                    
+
                     <div style="margin-top: 15px; font-style: italic;">
                         <p style="margin: 0; font-weight: bold;">Eden Eldar</p>
                         <p style="margin: 0; color: #0277bd;">
@@ -899,7 +963,7 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
                             </a>
                         </p>
                     </div>
-                    
+
                     <p style="margin-top: 15px;">Thank you!</p>
                 </div>
             """
@@ -910,11 +974,11 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
             </body>
             </html>
             """
-            
+
             # Send the consolidated email
             subject = f"Fitbit Alert: {len(watches)} watches need attention in Project {project}"
             result = send_email_alert(", ".join(recipients), subject, html)
-            
+
             # Track results
             if result:
                 if project not in alerts_sent:
@@ -923,22 +987,22 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
                         'recipients': recipients,
                         'count': 0
                     }
-                    
+
                 for watch_data in watches:
                     watch_name = watch_data['watch_name']
                     alerts_sent[project]['watches'].append(watch_name)
                     alerts_sent[project]['count'] += 1
-                
+
                 print(f"Sent consolidated alert for {len(watches)} watches to {', '.join(recipients)}")
-        
+
         # Summarize alerts sent
         if alerts_sent:
             print("Alert summary:")
             for project, details in alerts_sent.items():
                 print(f"  Project {project}: {details['count']} watches with alerts, notification sent to {len(details['recipients'])} recipients")
-        
+
         return alerts_sent
-        
+
     except Exception as e:
         print(f"Error checking Fitbit alerts: {e}")
         print(traceback.format_exc())
@@ -947,52 +1011,52 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
 def check_qualtrics_alerts(suspicious_numbers, config_data):
     """
     Check Qualtrics data against alert thresholds and send email alerts.
-    
+
     Args:
         suspicious_numbers: DataFrame containing suspicious numbers
         config_data: DataFrame containing alert configuration
-        
+
     Returns:
         dict: Summary of alerts sent
     """
     alerts_sent = {}
-    
+
     try:
         # Only consider numbers with 'accepted' set to FALSE - case insensitive check
         suspicious_numbers = suspicious_numbers.filter(
             pl.col('accepted').str.to_uppercase() == 'FALSE'
         )
-        
+
         # Skip if either data frame is empty
         if suspicious_numbers.is_empty() or config_data.is_empty():
             print("No data available for Qualtrics alerts check")
             return alerts_sent
-        
+
         # Group data by project
         project_configs = {}
         for row in config_data.iter_rows(named=True):
             project = row.get('project', '')
             if not project:
                 continue
-                
+
             # Store config for this project
             project_configs[project] = {
                 'hoursThr': float(row.get('hoursThr', 48) or 48),  # Default to 48 hours
                 'manager': row.get('manager', '')
             }
-        
+
         # For each project configuration
         for project, config in project_configs.items():
             manager_email = config['manager']
             hours_threshold = config['hoursThr']
-            
+
             if not manager_email:
                 print(f"No manager email configured for project: {project}")
                 continue
-            
+
             # Filter suspicious numbers based on time passed
             current_time = datetime.datetime.now()
-            
+
             # Create HTML report if there are suspicious numbers
             if suspicious_numbers.height > 0:
                 html = f"""
@@ -1010,14 +1074,14 @@ def check_qualtrics_alerts(suspicious_numbers, config_data):
                 <body>
                     <h2>Qualtrics Alert: Project {project}</h2>
                     <p>The following phone numbers have not received messages within {hours_threshold} hours of completing the survey:</p>
-                    
+
                     <table>
                         <tr>
                             <th>Phone Number</th>
                             <th>Survey Completion Time</th>
                         </tr>
                 """
-                
+
                 # Add each suspicious number to the table
                 for row in suspicious_numbers.iter_rows(named=True):
                     html += f"""
@@ -1026,7 +1090,7 @@ def check_qualtrics_alerts(suspicious_numbers, config_data):
                         <td>{row.get('filledTime', 'Unknown')}</td>
                     </tr>
                     """
-                
+
                 # Close the HTML
                 html += """
                     </table>
@@ -1034,20 +1098,20 @@ def check_qualtrics_alerts(suspicious_numbers, config_data):
                 </body>
                 </html>
                 """
-                
+
                 # Send the email
                 subject = f"Qualtrics Alert: Project {project} has {suspicious_numbers.height} unreached respondents"
                 result = send_email_alert(manager_email, subject, html)
-                
+
                 # Track results
                 if result:
                     alerts_sent[project] = {
                         'manager': manager_email,
                         'suspicious_numbers': suspicious_numbers.height
                     }
-        
+
         return alerts_sent
-        
+
     except Exception as e:
         print(f"Error checking Qualtrics alerts: {e}")
         print(traceback.format_exc())
@@ -1056,49 +1120,49 @@ def check_qualtrics_alerts(suspicious_numbers, config_data):
 def check_late_nums_alerts(late_numbers:pl.DataFrame, config_data:pl.DataFrame):
     """
     Check late response numbers against alert thresholds and send email alerts.
-    
+
     Args:
         late_numbers: DataFrame containing late response numbers
         config_data: DataFrame containing alert configuration
-        
+
     Returns:
         dict: Summary of alerts sent
     """
     alerts_sent = {}
-    
+
     try:
         # Only consider numbers with 'accepted' set to FALSE - case insensitive check
         late_numbers = late_numbers.filter(
             pl.col('accepted').str.to_uppercase() == 'FALSE'
         )
-        
+
         # Skip if either data frame is empty
         if late_numbers.is_empty() or config_data.is_empty():
             print("No data available for late numbers alerts check")
             return alerts_sent
-        
+
         # Group data by project
         project_configs = {}
         for row in config_data.iter_rows(named=True):
             project = row.get('project', '')
             if not project:
                 continue
-                
+
             # Store config for this project
             project_configs[project] = {
                 'hoursThr': float(row.get('hoursThr', 48) or 48),  # Default to 48 hours
                 'manager': row.get('manager', '')
             }
-        
+
         # For each project configuration
         for project, config in project_configs.items():
             manager_email = config['manager']
             hours_threshold = config['hoursThr']
-            
+
             if not manager_email:
                 print(f"No manager email configured for project: {project}")
                 continue
-            
+
             # Create HTML report if there are late numbers
             if late_numbers.height > 0:
                 html = f"""
@@ -1116,7 +1180,7 @@ def check_late_nums_alerts(late_numbers:pl.DataFrame, config_data:pl.DataFrame):
                 <body>
                     <h2>Late Response Alert: Project {project}</h2>
                     <p>The following phone numbers are approaching the {hours_threshold} hour threshold for WhatsApp responses:</p>
-                    
+
                     <table>
                         <tr>
                             <th>Phone Number</th>
@@ -1124,7 +1188,7 @@ def check_late_nums_alerts(late_numbers:pl.DataFrame, config_data:pl.DataFrame):
                             <th>Hours Left</th>
                         </tr>
                 """
-                
+
                 # Add each late number to the table
                 for row in late_numbers.iter_rows(named=True):
                     html += f"""
@@ -1134,7 +1198,7 @@ def check_late_nums_alerts(late_numbers:pl.DataFrame, config_data:pl.DataFrame):
                         <td>{row.get('hoursLate', 'Unknown')}</td>
                     </tr>
                     """
-                
+
                 # Close the HTML
                 html += """
                     </table>
@@ -1142,20 +1206,20 @@ def check_late_nums_alerts(late_numbers:pl.DataFrame, config_data:pl.DataFrame):
                 </body>
                 </html>
                 """
-                
+
                 # Send the email
                 subject = f"Late Response Alert: Project {project} has {late_numbers.height} pending responses"
                 result = send_email_alert(manager_email, subject, html)
-                
+
                 # Track results
                 if result:
                     alerts_sent[project] = {
                         'manager': manager_email,
                         'late_numbers': late_numbers.height
                     }
-        
+
         return alerts_sent
-        
+
     except Exception as e:
         print(f"Error checking late numbers alerts: {e}")
         print(traceback.format_exc())
@@ -1164,46 +1228,46 @@ def check_late_nums_alerts(late_numbers:pl.DataFrame, config_data:pl.DataFrame):
 def hourly_data_collection():
     """Main function to run hourly data collection and alerts"""
     print(f"[{datetime.datetime.now()}] Starting hourly data collection...")
-    
+
     try:
-        # Load environment variables
-        load_dotenv()
-        
+        # Load environment variables and local server secrets
+        load_runtime_config()
+
         # Get spreadsheet key from environment
         spreadsheet_key = os.getenv("SPREADSHEET_KEY")
         if not spreadsheet_key:
             print("Missing SPREADSHEET_KEY in environment variables")
             return
-        
+
         # Create spreadsheet instances
         spreadsheet = Spreadsheet(name="FitbitData", api_key=spreadsheet_key)
         GoogleSheetsAdapter.connect(spreadsheet)
-        
+
         # Step 1: Get watch data and previous status history
         watch_data = get_watch_details(spreadsheet)
         previous_status = get_watch_status_history()
-        
+
         if not watch_data.is_empty():
             # Create current status mapping
             current_status = {}
-            
+
             # We need a unique identifier for each watch to track status
             # First check if 'id' column exists, otherwise use a combination of project and watchName
-            
+
             # Map of watch ID to activity status
             for row in watch_data.iter_rows(named=True):
                 watch_id = f"{row.get('project', '')}-{row.get('name', '')}"
                 # if not watch_id and 'project' in watch_data.columns and 'name' in watch_data.columns:
                 #     watch_id = f"{row.get('project', '')}-{row.get('name', '')}"
-                
+
                 watch_name = row.get('name', row.get('watchName', ''))
                 is_active = str(row.get('isActive', '')).upper() != 'FALSE'
-                
+
                 current_status[watch_id] = {
                     'active': is_active,
                     'name': watch_name
                 }
-            
+
             # Identify watches that became inactive since last run
             newly_inactive_watches = []
             for watch_id, status in previous_status.items():
@@ -1212,52 +1276,65 @@ def hourly_data_collection():
                     watch_id not in current_status or not current_status[watch_id].get('active', False)
                 ):
                     newly_inactive_watches.append(watch_id)
-            
+
             if newly_inactive_watches:
                 print(f"Detected {len(newly_inactive_watches)} watches that became inactive")
                 for watch_id in newly_inactive_watches:
                     print(f"Watch {previous_status[watch_id].get('name', watch_id)} became inactive - will reset failure counters")
-            
+
             save_to_csv(watch_data)
-            
+
             # Update log using ServerLogFile - passing inactive watches to reset their counters
             log_file = ServerLogFile()
-            
-            # First, only update the log sheet (with replace strategy)
-            result = log_file.update_log_sheet(spreadsheet, watch_data, reset_total_for_watches=newly_inactive_watches)
-            
-            # Step 1: First get existing FitbitLog data to ensure proper structure
-            if "FitbitLog" not in spreadsheet.sheets:
-                # Create the sheet if it doesn't exist
-                fitbit_log_sheet = spreadsheet.get_sheet("FitbitLog", "log")
-            else:
-                fitbit_log_sheet = spreadsheet.sheets["FitbitLog"]
-                
-            # Ensure fitbit_log_sheet.data is a list of dictionaries
-            if not isinstance(fitbit_log_sheet.data, list):
-                # Initialize as empty list if not already a list
-                fitbit_log_sheet.data = []
-                
-            # Step 2: Prepare new log entries (but don't update the sheet yet)
+
+            # Prepare the provider-aware snapshots once. This is the expensive API step.
             new_log_entries = log_file.prepare_log_entries(spreadsheet, watch_data, reset_total_for_watches=newly_inactive_watches)
-            
-            # Step 3: If we have new entries, manually append them to the sheet data
+            result = True
+
             if new_log_entries:
-                # Add new entries to the sheet's data directly
-                fitbit_log_sheet.data.extend(new_log_entries)
-                
-                # Step 4: Now save with rewrite mode to ensure proper data structure
-                GoogleSheetsAdapter.save(spreadsheet, "FitbitLog", mode="rewrite")
-                print(f"[{datetime.datetime.now()}] Added {len(new_log_entries)} new entries to FitbitLog")
+                try:
+                    latest_entries_by_watch = {}
+                    for entry in new_log_entries:
+                        watch_id = entry.get('ID', '')
+                        if watch_id:
+                            latest_entries_by_watch[watch_id] = entry
+
+                    log_df = pl.DataFrame(list(latest_entries_by_watch.values()))
+                    spreadsheet.update_sheet("log", log_df, strategy="replace")
+                    GoogleSheetsAdapter.save(spreadsheet, "log", mode="rewrite")
+                    print(f"Updated log sheet with {len(latest_entries_by_watch)} latest entries (one per watch)")
+                except Exception as e:
+                    result = False
+                    print(f"Error updating log sheet: {e}")
+                    print(f"Error details: {traceback.format_exc()}")
+
+                try:
+                    # Save only the newly collected rows to the append-only history sheet.
+                    fitbit_log_sheet = spreadsheet.get_sheet("FitbitLog", "log")
+                    fitbit_log_sheet.data = new_log_entries
+                    saved_fitbit_log = GoogleSheetsAdapter.save(spreadsheet, "FitbitLog", mode="append")
+                    if saved_fitbit_log:
+                        print(f"[{datetime.datetime.now()}] Added {len(new_log_entries)} new entries to FitbitLog")
+                    else:
+                        result = False
+                        print(
+                            f"[{datetime.datetime.now()}] Failed to append {len(new_log_entries)} "
+                            "new entries to FitbitLog"
+                        )
+                except Exception as e:
+                    result = False
+                    print(f"Error appending new entries to FitbitLog: {e}")
+                    print(f"Error details: {traceback.format_exc()}")
+
             else:
                 print(f"[{datetime.datetime.now()}] No new entries to add to FitbitLog")
-            
+
             # Save the current status for the next run
             save_watch_status_history(current_status)
-            
+
             if result:
                 print(f"[{datetime.datetime.now()}] Successfully updated log data")
-                
+
                 # Get statistics about watch failures
                 stats = log_file.get_summary_statistics()
                 if stats:
@@ -1271,27 +1348,27 @@ def hourly_data_collection():
                     print(f"  Total watches with any failure: {stats.get('total_failures', 0)}")
             else:
                 print(f"[{datetime.datetime.now()}] Failed to update log data")
-                
+
             print(f"Data collection completed at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         else:
             print("No active watches found or error retrieving data")
-        
+
         # Step 2: Run WhatsApp message analysis
         suspicious_nums_data = analyze_whatsapp_messages()
-        
+
         # Step 3: Get alert configurations and fitbit data
         fitbit_config_sheet = spreadsheet.get_sheet("fitbit_alerts_config", sheet_type="fitbit_alerts_config")
         qualtrics_config_sheet = spreadsheet.get_sheet("qualtrics_alerts_config", sheet_type="qualtrics_alerts_config")
         fitbit_sheet = spreadsheet.get_sheet("fitbit", sheet_type="fitbit")  # Get fitbit sheet for student emails
-        
+
         fitbit_config_data = fitbit_config_sheet.to_dataframe(engine="polars")
         qualtrics_config_data = qualtrics_config_sheet.to_dataframe(engine="polars")
         fitbit_data = fitbit_sheet.to_dataframe(engine="polars")
-        
+
         # Create a unified manager email mapping for all projects
         # Priority: use fitbit config emails as primary source if available
         manager_emails = {}
-        
+
         # First populate from fitbit config
         if not fitbit_config_data.is_empty():
             for row in fitbit_config_data.iter_rows(named=True):
@@ -1299,7 +1376,7 @@ def hourly_data_collection():
                 manager = row.get('manager', '')
                 if project and manager:
                     manager_emails[project] = manager
-        
+
         # Then add any missing projects from qualtrics config
         if not qualtrics_config_data.is_empty():
             for row in qualtrics_config_data.iter_rows(named=True):
@@ -1307,13 +1384,13 @@ def hourly_data_collection():
                 manager = row.get('manager', '')
                 if project and manager and project not in manager_emails:
                     manager_emails[project] = manager
-        
+
         print(f"Consolidated manager emails for {len(manager_emails)} projects")
-        
+
         # Step 4: Get log data for Fitbit alerts
         log_sheet = spreadsheet.get_sheet("FitbitLog", sheet_type="log")
         log_data = log_sheet.to_dataframe(engine="polars")
-        
+
         # Step 5: Check alerts and send emails - passing fitbit_data for student emails
         if not log_data.is_empty() and not fitbit_config_data.is_empty():
             # Update manager emails in config before sending alerts to ensure consistency
@@ -1326,14 +1403,14 @@ def hourly_data_collection():
                         .otherwise(pl.col('manager'))
                         .alias('manager')
                     )
-            
+
             fitbit_alerts = check_fitbit_alerts(spreadsheet, log_data, fitbit_config_data, fitbit_data)
-            
+
             if fitbit_alerts:
                 print(f"Sent Fitbit alerts for {len(fitbit_alerts)} projects")
             else:
                 print("No Fitbit alerts sent")
-        
+
         # Step 6: Check Qualtrics alerts - suspicious numbers
         if not qualtrics_config_data.is_empty():
             # Update manager emails in qualtrics config to be consistent
@@ -1346,36 +1423,36 @@ def hourly_data_collection():
                         .otherwise(pl.col('manager'))
                         .alias('manager')
                     )
-            
+
             # Get suspicious numbers from previous analysis
             suspicious_numbers_sheet = spreadsheet.get_sheet("suspicious_nums", sheet_type="suspicious_nums", refresh=True)
             suspicious_numbers = suspicious_numbers_sheet.to_dataframe(engine="polars")
-            
+
             if not suspicious_numbers.is_empty():
                 qualtrics_alerts = check_qualtrics_alerts(suspicious_numbers, qualtrics_config_data)
-                
+
                 if qualtrics_alerts:
                     print(f"Sent Qualtrics alerts to {len(qualtrics_alerts)} managers")
                 else:
                     print("No Qualtrics alerts sent")
-        
+
         # Step 7: Check Late Numbers alerts (using the same manager emails as other alerts)
         try:
             late_numbers_sheet = spreadsheet.get_sheet("late_nums", sheet_type="late_nums")
             late_numbers = late_numbers_sheet.to_dataframe(engine="polars")
-            
+
             if not late_numbers.is_empty() and not qualtrics_config_data.is_empty():
                 late_nums_alerts = check_late_nums_alerts(late_numbers, qualtrics_config_data)
-                
+
                 if late_nums_alerts:
                     print(f"Sent Late Numbers alerts to {len(late_nums_alerts)} managers")
                 else:
                     print("No Late Numbers alerts sent")
         except Exception as late_error:
             print(f"Error processing late numbers: {late_error}")
-        
+
         print(f"[{datetime.datetime.now()}] Hourly data collection and alerts completed")
-        
+
     except Exception as e:
         print(f"Error during data collection: {e}")
         print(traceback.format_exc())

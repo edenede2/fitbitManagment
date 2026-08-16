@@ -50,12 +50,8 @@ def get_watch_details() -> pl.DataFrame:
         if row.get('isActive', '').upper() == 'FALSE':
             continue
             
-        # Create a new Watch object using the enhanced class
-        watch = Watch(
-            name=row.get('name', ''),
-            project=row.get('project', ''),
-            token=row.get('token', '')
-        )
+        # Create a provider-aware Watch object using the enhanced factory.
+        watch = WatchFactory.create_from_details(row)
         
         # Convert all values to strings to maintain type consistency
         watch_dict = {
@@ -259,4 +255,3 @@ def hourly_data_collection() -> None:
 if __name__ == "__main__":
     # When run directly, perform hourly data collection
     hourly_data_collection()
-

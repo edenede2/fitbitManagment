@@ -450,7 +450,7 @@ def show_alerts_management(user_email, user_role, user_project, spreadsheet: Spr
             pandas_df = display_df.to_pandas()
             
             # Show dataframe
-            st.dataframe(pandas_df, use_container_width=True)
+            st.dataframe(pandas_df, width="stretch")
             
             # Add a selection mechanism for editing
             st.subheader("Mark Numbers as Accepted")
@@ -622,7 +622,7 @@ def show_alerts_management(user_email, user_role, user_project, spreadsheet: Spr
             pandas_df = display_df.to_pandas()
             
             # Show dataframe
-            st.dataframe(pandas_df, use_container_width=True)
+            st.dataframe(pandas_df, width="stretch")
             
             # Add a selection mechanism for editing - similar to suspicious tab
             st.subheader("Mark Numbers as Accepted")

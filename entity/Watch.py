@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Optional, Dict, List, Any, Union, Callable, TypeVar, TYPE_CHECKING
 from enum import Enum
 from abc import ABC, abstractmethod
+from urllib.parse import urlparse
 from entity.User import User
 import streamlit as st
 # Use string references for Project to avoid circular imports
@@ -22,7 +23,7 @@ URL_DICT = {
     'Steps': "https://api.fitbit.com/1.2/user/-/activities/steps/date/{}/{}.json", # BASE_URL2, start_date, end_date
     'Steps Intraday': "https://api.fitbit.com/1/user/-/activities/steps/date/{}/1d/1min/time/{}/{}.json", # BASE_URL, start_date, start_time, end_time
     'Sleep Levels': "https://api.fitbit.com/1.2/user/-/sleep/date/{}/{}.json", # BASE_URL2, start_date, end_date
-    'Heart Rate Intraday': "https://api.fitbit.com/1.2/user/-/activities/heart/date/{}/1d/1sec/time/{}/{}.json", # BASE_URL2, start_date, start_time, end_time
+    'Heart Rate Intraday': "https://api.fitbit.com/1/user/-/activities/heart/date/{}/1d/1sec/time/{}/{}.json", # BASE_URL, start_date, start_time, end_time
     'Heart Rate': "https://api.fitbit.com/1/user/-/activities/heart/date/{}/{}.json", # BASE_URL, start_date, end_date
     'HRV Daily': "https://api.fitbit.com/1/user/-/hrv/date/{}/{}/all.json", # BASE_URL, start_date, end_date
     'HRV Intraday': "{}",
@@ -31,10 +32,41 @@ URL_DICT = {
     'Daily RMSSD': "https://api.fitbit.com/1.2/user/-/hrv/date/{}/all.json", # BASE_URL2, start_date
     'ECG': 'https://api.fitbit.com/1.2/user/-/ecg/list.json?{} asc {} {}', # BASE_URL2, start_date, limit, offset
     'Breathing Rate': 'https://api.fitbit.com/1/user/-/br/date/{}/{}.json', # BASE_URL, start_date, end_date
-    'device': 'https://api.fitbit.com/1.2/user/-/devices.json', # BASE_URL2
+    'device': 'https://api.fitbit.com/1/user/-/devices.json', # BASE_URL
     'Activity_Time_Series': 'https://api.fitbit.com/1/user/-/spo2/date/{}/{}/all.json', # BASE_URL, start_date, end_date
     'Activity intraday': 'https://api.fitbit.com/1/user/-/activities/{}/date/{}/1m/time/{}/{}.json' # BASE_URL, start_date, start_time, end_time
 }
+
+
+class ApiRateLimitError(RuntimeError):
+    """Raised when a health provider rate-limits an API request."""
+
+    def __init__(self, message: str, *, retry_after: Optional[int] = None):
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+class ApiAuthError(RuntimeError):
+    """Raised when a health provider rejects the current access token."""
+
+
+class ApiRequestError(RuntimeError):
+    """Raised when a health provider returns an unrecoverable request error."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int,
+        endpoint_type: str,
+        url_path: str,
+        response_text: str = "",
+    ):
+        super().__init__(message)
+        self.status_code = status_code
+        self.endpoint_type = endpoint_type
+        self.url_path = url_path
+        self.response_text = response_text
 
 
 # ===== Data Types and Enums =====
@@ -161,11 +193,15 @@ class RequestBuilder:
             
         day_requests = []
         current_date = start_date
+        original_start_time = self.params.get('start_time', '00:00')
+        original_end_time = self.params.get('end_time', '23:59')
         
         while current_date <= end_date:
             day_params = self.params.copy()
             day_params['start_date'] = current_date.strftime(self.date_format)
             day_params['end_date'] = current_date.strftime(self.date_format)
+            day_params['start_time'] = original_start_time if current_date == start_date else '00:00'
+            day_params['end_time'] = original_end_time if current_date == end_date else '23:59'
             
             day_requests.append(day_params)
             
@@ -502,6 +538,8 @@ class Watch:
     name: str
     project: str  
     token: str
+    health_client: Any = None
+    token_refresher: Optional[Callable[[], str]] = None
     header: Dict = field(init=False, default_factory=dict)
     current_student: Optional[User] = None
     previous_student: Optional[User] = None
@@ -513,12 +551,7 @@ class Watch:
     
     def __post_init__(self):
         """Initialize after the dataclass initialization"""
-        token_value = self.token
-
-        self.header = {
-            "Accept": "application/json",
-            "Authorization": f"Bearer {token_value}"
-        }
+        self._set_token(self.token)
     
     def __eq__(self, other):
         """Equal comparison based on watch name and project"""
@@ -529,9 +562,112 @@ class Watch:
     def __hash__(self):
         """Hash for using in dictionaries and sets"""
         return hash((self.name, self.project))
+
+    def _set_token(self, token: str) -> None:
+        self.token = str(token or "")
+        self.header = get_headers(self.token)
+
+    def _redact_response_text(self, text: str) -> str:
+        text = " ".join(str(text or "").strip().split())
+        if self.token and len(self.token) > 8:
+            text = text.replace(self.token, "[redacted]")
+        return text[:500]
+
+    def _url_path(self, url: str) -> str:
+        try:
+            parsed = urlparse(url)
+            return parsed.path or url
+        except Exception:
+            return str(url)
+
+    def _raise_api_error(self, endpoint_type: str, response, url: str, context: str = "") -> None:
+        response_text = self._redact_response_text(getattr(response, "text", ""))
+        url_path = self._url_path(url)
+        context_text = f" {context}" if context else ""
+        message = (
+            f"Fitbit API request failed fetching {endpoint_type}{context_text}: "
+            f"{response.status_code} at {url_path}"
+        )
+        if response_text:
+            message = f"{message}. Response: {response_text}"
+        raise ApiRequestError(
+            message,
+            status_code=response.status_code,
+            endpoint_type=endpoint_type,
+            url_path=url_path,
+            response_text=response_text,
+        )
+
+    def _refresh_token_for_retry(self, endpoint_type: str) -> None:
+        if self.token_refresher is None:
+            raise ApiAuthError(
+                f"Fitbit API auth failed fetching {endpoint_type}; no OAuth token refresher is available"
+            )
+        try:
+            refreshed_token = self.token_refresher()
+        except Exception as exc:
+            raise ApiAuthError(
+                f"Fitbit API auth failed fetching {endpoint_type}; token refresh failed: {exc}"
+            ) from exc
+        if not refreshed_token:
+            raise ApiAuthError(
+                f"Fitbit API auth failed fetching {endpoint_type}; token refresh returned no access token"
+            )
+        self._set_token(refreshed_token)
+        self.clear_cache()
+
+    def _request_fitbit_json(self, endpoint_type: str, url: str, headers: Dict, context: str = "") -> Any:
+        response = requests.get(url, headers=headers)
+
+        if response.status_code == 401:
+            context_text = f" {context}" if context else ""
+            raise ApiAuthError(
+                f"Fitbit API auth failed fetching {endpoint_type}{context_text}: {response.status_code}"
+            )
+
+        if response.status_code == 429:
+            retry_after = response.headers.get("Retry-After")
+            try:
+                retry_after = int(retry_after) if retry_after else None
+            except (TypeError, ValueError):
+                retry_after = None
+            raise ApiRateLimitError(
+                f"Fitbit API rate limit fetching {endpoint_type}: {response.status_code}",
+                retry_after=retry_after,
+            )
+
+        if response.status_code != 200:
+            self._raise_api_error(endpoint_type, response, url, context=context)
+
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise ApiRequestError(
+                f"Fitbit API returned invalid JSON fetching {endpoint_type} at {self._url_path(url)}",
+                status_code=response.status_code,
+                endpoint_type=endpoint_type,
+                url_path=self._url_path(url),
+                response_text=self._redact_response_text(getattr(response, "text", "")),
+            ) from exc
+
+    def _request_fitbit_json_with_auth_retry(
+        self,
+        endpoint_type: str,
+        url: str,
+        headers: Dict,
+        context: str = "",
+    ) -> Any:
+        try:
+            return self._request_fitbit_json(endpoint_type, url, headers, context=context)
+        except ApiAuthError:
+            self._refresh_token_for_retry(endpoint_type)
+            return self._request_fitbit_json(endpoint_type, url, self.header, context=context)
     
     def fetch_data(self, endpoint_type: str, force_fetch: bool = False, **kwargs) -> Dict:
         """Fetch data from Fitbit API using the Builder pattern"""
+        if self.health_client is not None:
+            return self.health_client.fetch_raw(endpoint_type, **kwargs)
+
         # Return cached data if available and force_fetch is False
         cache_key = f"{endpoint_type}_{json.dumps(kwargs, default=str)}"
         if not force_fetch and cache_key in self._cached_data:
@@ -565,14 +701,11 @@ class Watch:
                 self._cached_data[cache_key] = result
             return result
         
-        # Execute the request
-        response = requests.get(request['url'], headers=request['headers'])
-        
-        if response.status_code != 200:
-            print(f"Error fetching {endpoint_type} data: {response.status_code}")
-            return {}
-        
-        result = response.json()
+        result = self._request_fitbit_json_with_auth_retry(
+            endpoint_type,
+            request['url'],
+            request['headers'],
+        )
         # Cache the result
         if result:
             self._cached_data[cache_key] = result
@@ -591,7 +724,6 @@ class Watch:
             Dict: Combined results from all daily requests
         """
         endpoint_type = multiday_request.get('endpoint_type')
-        headers = multiday_request.get('headers')
         day_params = multiday_request.get('day_params', [])
         
         if not day_params:
@@ -634,13 +766,12 @@ class Watch:
             else:
                 continue
                 
-            response = requests.get(url, headers=headers)
-            
-            if response.status_code != 200:
-                print(f"Error fetching {endpoint_type} data for {params.get('start_date')}: {response.status_code}")
-                continue
-                
-            day_result = response.json()
+            day_result = self._request_fitbit_json_with_auth_retry(
+                endpoint_type,
+                url,
+                self.header,
+                context=f"for {params.get('start_date')}",
+            )
             
             if 'Heart Rate Intraday' in endpoint_type:
                 if 'activities-heart' in day_result:
@@ -734,6 +865,11 @@ class Watch:
     
     def update_device_info(self, force_fetch: bool = False) -> None:
         """Update device information (battery, sync time, etc.)"""
+        if self.health_client is not None:
+            self.battery_level = self.health_client.get_current_battery()
+            self.last_sync_time = datetime.datetime.now(datetime.timezone.utc)
+            return
+
         data = self.fetch_data('device', force_fetch=force_fetch)
         
         if data and isinstance(data, list) and len(data) > 0:
@@ -763,6 +899,9 @@ class Watch:
     
     def get_current_hourly_HR(self, force_fetch: bool = False) -> Optional[int]:
         """Get the current hourly heart rate (convenience method)"""
+        if self.health_client is not None:
+            return self.health_client.get_current_hourly_hr()
+
         current_date = datetime.datetime.now()
         hour_ago = current_date - datetime.timedelta(hours=1)
         
@@ -782,6 +921,9 @@ class Watch:
     
     def get_current_hourly_steps(self, force_fetch: bool = False) -> Optional[int]:
         """Get the current hourly steps (convenience method)"""
+        if self.health_client is not None:
+            return self.health_client.get_current_hourly_steps()
+
         current_date = datetime.datetime.now()
         hours_ago = current_date - datetime.timedelta(hours=6)
         
@@ -803,12 +945,18 @@ class Watch:
     
     def get_current_battery(self, force_fetch: bool = False) -> Optional[int]:
         """Get the current battery level (convenience method)"""
+        if self.health_client is not None:
+            return self.health_client.get_current_battery()
+
         if force_fetch:
             self.update_device_info(force_fetch=True)
         return self.battery_level
     
     def get_last_sleep_start_end(self, force_fetch: bool = False) -> tuple:
         """Get the last sleep start and end times (convenience method)"""
+        if self.health_client is not None:
+            return self.health_client.get_last_sleep_start_end()
+
         yesterday = datetime.datetime.now() - datetime.timedelta(days=1)
         today = datetime.datetime.now()
         
@@ -828,6 +976,9 @@ class Watch:
     
     def get_last_sleep_duration(self, force_fetch: bool = False) -> Optional[float]:
         """Get the last sleep duration in hours (convenience method)"""
+        if self.health_client is not None:
+            return self.health_client.get_last_sleep_duration()
+
         start_time, end_time = self.get_last_sleep_start_end(force_fetch=force_fetch)
         if not start_time or not end_time:
             return None
@@ -953,27 +1104,70 @@ class Watch:
 
 class WatchFactory:
     @staticmethod
-    def create_from_details(details: Dict) -> Watch:
+    def create_from_details(details: Dict, spreadsheet=None) -> Watch:
         """Factory for creating Watch objects"""
-        name = details.get('name')
+        name = details.get('name') or details.get('watchName')
         project_name = details.get('project')
         token = details.get('token')
+        provider = (
+            str(details.get('oauth_type') or details.get('provider') or 'fitbit')
+            .strip()
+            .lower()
+            .replace("-", "_")
+            .replace(" ", "_")
+        ) or 'fitbit'
+        health_client = None
+        token_refresher = None
+
+        if name:
+            sp = spreadsheet
+            if sp is None:
+                from controllers.auth_controller import AuthenticationController
+
+                auth_controller = AuthenticationController()
+                sp = auth_controller.get_spreadsheet()
+            if provider in {'google', 'google_health', 'google_health_api', 'health'}:
+                from services.health_client_factory import HealthClientFactory
+                health_client = HealthClientFactory.from_watch_row(sp, details)
+                token = token or ""
+            else:
+                from utils.fitbit_token_store import (
+                    get_latest_tokens,
+                    get_legacy_fitbit_token,
+                    get_valid_access_token,
+                )
+
+                oauth_tokens = None
+                if sp is not None:
+                    try:
+                        oauth_tokens = get_latest_tokens(sp, name)
+                    except ValueError:
+                        oauth_tokens = None
+
+                if oauth_tokens:
+                    token = get_valid_access_token(sp, name)
+
+                    def token_refresher(sp=sp, name=name):
+                        return get_valid_access_token(sp, name, force_refresh=True)
+                elif not token and sp is not None:
+                    try:
+                        token = get_legacy_fitbit_token(sp, name)
+                    except ValueError:
+                        # Older/manual watch rows may only have a static token in the details dict.
+                        pass
         
-        if not token:
-            from controllers.auth_controller import AuthenticationController
-            from utils.fitbit_token_store import get_valid_access_token
+        if not token and health_client is None:
+            raise ValueError("Missing required watch details: name, project, or token")
 
-            auth_controller = AuthenticationController()
-            sp = auth_controller.get_spreadsheet()
-            token = get_valid_access_token(sp, name)  # name == watchName
-
-        if not all([name, project_name, token]):
+        if not all([name, project_name]):
             raise ValueError("Missing required watch details: name, project, or token")
         
         watch = Watch(
             name=name,
             project=project_name,
-            token=token
+            token=token or "",
+            health_client=health_client,
+            token_refresher=token_refresher,
         )
         
         if 'isActive' in details:
@@ -1028,5 +1222,3 @@ def get_headers(token: str) -> Dict:
 def get_activity(project: str) -> bool:
     """Check if a project is active"""
     return True  # Replace with actual logic based on your system
-
-

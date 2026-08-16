@@ -3,6 +3,7 @@ import pandas as pd
 import streamlit as st
 from entity.Sheet import Spreadsheet, GoogleSheetsAdapter
 from entity.Watch import WatchFactory
+from utils.rate_limit_ui import show_rate_limit_notice
 
 class ProjectController:
     """Controller for project-related operations"""
@@ -10,18 +11,31 @@ class ProjectController:
     def __init__(self):
         """Initialize the project controller"""
         self.spreadsheet_key = st.secrets.get("spreadsheet_key", "")
+
+    def _get_spreadsheet(self) -> Spreadsheet:
+        if st.session_state.get("spreadsheet") is not None:
+            return st.session_state.spreadsheet
+
+        spreadsheet = Spreadsheet(name="Fitbit Database", api_key=self.spreadsheet_key)
+        GoogleSheetsAdapter.connect(spreadsheet)
+        st.session_state.spreadsheet = spreadsheet
+        return spreadsheet
         
     def get_all_projects(self) -> pd.DataFrame:
         """Get all projects from the spreadsheet"""
         try:
-            # Create Spreadsheet instance
-            spreadsheet = Spreadsheet(name="Fitbit Database", api_key=self.spreadsheet_key)
-            GoogleSheetsAdapter.connect(spreadsheet)
+            spreadsheet = self._get_spreadsheet()
             
             # Get project sheet
             project_sheet = spreadsheet.get_sheet("project", sheet_type="project")
             return project_sheet.to_dataframe()
         except Exception as e:
+            show_rate_limit_notice(
+                e,
+                provider="google_sheets",
+                key="project_controller_projects",
+                context="loading projects",
+            )
             print(f"Error getting projects: {e}")
             return pd.DataFrame()
     
@@ -39,9 +53,7 @@ class ProjectController:
     def get_watches_for_project(self, project_name: str) -> pd.DataFrame:
         """Get watches for a specific project"""
         try:
-            # Create Spreadsheet instance
-            spreadsheet = Spreadsheet(name="Fitbit Database", api_key=self.spreadsheet_key)
-            GoogleSheetsAdapter.connect(spreadsheet)
+            spreadsheet = self._get_spreadsheet()
             
             # Get fitbit sheet
             fitbit_sheet = spreadsheet.get_sheet("fitbit", sheet_type="fitbit")
@@ -53,15 +65,19 @@ class ProjectController:
                 # Filter for this project
                 return fitbit_df[fitbit_df['project'] == project_name]
         except Exception as e:
+            show_rate_limit_notice(
+                e,
+                provider="google_sheets",
+                key=f"project_controller_watches_{project_name}",
+                context="loading watches",
+            )
             print(f"Error getting watches for project {project_name}: {e}")
             return pd.DataFrame()
     
     def get_watch_details(self, watch_name: str) -> Optional[Dict]:
         """Get detailed information about a specific watch"""
         try:
-            # Create Spreadsheet instance
-            spreadsheet = Spreadsheet(name="Fitbit Database", api_key=self.spreadsheet_key)
-            GoogleSheetsAdapter.connect(spreadsheet)
+            spreadsheet = self._get_spreadsheet()
             
             # Get fitbit sheet
             fitbit_sheet = spreadsheet.get_sheet("fitbit", sheet_type="fitbit")
@@ -76,40 +92,42 @@ class ProjectController:
                 # Convert to dict for first row
                 details = watch_details.iloc[0].to_dict()
                 
-                # Also get the latest log data
-                log_sheet = spreadsheet.get_sheet("FitbitLog", sheet_type="log")
-                log_df = log_sheet.to_dataframe()
-                
-                # Filter to this watch and get the most recent entry
-                watch_logs = log_df[log_df['watchName'] == watch_name]
-                if len(watch_logs) > 0:
-                    # Sort by lastCheck (newest first) and get the first row
-                    watch_logs = watch_logs.sort_values(by='lastCheck', ascending=False)
-                    latest_log = watch_logs.iloc[0].to_dict()
-                    
-                    # Merge the details
-                    details.update({
-                        'lastSynced': latest_log.get('lastSynced', ''),
-                        'lastBatteryLevel': latest_log.get('lastBattaryVal', ''),
-                        'lastHeartRate': latest_log.get('lastHRVal', ''),
-                        'lastSteps': latest_log.get('lastStepsVal', ''),
-                        'lastSleepStart': latest_log.get('lastSleepStartDateTime', ''),
-                        'lastSleepEnd': latest_log.get('lastSleepEndDateTime', ''),
-                        'lastSleepDuration': latest_log.get('lastSleepDur', '')
-                    })
+                # Use loaded log data if it is already present. Do not force another
+                # worksheet read here; dashboard data fetches are a hot path.
+                if "FitbitLog" in spreadsheet.sheets:
+                    log_sheet = spreadsheet.get_sheet("FitbitLog", sheet_type="log")
+                    log_df = log_sheet.to_dataframe()
+                    if not log_df.empty and "watchName" in log_df.columns:
+                        watch_logs = log_df[log_df['watchName'] == watch_name]
+                        if len(watch_logs) > 0:
+                            watch_logs = watch_logs.sort_values(by='lastCheck', ascending=False)
+                            latest_log = watch_logs.iloc[0].to_dict()
+                            details.update({
+                                'lastSynced': latest_log.get('lastSynced', ''),
+                                'lastBatteryLevel': latest_log.get('lastBattaryVal', ''),
+                                'lastHeartRate': latest_log.get('lastHRVal', ''),
+                                'lastSteps': latest_log.get('lastStepsVal', ''),
+                                'lastSleepStart': latest_log.get('lastSleepStartDateTime', ''),
+                                'lastSleepEnd': latest_log.get('lastSleepEndDateTime', ''),
+                                'lastSleepDuration': latest_log.get('lastSleepDur', '')
+                            })
                 
                 return details
             return None
         except Exception as e:
+            show_rate_limit_notice(
+                e,
+                provider="google_sheets",
+                key=f"project_controller_watch_details_{watch_name}",
+                context="loading watch details",
+            )
             print(f"Error getting details for watch {watch_name}: {e}")
             return None
             
     def get_watches_for_student(self, student_email: str) -> pd.DataFrame:
         """Get watches assigned to a specific student"""
         try:
-            # Create Spreadsheet instance
-            spreadsheet = Spreadsheet(name="Fitbit Database", api_key=self.spreadsheet_key)
-            GoogleSheetsAdapter.connect(spreadsheet)
+            spreadsheet = self._get_spreadsheet()
             
             # Get studentWatch sheet
             student_watch_sheet = spreadsheet.get_sheet("studentWatch", sheet_type="generic")
@@ -131,5 +149,11 @@ class ProjectController:
             # Filter for these watches
             return fitbit_df[fitbit_df['name'].isin(watch_names)]
         except Exception as e:
+            show_rate_limit_notice(
+                e,
+                provider="google_sheets",
+                key=f"project_controller_student_watches_{student_email}",
+                context="loading student watches",
+            )
             print(f"Error getting watches for student {student_email}: {e}")
             return pd.DataFrame()

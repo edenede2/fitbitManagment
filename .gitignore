@@ -1,7 +1,16 @@
 .env
+__pycache__/
+*.py[cod]
+/fitbitManagment/
 fitbit_log.csv
 data/
+logs/
 reports/
 .streamlit/config.toml
 .streamlit/secrets.toml
 generateKey.ipynb
+*.log
+*.csv
+stsecrets.txt
+stsecters.txt
+*.DS_Store

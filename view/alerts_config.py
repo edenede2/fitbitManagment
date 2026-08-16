@@ -458,13 +458,13 @@ def display_fitbit_configs(configs_df):
             summary_cols = ['project', 'email', 'watch', 'batteryThr', 'endDate']
             if all(col in configs_df.columns for col in summary_cols):
                 summary_df = configs_df.select(summary_cols)
-                st.dataframe(summary_df, use_container_width=True)
+                st.dataframe(summary_df, width="stretch")
             else:
                 st.warning("Configuration data is missing expected columns")
         
         with tab_details:
             # Show the full configuration details
-            st.dataframe(configs_df, use_container_width=True)
+            st.dataframe(configs_df, width="stretch")
     
     # Add some visual charts if there are enough configurations
     if len(configs_df) > 1:
@@ -480,7 +480,7 @@ def display_fitbit_configs(configs_df):
                 fig = px.bar(battery_data, x='email', y='batteryThr', 
                              labels={'batteryThr': 'Battery Threshold (%)', 'email': 'Recipient Email'},
                              title="Battery Alert Thresholds by Recipient")
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
             except Exception as e:
                 st.error(f"Error creating battery threshold chart: {e}")
 
@@ -493,7 +493,7 @@ def display_qualtrics_configs(configs_df):
     st.subheader("Current Qualtrics Alert Configurations")
     
     # Display the configuration table
-    st.dataframe(configs_df, use_container_width=True)
+    st.dataframe(configs_df, width="stretch")
     
     # Add a visualization if there are multiple configurations
     if len(configs_df) > 1 and 'hoursThr' in configs_df.columns:
@@ -504,7 +504,7 @@ def display_qualtrics_configs(configs_df):
             fig = px.bar(hours_data, x='manager', y='hoursThr',
                          labels={'hoursThr': 'Hours Threshold', 'manager': 'Manager'},
                          title="Response Time Thresholds by Manager")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         except Exception as e:
             st.error(f"Error creating hours threshold chart: {e}")
 
