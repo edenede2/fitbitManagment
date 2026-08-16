@@ -493,7 +493,7 @@ def display_fitbit_log_table(user_email, user_role, user_project, spreadsheet: S
                 display_df = display_df.with_columns([
                     pl.col('lastBattaryVal')
                     .map_elements(lambda x: 
-                        0 if x is None or x == '' or not x 
+                        0.0 if x is None or x == '' or not x 
                         else float(x) / 100.0
                     , return_dtype=pl.Float64)
                     .alias('Battery Level')

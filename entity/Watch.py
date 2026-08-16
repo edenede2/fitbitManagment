@@ -959,6 +959,14 @@ class WatchFactory:
         project_name = details.get('project')
         token = details.get('token')
         
+        if not token:
+            from controllers.auth_controller import AuthenticationController
+            from utils.fitbit_token_store import get_valid_access_token
+
+            auth_controller = AuthenticationController()
+            sp = auth_controller.get_spreadsheet()
+            token = get_valid_access_token(sp, name)  # name == watchName
+
         if not all([name, project_name, token]):
             raise ValueError("Missing required watch details: name, project, or token")
         

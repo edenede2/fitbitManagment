@@ -62,12 +62,22 @@ class AuthenticationController:
             st.title("👤 User Access")
             
             # Check if the user is authenticated through Streamlit or in demo mode
-            is_logged_in = st.user.is_logged_in or st.session_state.get('user_role') is not None
+            try:
+                is_streamlit_logged_in = st.user is not None and hasattr(st.user, 'is_logged_in') and st.user.is_logged_in
+            except Exception:
+                is_streamlit_logged_in = False
+            
+            is_logged_in = is_streamlit_logged_in or st.session_state.get('user_role') is not None
             
             if is_logged_in:
-                if st.user.is_logged_in:
-                    st.write(f"Logged in as: {st.user.email}")
-                    user_email = st.user.email
+                if is_streamlit_logged_in:
+                    user_email = getattr(st.user, 'email', None)
+                    if user_email is None:
+                        st.error("Could not retrieve user email. Please try logging in again.")
+                        if st.button("Retry Login"):
+                            st.login("google")
+                        return
+                    st.write(f"Logged in as: {user_email}")
                     # Display user role information
                     email_prefix = st.user.email.split('@')[0]
                     # Handle dotted email prefixes (TOML parses dots as nested tables)

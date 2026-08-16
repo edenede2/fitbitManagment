@@ -347,9 +347,9 @@ class SheetsAPI:
         if getattr(self, '_initialized', False):
             return
             
-        self._initialized = True
         self.client = self._get_client()
         self._spreadsheets = {}
+        self._initialized = True
     
     @staticmethod
     @st.cache_resource
@@ -381,6 +381,12 @@ class SheetsAPI:
         if cls._instance is None:
             cls()
         return cls._instance
+
+    @classmethod
+    def reset(cls):
+        """Reset the singleton instance and clear cached client"""
+        cls._instance = None
+        cls._get_client.clear()
 
 
 class GoogleSheetsAdapter:
@@ -414,12 +420,12 @@ class GoogleSheetsAdapter:
             print(f"Worksheet {name} not found in spreadsheet {spreadsheet.name}")
     
     @staticmethod
-    def get_rows(spreadsheet: Spreadsheet, name: str, *keys, **row) -> List[dict]:
+    def get_rows(spreadsheet: Spreadsheet, sheet_name: str, *keys, **row) -> List[dict]:
         """Get rows from a sheet by keys"""
         sheet_api = SheetsAPI.get_instance()
         google_spreadsheet = sheet_api.open_spreadsheet(spreadsheet.api_key)
         try:
-            worksheet = google_spreadsheet.worksheet(name)
+            worksheet = google_spreadsheet.worksheet(sheet_name)
             records = worksheet.get_all_records()
             result = []
             for record in records:
@@ -427,7 +433,7 @@ class GoogleSheetsAdapter:
                     result.append(record)
             return result
         except gspread.exceptions.WorksheetNotFound:
-            print(f"Worksheet {name} not found in spreadsheet {spreadsheet.name}")
+            print(f"Worksheet {sheet_name} not found in spreadsheet {spreadsheet.name}")
             return []
     
     @staticmethod
