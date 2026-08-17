@@ -10,7 +10,9 @@ from entity.Sheet import Spreadsheet
 from utils.access_control import (
     AccessContext,
     build_access_context,
+    resolve_access_context,
     synchronize_access_context,
+    user_access_from_secrets,
 )
 from utils.demo_data import DEMO_SHEETS, create_demo_spreadsheet
 from utils.fitbit_token_store import is_state_used, resolve_state
@@ -72,6 +74,74 @@ class AccessContextTests(unittest.TestCase):
                 self.assertTrue(context.can_write)
                 self.assertEqual(context.can_manage_devices, role in {"Admin", "Manager"})
                 self.assertEqual(context.can_call_external_services, role in {"Admin", "Manager"})
+
+    def test_mapping_style_streamlit_user_resolves_manager_assignment(self):
+        fake_streamlit = SimpleNamespace(
+            user={
+                "is_logged_in": True,
+                "email": "shvartzmanrotem@campus.haifa.ac.il",
+            },
+            session_state=SessionState(),
+        )
+
+        with patch("utils.access_control.st", fake_streamlit):
+            context = resolve_access_context(
+                lambda email: ("Manager", "mdma")
+                if email.split("@", 1)[0].casefold() == "shvartzmanrotem"
+                else ("Guest", "None")
+            )
+
+        self.assertTrue(context.is_authenticated)
+        self.assertEqual(context.role, "Manager")
+        self.assertEqual(context.project, "mdma")
+        self.assertTrue(context.can_read_real_data)
+
+    def test_user_access_assignment_keeps_manager_out_of_guest_mode(self):
+        secrets = {
+            "shvartzmanrotem": "Manager,mdma",
+            "unknown_setting": "not-a-role",
+        }
+        role, project = user_access_from_secrets(
+            secrets,
+            "ShvartzmanRotem@campus.haifa.ac.il",
+        )
+
+        self.assertEqual((role, project), ("Manager", "mdma"))
+
+    def test_user_access_assignment_can_live_in_grouped_secrets(self):
+        role, project = user_access_from_secrets(
+            {"users": {"shvartzmanrotem": "Manager,metiv"}},
+            "shvartzmanrotem@campus.haifa.ac.il",
+        )
+
+        self.assertEqual((role, project), ("Manager", "metiv"))
+
+    def test_dotted_user_assignment_and_unknown_role_are_handled_safely(self):
+        secrets = {
+            "anuta89": {"ap": "Manager,metiv"},
+            "unrecognized": "Owner,metiv",
+        }
+
+        self.assertEqual(
+            user_access_from_secrets(secrets, "anuta89.ap@example.invalid"),
+            ("Manager", "metiv"),
+        )
+        self.assertEqual(
+            user_access_from_secrets(secrets, "unrecognized@example.invalid"),
+            ("Guest", "None"),
+        )
+
+    def test_email_claim_without_login_flag_is_not_authenticated(self):
+        fake_streamlit = SimpleNamespace(
+            user={"email": "shvartzmanrotem@campus.haifa.ac.il"},
+            session_state=SessionState(),
+        )
+
+        with patch("utils.access_control.st", fake_streamlit):
+            context = resolve_access_context(lambda _: ("Manager", "mdma"))
+
+        self.assertTrue(context.is_anonymous)
+        self.assertFalse(context.can_read_real_data)
 
     def test_identity_transition_clears_data_bearing_session_values(self):
         session_state = SessionState(

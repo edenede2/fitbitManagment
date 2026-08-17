@@ -9,6 +9,8 @@ from utils.access_control import (
     render_legal_links,
     require_real_data_access,
     resolve_access_context,
+    lookup_access_assignment,
+    user_access_from_secrets,
 )
 from utils.demo_data import create_demo_spreadsheet
 
@@ -34,49 +36,11 @@ class AuthenticationController:
 
     def get_user_access(self, user_email: str) -> tuple[str, str]:
         """Return (role, project) from Streamlit secrets for a user email."""
-        username = user_email.split('@')[0]
-        access_value = self._lookup_secret(username)
-        if access_value == 'Guest':
-            return 'Guest', 'None'
-
-        parts = [part.strip() for part in str(access_value).split(',')]
-        role = parts[0] if len(parts) > 0 and parts[0] else 'Guest'
-        project = parts[1] if len(parts) > 1 and parts[1] else 'None'
-        return role, project
+        return user_access_from_secrets(st.secrets, user_email)
     
     def _lookup_secret(self, email_prefix: str) -> str:
-        """Lookup a user secret by email prefix, handling dotted keys (TOML nested tables) and case differences."""
-        # For dotted prefixes like "anuta89.ap", TOML parses them as nested: st.secrets["anuta89"]["ap"]
-        if '.' in email_prefix:
-            parts = email_prefix.split('.', 1)
-            try:
-                table = st.secrets.get(parts[0], None)
-                if table is not None and hasattr(table, 'get'):
-                    val = table.get(parts[1], None)
-                    if val is not None:
-                        return val
-            except Exception:
-                pass
-            # Also try case-insensitive nested lookup
-            for key in st.secrets:
-                if key.lower() == parts[0].lower():
-                    table = st.secrets[key]
-                    if hasattr(table, 'get'):
-                        for sub_key in table:
-                            if sub_key.lower() == parts[1].lower():
-                                return table[sub_key]
-        else:
-            # Flat key lookup
-            val = st.secrets.get(email_prefix, None)
-            if val is not None:
-                return val
-            # Case-insensitive fallback
-            for key in st.secrets:
-                if key.lower() == email_prefix.lower():
-                    result = st.secrets[key]
-                    if isinstance(result, str):
-                        return result
-        return 'Guest'
+        """Backward-compatible wrapper for direct prefix lookups."""
+        return lookup_access_assignment(st.secrets, email_prefix)
 
     def get_access_context(self) -> AccessContext:
         return resolve_access_context(self.get_user_access)

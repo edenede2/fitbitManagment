@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Callable, Literal, Optional
 
@@ -75,6 +76,69 @@ def normalize_role(value: object) -> str:
     return role if role in AUTHORIZED_ROLES else "Guest"
 
 
+def lookup_access_assignment(secrets: object, email_prefix: str) -> str:
+    """Find an explicit user assignment in flat or grouped TOML secrets.
+
+    Streamlit secrets are dict-like and deployments commonly keep access
+    entries either at the root or below a ``users``/``access`` table. TOML
+    also turns unquoted usernames containing dots into nested tables. Only
+    scalar values whose first field is a supported role are accepted.
+    """
+    target = str(email_prefix or "").strip().casefold()
+    if not target:
+        return "Guest"
+
+    def valid_assignment(value: object) -> bool:
+        if not isinstance(value, str):
+            return False
+        role = value.split(",", 1)[0].strip().title()
+        return role in {*AUTHORIZED_ROLES, "Guest"}
+
+    def find_in_table(table: object, path: tuple[str, ...] = ()):
+        if not isinstance(table, Mapping) and not hasattr(table, "items"):
+            return None
+        try:
+            entries = table.items()
+        except Exception:
+            return None
+
+        for raw_key, value in entries:
+            key = str(raw_key)
+            current_path = (*path, key)
+            full_key = ".".join(current_path).casefold()
+            leaf_key = key.casefold()
+            if (leaf_key == target or full_key == target) and valid_assignment(value):
+                return value
+
+            nested = find_in_table(value, current_path)
+            if nested is not None:
+                return nested
+        return None
+
+    try:
+        assignment = find_in_table(secrets)
+        if assignment is not None:
+            return assignment
+    except Exception:
+        pass
+    return "Guest"
+
+
+def user_access_from_secrets(secrets: object, user_email: str) -> tuple[str, str]:
+    """Resolve a Streamlit OIDC email to an authorized role and project."""
+    username = str(user_email or "").strip().split("@", 1)[0]
+    if not username:
+        return "Guest", "None"
+
+    access_value = lookup_access_assignment(secrets, username)
+    parts = [part.strip() for part in str(access_value).split(",")]
+    role = normalize_role(parts[0] if parts else "Guest")
+    if role == "Guest":
+        return "Guest", "None"
+    project = parts[1] if len(parts) > 1 and parts[1] else "None"
+    return role, project
+
+
 def build_access_context(
     *,
     streamlit_logged_in: bool,
@@ -101,15 +165,33 @@ def build_access_context(
     return AccessContext.anonymous()
 
 
+def _user_claim(user: object, name: str) -> object:
+    """Read an OIDC claim from Streamlit's dict-like user proxy safely."""
+    if isinstance(user, Mapping):
+        value = user.get(name)
+        if value is not None:
+            return value
+
+    try:
+        return getattr(user, name)
+    except (AttributeError, KeyError, TypeError):
+        return None
+
+
 def _streamlit_identity() -> tuple[bool, Optional[str]]:
     try:
         user = st.user
-        logged_in = bool(
-            user is not None
-            and hasattr(user, "is_logged_in")
-            and user.is_logged_in
-        )
-        return logged_in, getattr(user, "email", None) if logged_in else None
+        if user is None:
+            return False, None
+
+        logged_in_claim = _user_claim(user, "is_logged_in")
+        email_claim = _user_claim(user, "email")
+        email = str(email_claim).strip() if email_claim else None
+
+        # An email claim by itself is not sufficient: Streamlit's explicit
+        # login flag must be true before any role assignment can be used.
+        logged_in = bool(logged_in_claim)
+        return logged_in, email if logged_in else None
     except Exception:
         return False, None
 
