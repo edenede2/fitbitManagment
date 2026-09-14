@@ -936,7 +936,7 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
                     <p>For detailed monitoring, please visit one of our dashboards:</p>
 
                     <div style="display: flex; margin: 20px 0;">
-                        <a href="https://fitbitmanagment.streamlit.app/Dashboard"
+                        <a href="https://app.admontracker.online/Dashboard"
                            style="display: inline-block; background-color: #2196F3; color: white; padding: 10px 20px;
                                   text-decoration: none; border-radius: 4px; margin-right: 15px; font-weight: bold;">
                            ↗️ New Dashboard

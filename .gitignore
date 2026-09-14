@@ -14,3 +14,9 @@ generateKey.ipynb
 stsecrets.txt
 stsecters.txt
 *.DS_Store
+stSecretsExample.txt
+admontracker-589cfa4bc941.json
+client_secret_582419685938-te72d7f7ja835qdu5aqluosmqq9ld4fk.apps.googleusercontent.com.json
+client_secret_*.apps.googleusercontent.com.json
+admontracker-*.json
+.heroku/
