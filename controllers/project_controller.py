@@ -4,6 +4,7 @@ import streamlit as st
 from entity.Sheet import Spreadsheet, GoogleSheetsAdapter
 from entity.Watch import WatchFactory
 from utils.rate_limit_ui import show_rate_limit_notice
+from utils.access_control import require_real_data_access
 
 class ProjectController:
     """Controller for project-related operations"""
@@ -13,6 +14,7 @@ class ProjectController:
         self.spreadsheet_key = st.secrets.get("spreadsheet_key", "")
 
     def _get_spreadsheet(self) -> Spreadsheet:
+        require_real_data_access()
         if st.session_state.get("spreadsheet") is not None:
             return st.session_state.spreadsheet
 

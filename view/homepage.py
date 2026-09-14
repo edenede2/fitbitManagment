@@ -67,7 +67,7 @@ def display_homepage(user_email, user_role, user_project, spreadsheet: Spreadshe
     else:
         st.title(congrats(user_name=user_email.split('@')[0], user_role=user_role))
         
-        st.write("Welcome to the Fitbit Management System dashboard.")
+        st.write("Welcome to the Wearable Research Manager dashboard.")
         
         # Display role-specific information
         if user_role == "Admin":
@@ -93,7 +93,7 @@ def display_homepage(user_email, user_role, user_project, spreadsheet: Spreadshe
             st.write("**Dashboard**")
             st.write("View detailed analytics and statistics.")
         with col2:
-            st.write("**Fitbit Management**")
+            st.write("**Wearable Device Management**")
             st.write("Manage Fitbit devices and assignments.")
         with col3:
             st.write("**Alerts Configuration**")

@@ -6,6 +6,7 @@ import datetime
 import polars as pl
 from utils.health_oauth_clients import load_active_oauth_clients
 from utils.rate_limit_ui import show_rate_limit_notice
+from utils.access_control import require_device_management, require_write_access
 
 
 def _google_oauth_client_label(row: dict) -> str:
@@ -51,7 +52,7 @@ def load_fitbit_datatable(user_email: str, user_role: str, user_project: str, sp
         user_project: User's project
         spreadsheet: Spreadsheet object for data access
     """
-    st.title("Fitbit Devices Management")
+    st.title("Wearable Device Management")
     
     
     
@@ -154,6 +155,7 @@ def display_admin_interface(fitbit_df: pl.DataFrame, user_df: pl.DataFrame,
             submitted = st.form_submit_button("Add Device")
             
             if submitted and new_name and new_project:
+                require_device_management()
                 # Create new device record
                 new_device = {
                     "project": new_project,
@@ -340,6 +342,7 @@ def display_editable_table(fitbit_df: pl.DataFrame, user_df: pl.DataFrame, is_ad
 def save_changes(edited_df: pl.DataFrame, fitbit_sheet: Any, spreadsheet: Spreadsheet) -> None:
     """Save changes made to the Fitbit devices table."""
     try:
+        require_write_access()
         st.warning("⚠️ Please note: Changes may take 2-3 minutes to fully update in the cloud. Meanwhile, you can continue using the app.")
         # Update sheet data with edited DataFrame
         spreadsheet.update_sheet(

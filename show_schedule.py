@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 
 def show_schedule():
     """Show the schedule for both scripts over a few hours"""
-    print("Fitbit Management System - Hourly Schedule")
+    print("Wearable Research Manager - Hourly Schedule")
     print("=" * 60)
     print()
 

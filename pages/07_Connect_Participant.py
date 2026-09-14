@@ -1,33 +1,47 @@
 import streamlit as st
-from utils.fitbit_oauth import new_state, build_authorize_url
-from entity.Sheet import Spreadsheet, GoogleSheetsAdapter
 
-def get_spreadsheet():
-    spreadsheet_key = st.secrets["spreadsheet_key"]
-    ss = Spreadsheet(name="Fitbit Database", api_key=spreadsheet_key)
-    GoogleSheetsAdapter.connect(ss)
-    return ss
+from controllers.auth_controller import AuthenticationController
+from utils.access_control import require_device_management, require_write_access
+from utils.demo_ui import render_demo_page
 
-st.title("Connect Participant (Fitbit OAuth)")
 
-participant = st.text_input("participant_anon_id")
+st.set_page_config(page_title="Participant Connect - Wearable Research Manager", page_icon="🔗", layout="wide")
+
+auth_controller = AuthenticationController()
+auth_controller.render_auth_ui()
+context = auth_controller.get_access_context()
+
+if context.is_anonymous:
+    st.warning("Please log in or open the guest demo from the main page.")
+    st.stop()
+
+if context.is_guest:
+    render_demo_page("participant_connect")
+    st.stop()
+
+if not context.can_manage_devices:
+    st.warning("Participant connection requires an Admin or Manager account.")
+    st.stop()
+
+require_device_management(context)
+spreadsheet = auth_controller.get_spreadsheet()
+from utils.health_connect_links import create_health_connect_link
+
+st.title("Connect Participant")
+participant = st.text_input("Participant pseudonymous ID")
+
 if st.button("Generate connect link") and participant:
-    state = new_state()
-    auth_url = build_authorize_url(state)
-
-    ss = get_spreadsheet()
-    states_sheet = ss.get_sheet("oauth_states", sheet_type="oauth_states")  # תצטרכו sheet_type או legacy בהתאם למימוש שלכם
-    # כתיבה - בהתאם ל-API של הישות אצלכם:
-    ss.update_sheet("oauth_states", [{
-        "state": state,
-        "participant_anon_id": participant,
-        "created_at": str(st.session_state.get("now", "")),
-        "used": "FALSE",
-        "used_at": "",
-        "notes": ""
-    }], strategy="append")
-
+    require_device_management(context)
+    require_write_access(context)
+    auth_url = create_health_connect_link(
+        spreadsheet,
+        watchName=participant.strip(),
+        project=context.project,
+        provider="fitbit",
+        purpose="connect",
+        created_by=context.email,
+    )
     st.success("Link generated")
-    st.write("Open this link in an incognito window while logged into the participant's demo account:")
+    st.write("Open this link in an incognito window while logged into the participant account:")
     st.code(auth_url)
     st.link_button("Open authorization", auth_url)

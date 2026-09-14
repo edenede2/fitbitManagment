@@ -288,7 +288,17 @@ class Spreadsheet:
     name: str
     api_key: str
     sheets: Dict[str, Sheet] = field(default_factory=dict)
+    read_only: bool = False
+    source_kind: str = "production"
     _gspread_connection = None
+
+    def assert_writable(self) -> None:
+        if self.read_only:
+            raise PermissionError("The synthetic guest data source is read-only.")
+
+    def assert_external_connection_allowed(self) -> None:
+        if self.source_kind == "demo" or self.read_only:
+            raise PermissionError("Synthetic guest data cannot connect to external services.")
 
     def get_sheet(self, name: str, sheet_type: str = 'generic', refresh = False) -> Sheet:
         """Get a sheet by name, creating it if it doesn't exist"""
@@ -301,6 +311,7 @@ class Spreadsheet:
     def update_sheet(self, name: str, data: Union[dict, pd.DataFrame, pl.DataFrame],
                      strategy: str = 'replace') -> None:
         """Update a sheet with new data using the specified strategy"""
+        self.assert_writable()
         sheet = self.get_sheet(name)
 
         # Convert dataframe to dict if needed
@@ -329,6 +340,7 @@ class Spreadsheet:
 
     def get_gspread_connection(self):
         """Get the gspread connection for this spreadsheet"""
+        self.assert_external_connection_allowed()
         if not self._gspread_connection:
             # Initialize connection
             sheets_api = SheetsAPI.get_instance()
@@ -401,6 +413,15 @@ class GoogleSheetsAdapter:
     """Adapter for connecting entity layer Spreadsheet with Google Sheets API"""
 
     @staticmethod
+    def _assert_writable(spreadsheet: Spreadsheet) -> None:
+        if getattr(spreadsheet, "read_only", False):
+            raise PermissionError("The synthetic guest data source is read-only.")
+
+    @staticmethod
+    def _is_local_demo(spreadsheet: Spreadsheet) -> bool:
+        return getattr(spreadsheet, "source_kind", "production") == "demo"
+
+    @staticmethod
     def _records_from_values(values: List[List[Any]]) -> List[dict]:
         """Build records manually for sheets with duplicate or blank headers."""
         if not values:
@@ -439,6 +460,8 @@ class GoogleSheetsAdapter:
     @staticmethod
     def get_all_reords(spreadsheet: Spreadsheet, name: str) -> Sheet:
         """Get a sheet by name from the entity layer"""
+        if GoogleSheetsAdapter._is_local_demo(spreadsheet):
+            return spreadsheet.get_sheet(name).data
         sheets_api = SheetsAPI.get_instance()
         google_spreadsheet = sheets_api.open_spreadsheet(spreadsheet.api_key)
         try:
@@ -452,6 +475,12 @@ class GoogleSheetsAdapter:
     @staticmethod
     def get_row(spreadsheet: Spreadsheet, name: str, *keys, **row) -> Optional[dict]:
         """Get a row from a sheet by keys"""
+        if GoogleSheetsAdapter._is_local_demo(spreadsheet):
+            records = spreadsheet.get_sheet(name).data or []
+            return next(
+                (record for record in records if all(record.get(key) == row[key] for key in keys)),
+                None,
+            )
         sheet_api = SheetsAPI.get_instance()
         google_spreadsheet = sheet_api.open_spreadsheet(spreadsheet.api_key)
         try:
@@ -466,6 +495,12 @@ class GoogleSheetsAdapter:
     @staticmethod
     def get_rows(spreadsheet: Spreadsheet, sheet_name: str, *keys, **row) -> List[dict]:
         """Get rows from a sheet by keys"""
+        if GoogleSheetsAdapter._is_local_demo(spreadsheet):
+            records = spreadsheet.get_sheet(sheet_name).data or []
+            return [
+                record for record in records
+                if all(record.get(key) == row[key] for key in keys)
+            ]
         sheet_api = SheetsAPI.get_instance()
         google_spreadsheet = sheet_api.open_spreadsheet(spreadsheet.api_key)
         try:
@@ -483,6 +518,7 @@ class GoogleSheetsAdapter:
     @staticmethod
     def update_row(spreadsheet: Spreadsheet, name: str, **on) -> None:
         """Update a row in a sheet by ID. on is a dictionary of column names and values"""
+        GoogleSheetsAdapter._assert_writable(spreadsheet)
         sheet_api = SheetsAPI.get_instance()
         google_spreadsheet = sheet_api.open_spreadsheet(spreadsheet.api_key)
         try:
@@ -503,6 +539,7 @@ class GoogleSheetsAdapter:
     @staticmethod
     def update_rows(spreadsheet: Spreadsheet, name: str, **on) -> None:
         """Update rows in a sheet by ID. on is a dictionary of column names and values"""
+        GoogleSheetsAdapter._assert_writable(spreadsheet)
         sheet_api = SheetsAPI.get_instance()
         google_spreadsheet = sheet_api.open_spreadsheet(spreadsheet.api_key)
         try:
@@ -522,8 +559,9 @@ class GoogleSheetsAdapter:
         return None
 
     @staticmethod
-    def append_rows(spreadsheet: Spreadsheet, name: str, data: List[dict]) -> None:
+    def append_rows(spreadsheet: Spreadsheet, name: str, data: List[dict]) -> bool:
         """Append rows to a sheet"""
+        GoogleSheetsAdapter._assert_writable(spreadsheet)
         sheet_api = SheetsAPI.get_instance()
         google_spreadsheet = sheet_api.open_spreadsheet(spreadsheet.api_key)
         try:
@@ -555,18 +593,15 @@ class GoogleSheetsAdapter:
                     worksheet.append_row(list(record.values()))
                 else:
                     worksheet.append_row(record)
-        except gspread.exceptions.WorksheetNotFound:
-            print(f"Worksheet {name} not found in spreadsheet {spreadsheet.name}")
-            return None
         except Exception as e:
-            print(f"Error appending rows to {name}: {e}")
-            return None
-        return None
+            raise RuntimeError(f"Error appending rows to {name}: {e}") from e
+        return True
 
 
     @staticmethod
     def delete_row(spreadsheet: Spreadsheet, name: str, **on) -> None:
         """Delete a row in a sheet by ID. on is a dictionary of column names and values"""
+        GoogleSheetsAdapter._assert_writable(spreadsheet)
         sheet_api = SheetsAPI.get_instance()
         google_spreadsheet = sheet_api.open_spreadsheet(spreadsheet.api_key)
         try:
@@ -592,6 +627,7 @@ class GoogleSheetsAdapter:
     # @sheets_cache(timeout=300)  # Cache for 5 minutes
     def connect(spreadsheet: Spreadsheet) -> Spreadsheet:
         """Connect the entity Spreadsheet with the actual Google Sheets API"""
+        spreadsheet.assert_external_connection_allowed()
         # Get API instance
         sheets_api = SheetsAPI.get_instance()
 
@@ -777,6 +813,7 @@ class GoogleSheetsAdapter:
             mode: Save mode - 'auto' (detect best approach), 'append' (add new records),
                  'rewrite' (clear and rewrite), 'update' (update existing + append new)
         """
+        GoogleSheetsAdapter._assert_writable(spreadsheet)
         # Get the Google Sheets connection
         google_spreadsheet = spreadsheet.get_gspread_connection()
 

@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import datetime
 from entity.Sheet import GoogleSheetsAdapter, Spreadsheet
+from utils.access_control import require_write_access
 
 def nova_qualtrics_management(user_email, user_role, user_project, spreadsheet):
     """
@@ -375,6 +376,7 @@ def _display_accept_form(spreadsheet, late_nums_df, suspicious_nums_df):
 
 def _update_accepted_numbers(spreadsheet: Spreadsheet, df, selected_numbers, sheet_name):
     """Update the 'accepted' field for selected numbers in the DataFrame and save to sheet"""
+    require_write_access()
     if df is None or df.empty:
         return
 

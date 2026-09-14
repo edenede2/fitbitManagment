@@ -5,6 +5,36 @@ from collections import OrderedDict
 from entity.Sheet import GoogleSheetsAdapter
 from utils.fitbit_callback import handle_fitbit_callback
 from utils.google_health_callback import handle_google_health_callback
+from utils.rate_limit_ui import show_rate_limit_notice
+from utils.access_control import require_device_management, require_write_access
+from utils.demo_ui import render_demo_page
+
+st.set_page_config(page_title="OAuth Connect - Wearable Research Manager", page_icon="🔑", layout="wide")
+
+auth_controller = AuthenticationController()
+
+if handle_google_health_callback(auth_controller):
+    st.stop()
+if handle_fitbit_callback(auth_controller):
+    st.stop()
+
+auth_controller.render_auth_ui()
+context = auth_controller.get_access_context()
+
+if context.is_anonymous:
+    st.warning("Please log in or open the guest demo from the main page.")
+    st.stop()
+
+if context.is_guest:
+    render_demo_page("oauth")
+    st.stop()
+
+if not context.can_manage_devices:
+    st.warning("OAuth device management requires an Admin or Manager account.")
+    st.stop()
+
+require_device_management(context)
+
 from utils.health_connect_links import create_health_connect_link
 from utils.health_oauth_clients import (
     DEFAULT_GOOGLE_HEALTH_SCOPES,
@@ -15,29 +45,6 @@ from utils.health_oauth_clients import (
     suggest_google_health_redirect_uri,
     upsert_oauth_client_config,
 )
-from utils.rate_limit_ui import show_rate_limit_notice
-
-st.set_page_config(page_title="OAuth Connect", page_icon="🔑", layout="wide")
-
-auth_controller = AuthenticationController()
-
-if handle_google_health_callback(auth_controller):
-    st.stop()
-if handle_fitbit_callback(auth_controller):
-    st.stop()
-
-auth_controller.render_auth_ui()
-
-# Require login
-try:
-    is_streamlit_logged_in = st.user is not None and hasattr(st.user, 'is_logged_in') and st.user.is_logged_in
-except Exception:
-    is_streamlit_logged_in = False
-
-is_logged_in = is_streamlit_logged_in or st.session_state.get('user_role') is not None
-if not is_logged_in:
-    st.warning("Please log in to access this page.")
-    st.stop()
 
 # ── Spreadsheet (cached in session state, like other pages) ──
 if 'spreadsheet' not in st.session_state:
@@ -86,15 +93,30 @@ def _select_google_client_key(label: str, *, key: str) -> str:
     return str(selected.get("client_key") or "")
 
 
-def _upsert_fitbit_watch_row(spreadsheet, row: OrderedDict, *, overwrite: bool = False) -> str:
+def _upsert_fitbit_watch_row(
+    spreadsheet,
+    row: OrderedDict,
+    *,
+    overwrite: bool = False,
+    access_context=None,
+) -> str:
     """
     Add or intentionally overwrite a watch row in the fitbit sheet.
 
     Existing token values are not preserved when overwrite=True; the connect
     flow is expected to replace them in the OAuth callback.
     """
+    require_device_management()
     watch_name = str(row.get("name") or "").strip()
     existing = GoogleSheetsAdapter.get_rows(spreadsheet, "fitbit", "name", name=watch_name)
+    if access_context is not None and access_context.role != "Admin":
+        row["project"] = access_context.project
+        if any(
+            str(item.get("project") or "").strip().lower()
+            != access_context.project.strip().lower()
+            for item in existing
+        ):
+            raise PermissionError("Managers may manage watches only in their assigned project.")
     if existing and not overwrite:
         raise ValueError(f"Watch '{watch_name}' already exists")
 
@@ -136,7 +158,7 @@ def _upsert_fitbit_watch_row(spreadsheet, row: OrderedDict, *, overwrite: bool =
     return "overwritten"
 
 
-is_admin = str(st.session_state.get("user_role", "")).strip() == "Admin"
+is_admin = context.role == "Admin"
 
 if is_admin:
     with st.expander("Admin: upload Google OAuth client JSON"):
@@ -184,6 +206,7 @@ if is_admin:
                     save_client = st.form_submit_button("Save OAuth client")
 
                 if save_client:
+                    require_write_access(context)
                     if not client_key.strip():
                         st.error("Client key is required")
                         st.stop()
@@ -226,7 +249,11 @@ else:
 st.subheader("Add a new watch & generate authorization link")
 
 new_watch = st.text_input("Watch name (unique)", placeholder="e.g., NOVA_013")
-project = st.text_input("Project", value=str(st.session_state.get("user_project", "")))
+project = st.text_input(
+    "Project",
+    value=str(st.session_state.get("user_project", "")),
+    disabled=not is_admin,
+)
 provider = st.selectbox(
     "Provider",
     options=["fitbit", "google_health"],
@@ -251,6 +278,8 @@ overwrite_existing = st.checkbox(
 )
 
 if st.button("Add watch & generate link"):
+    require_device_management(context)
+    require_write_access(context)
     if not new_watch or not new_watch.strip():
         st.error("Watch name is required")
         st.stop()
@@ -280,6 +309,7 @@ if st.button("Add watch & generate link"):
             sp,
             row,
             overwrite=overwrite_existing,
+            access_context=context,
         )
     except ValueError:
         st.warning(
@@ -336,6 +366,7 @@ existing_project = st.text_input(
     "Existing watch project",
     value=str(st.session_state.get("user_project", "")),
     key="existing_watch_project",
+    disabled=not is_admin,
 )
 existing_provider = st.selectbox(
     "Existing watch provider",
@@ -357,15 +388,32 @@ if existing_provider == "google_health":
     )
 
 if st.button("Generate link for existing watch"):
+    require_device_management(context)
+    require_write_access(context)
     if not existing_watch or not existing_watch.strip():
         st.error("Existing watch name is required")
+        st.stop()
+
+    existing_rows = GoogleSheetsAdapter.get_rows(
+        sp,
+        "fitbit",
+        "name",
+        name=existing_watch.strip(),
+    )
+    if not existing_rows:
+        st.error("The existing watch was not found.")
+        st.stop()
+    existing_row = existing_rows[-1]
+    row_project = str(existing_row.get("project") or "").strip()
+    if not is_admin and row_project.lower() != context.project.strip().lower():
+        st.error("Managers may generate links only for watches in their assigned project.")
         st.stop()
 
     try:
         url = create_health_connect_link(
             sp,
             watchName=existing_watch.strip(),
-            project=existing_project.strip(),
+            project=row_project or existing_project.strip(),
             provider=existing_provider,
             oauth_client_key=existing_client_key,
             purpose=existing_purpose,

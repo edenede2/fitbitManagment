@@ -14,14 +14,9 @@ from utils.rate_limit_ui import show_rate_limit_notice
 
 
 def _get_callback_spreadsheet(auth_controller=None) -> Spreadsheet | None:
-    if st.session_state.get("spreadsheet") is not None:
-        return st.session_state.spreadsheet
-
-    if auth_controller is not None:
-        spreadsheet = auth_controller.get_spreadsheet()
-        if spreadsheet is not None:
-            return spreadsheet
-
+    # OAuth callbacks intentionally ignore the interactive session data source.
+    # A guest session must never redirect callback writes into a demo object, and
+    # an authenticated session must not be required for participant callbacks.
     spreadsheet_key = st.secrets.get("spreadsheet_key", "")
     if not spreadsheet_key:
         return None
@@ -74,6 +69,20 @@ def handle_fitbit_callback(auth_controller=None) -> bool:
         return True
 
     try:
+        # Consume a validated state before contacting Fitbit. Failed exchanges
+        # require a fresh link and cannot leave a replayable callback state.
+        mark_state_used(sp, state=state, watch_name=watch_name)
+    except Exception as e:
+        if not show_rate_limit_notice(
+            e,
+            provider="google_sheets",
+            key="fitbit_state_consumption",
+            context="validating the Fitbit OAuth link",
+        ):
+            st.error(f"Failed to consume OAuth state: {e}")
+        return True
+
+    try:
         token_json = exchange_code_for_tokens(code)
     except Exception as e:
         if not show_rate_limit_notice(
@@ -87,7 +96,6 @@ def handle_fitbit_callback(auth_controller=None) -> bool:
 
     try:
         save_tokens_for_watch(sp, watch_name=watch_name, token_json=token_json)
-        mark_state_used(sp, state=state, watch_name=watch_name)
     except Exception as e:
         if not show_rate_limit_notice(
             e,

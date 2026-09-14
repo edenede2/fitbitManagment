@@ -19,6 +19,7 @@ from entity.Watch import Watch, WatchFactory
 from model.config import get_secrets
 from entity.AsyncSheetsManager import AsyncSheetsManager
 from utils.rate_limit_ui import show_rate_limit_notice
+from utils.access_control import require_external_service_access, require_write_access
 
 # Increase cache time to reduce API calls
 # @st.cache_data(ttl=1800)  # Cache for 30 minutes instead of 5
@@ -57,6 +58,8 @@ def fetch_watch_data(watch_name, signal_type, start_date, end_date, should_fetch
     """
     if not should_fetch:
         return pd.DataFrame()
+
+    require_external_service_access()
 
     # Validate dates - don't allow future dates
     today = datetime.date.today()
@@ -335,7 +338,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
             st.session_state.selected_watch = next(iter(st.session_state.fitbit_watches.keys()))
         else:
             st.session_state.selected_watch = None
-    st.title("Fitbit Watch Dashboard")
+    st.title("Wearable Data Dashboard")
     st.markdown("---")
 
     # Add option to debug slow performance
@@ -773,6 +776,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
 
                         # Only make API calls when refresh button is clicked
                         if refresh_device:
+                            require_external_service_access()
                             with st.spinner("Fetching latest data from Fitbit API...",show_time=True):
                                 # Force fetch fresh data from the API
                                 watch.update_device_info(force_fetch=True)
@@ -967,6 +971,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                                     submit_button = st.form_submit_button("Send Message")
 
                                     if submit_button and new_message.strip():
+                                        require_write_access()
                                         # Format datetime as string for consistency
                                         now = datetime.datetime.now()
                                         dt_string = now.strftime("%Y-%m-%d %H:%M:%S")
