@@ -43,7 +43,14 @@ def decode_secrets(encoded: str) -> str:
         redirect = urlsplit(str(auth["redirect_uri"]))
         expected = urlsplit(base_url)
         if (redirect.scheme, redirect.netloc) != (expected.scheme, expected.netloc):
-            raise ValueError("[auth].redirect_uri does not match APP_BASE_URL")
+            redirect_host = redirect.hostname or "<invalid>"
+            expected_host = expected.hostname or "<invalid>"
+            raise ValueError(
+                "[auth].redirect_uri host "
+                f"({redirect_host}) does not match APP_BASE_URL host "
+                f"({expected_host}); replace both Heroku config vars from the same "
+                "generated .heroku/config-vars.json file"
+            )
     return text
 
 

@@ -95,6 +95,20 @@ class PrepareHerokuConfigTests(unittest.TestCase):
             self.assertEqual(target.read_text(), updated)
             self.assertEqual(target.stat().st_mode & 0o777, 0o600)
 
+    def test_runtime_renderer_explains_mismatched_config_generations(self):
+        updated, _ = build_updated_secrets(
+            SOURCE, OAUTH, SERVICE_ACCOUNT, "https://app.admontracker.online"
+        )
+        encoded = build_config_vars(updated, "https://app.admontracker.online")[
+            "STREAMLIT_SECRETS_TOML_B64"
+        ]
+        with patch.dict("os.environ", {"APP_BASE_URL": "https://admontracker.online"}):
+            with self.assertRaisesRegex(
+                ValueError,
+                r"app\.admontracker\.online.*admontracker\.online.*same generated",
+            ):
+                decode_secrets(encoded)
+
     def test_http_base_url_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "HTTPS"):
             build_updated_secrets(SOURCE, OAUTH, SERVICE_ACCOUNT, "http://example.com")
