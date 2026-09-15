@@ -1,58 +1,130 @@
-# Heroku configuration for app.admontracker.online
+# Production deployment for app.admontracker.online
 
-The app keeps its existing `st.secrets` interface. On Heroku, one base64-encoded
-config var is decoded into `.streamlit/secrets.toml` before Streamlit starts.
-Credential values are never committed to Git.
+The web and clock processes share Google Sheets, Secret Manager, and a restricted
+Google Shared Drive. Heroku's filesystem is used only for temporary files.
 
-## Generate the config vars
+## 1. Prepare private deployment values
 
-Run this from the repository root:
+Run from the repository root:
 
 ```bash
 python3 scripts/prepare_heroku_config.py \
   --secrets stSecretsExample.txt \
   --oauth-client client_secret_582419685938-te72d7f7ja835qdu5aqluosmqq9ld4fk.apps.googleusercontent.com.json \
   --service-account admontracker-589cfa4bc941.json \
-  --base-url https://app.admontracker.online
+  --base-url https://app.admontracker.online \
+  --streamlit-secret-ref projects/admontracker/secrets/admontracker-streamlit-production \
+  --drive-folder-id 15zlNAbm-0SvmjS-ez0Tw5eGJZ0vU69gC
 ```
 
-The command creates three ignored, private files:
+This creates ignored files under `.heroku/`. Nothing secret is printed. The
+service-account key is represented once as `GOOGLE_SERVICE_ACCOUNT_JSON_B64`;
+it is not duplicated in the Streamlit TOML bundle.
 
-- `.heroku/config-vars.json`: the four key/value pairs for Heroku.
-- `.heroku/streamlit-secrets.toml`: the merged file for local inspection only.
-- `.heroku/callback-urls.json`: the non-secret callback checklist.
+## 2. Secret Manager IAM and runtime bundle
 
-In the Heroku Dashboard, open **Settings → Config Vars** and add every key/value
-from `.heroku/config-vars.json`. Do not add `PORT`; Heroku provides it. Do not
-paste the original JSON credential files into Git or the dashboard separately.
+The API being enabled is not sufficient. The production service account needs:
 
-The `Procfile` decodes the secret bundle at dyno startup and then launches
-Streamlit on Heroku's assigned port.
+- `secretmanager.secrets.create` on project `admontracker` for a new participant secret;
+- `secretmanager.versions.add`, `secretmanager.versions.access`,
+  `secretmanager.versions.list`, `secretmanager.versions.destroy`, and
+  `secretmanager.secrets.get` for the secrets
+  created by the app.
 
-The app pins Python 3.11 in `.python-version`. This is a supported Heroku
-runtime and is deliberately close to the Python 3.10 environment currently
-used for this project. Test the complete application before moving to a newer
-major Python release.
+Prefer a custom least-privilege role. If an administrator creates every secret in
+advance, omit `secrets.create` and grant version-adder/accessor access only on those
+secrets. The current connectivity check returned a 403 for `secrets.create`, so do
+not run the token migration until IAM is corrected.
 
-## Provider settings outside Heroku
+After IAM is ready:
 
-These changes cannot be made by editing downloaded JSON files:
+```bash
+export GOOGLE_SERVICE_ACCOUNT_JSON_B64="$(base64 -w0 admontracker-589cfa4bc941.json)"
+export GOOGLE_CLOUD_PROJECT=admontracker
+python3 scripts/upload_runtime_secrets.py \
+  --payload .heroku/runtime-secrets-payload.json \
+  --secret-id admontracker-streamlit-production
+```
 
-1. In Google Cloud, use `https://app.admontracker.online` as an authorized
-   JavaScript origin and register both redirect URIs:
-   - `https://app.admontracker.online/oauth2callback` for Streamlit staff login.
-   - `https://app.admontracker.online/?google_health_callback=1` for Google Health.
-2. Update the production row in the app's `health_oauth_clients` Google Sheet to
-   use the Google Health callback URI above. The current app reads this setting
-   from the sheet, not from Heroku.
-3. In the Fitbit developer console, change the legacy Fitbit callback URL to
-   `https://app.admontracker.online/?fitbit_callback=1`.
-4. Share every required production Google Sheet with the `client_email` from
-   `admontracker-589cfa4bc941.json` using the minimum required permission.
-5. Verify the `app.admontracker.online` URL-prefix property (or the parent
-   `admontracker.online` domain property) in Google Search Console using an
-   account that is an owner/editor of the production Google Cloud project.
+Copy all values from `.heroku/config-vars.json` into Heroku Settings → Config
+Vars. Do not configure `PORT`; Heroku supplies it. Do not print or paste the JSON
+key, runtime payload, or generated config file into tickets or logs.
 
-After changing a Heroku config var, Heroku creates a new release and restarts the
-app. Avoid printing `STREAMLIT_SECRETS_TOML_B64` in application logs or support
-messages; base64 is encoding, not encryption.
+## 3. Migrate OAuth secrets and tokens
+
+Keep `ALLOW_PLAINTEXT_SECRET_FALLBACK=true` during the first verified release.
+
+```bash
+python3 scripts/migrate_oauth_secrets.py
+python3 scripts/migrate_oauth_secrets.py --apply
+python3 scripts/migrate_oauth_secrets.py --apply --clear-plaintext
+```
+
+The apply phase writes each secret, reads it back, and only then writes its
+reference to Sheets. The final phase blanks plaintext client JSON, client secrets,
+and access/refresh token cells. After live OAuth and refresh tests pass, set
+`ALLOW_PLAINTEXT_SECRET_FALLBACK=false`. Rotate the old OAuth client secret and
+service-account key only after explicit operator approval.
+
+The current branch no longer contains Fitbit bearer-token values in its tracked
+working tree, but historical commits contain old notebook output and a legacy code
+comment. Revoke or rotate any affected Fitbit credentials before production.
+Rewriting shared Git history is a separate, disruptive operator decision and was
+not performed by this implementation.
+
+## 4. Participant disclosure gate
+
+Leave `PARTICIPANT_DISCLOSURE_ENFORCED=false` until all of these exist:
+
+1. The PI/ethics-approved bilingual addendum is deployed at
+   `docs/compliance/google_health_addendum_approved.pdf`.
+2. `PARTICIPANT_DISCLOSURE_VERSION` is the approved version, not `DRAFT-*`.
+3. `RESEARCH_RETENTION_TEXT_EN`, `RESEARCH_RETENTION_TEXT_HE`,
+   `RESEARCH_DELETION_TEXT_EN`, and `RESEARCH_DELETION_TEXT_HE` contain the exact
+   approved wording.
+
+The application refuses to enforce an incomplete disclosure. Google verification
+must not be submitted while enforcement is off.
+
+## 5. Shared Drive archive and clock rollout
+
+The target folder is not public. It currently inherits 16 user permissions; a
+Drive administrator must confirm that all 16 belong to the authorized study team.
+The service-account check created/reused this child folder:
+
+```text
+AdmonTracker Raw Archive
+ID: 1rbntieY5-xwTJD2OLGt7_2mVYd_s7Q6_
+```
+
+Set a documented new-data-only cutoff and start in shadow mode:
+
+```text
+ARCHIVE_CUTOVER_AT=<approved RFC3339 timestamp in Asia/Jerusalem>
+ARCHIVE_SHADOW_MODE=true
+CLOCK_RUN_JOBS=false
+GOOGLE_DRIVE_ARCHIVE_SUBFOLDER=AdmonTracker Raw Archive
+```
+
+Scale exactly one clock dyno. Set `CLOCK_RUN_JOBS=true` while leaving archive
+shadow mode on; compare the manifest and monitoring outputs with the old lab cron.
+Then set `ARCHIVE_SHADOW_MODE=false` and disable the old cron. Do not migrate the
+historical mounted-drive archive.
+
+The clock runs monitoring at minute `00`, archive collection at minute `30`, and
+writes a heartbeat every five minutes in `Asia/Jerusalem`. Check `job_runs`,
+`clock_status`, and `archive_manifest` after every release.
+
+## 6. Provider console values
+
+- Google staff redirect: `https://app.admontracker.online/oauth2callback`
+- Google Health redirect: `https://app.admontracker.online/?google_health_callback=1`
+- Fitbit redirect: `https://app.admontracker.online/?fitbit_callback=1`
+- Authorized domain: `admontracker.online`
+- Homepage: `https://app.admontracker.online/`
+- Privacy: `https://app.admontracker.online/Privacy_Policy`
+- Terms: `https://app.admontracker.online/Terms_of_Service`
+
+Use separate production web clients for staff OIDC and participant health scopes.
+See `docs/compliance/google_publication_checklist.md` before publishing the external
+OAuth audience.

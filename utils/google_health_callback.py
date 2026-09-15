@@ -9,12 +9,14 @@ from utils.google_health_oauth import (
 )
 from utils.health_oauth_clients import get_oauth_client_config
 from utils.health_token_store import (
+    assert_state_authorized_for_callback,
     log_health_api_event,
     mark_oauth_state_used,
     resolve_oauth_state,
     save_google_health_tokens_for_watch,
 )
 from utils.rate_limit_ui import show_rate_limit_notice
+from utils.connection_management import create_management_link
 
 
 def _get_callback_spreadsheet() -> Spreadsheet | None:
@@ -56,8 +58,11 @@ def handle_google_health_callback(auth_controller) -> bool:
 
     watch_name = ""
     project = ""
+    management_url = ""
+    management_error = False
     try:
         state_row = resolve_oauth_state(sp, state=state, provider="google_health")
+        assert_state_authorized_for_callback(state_row)
         oauth_client_key = state_row["oauth_client_key"]
         watch_name = state_row["watchName"]
         project = state_row["project"]
@@ -89,6 +94,17 @@ def handle_google_health_callback(auth_controller) -> bool:
             token_data=token_data,
             identity=identity,
         )
+        try:
+            management_url = create_management_link(
+                sp,
+                watch_name=watch_name,
+                project=project,
+                provider="google_health",
+            )
+        except Exception:
+            # Token storage succeeded. A management-link write failure must not
+            # misreport the provider authorization itself as failed.
+            management_error = True
 
         log_health_api_event(
             sp,
@@ -96,8 +112,12 @@ def handle_google_health_callback(auth_controller) -> bool:
             watchName=watch_name,
             project=project,
             operation="oauth_callback",
-            status="warning" if identity_error else "success",
-            message="Google Health OAuth completed" if not identity_error else "OAuth tokens saved; identity lookup failed",
+            status="warning" if identity_error or management_error else "success",
+            message=(
+                "OAuth tokens saved; follow-up metadata was incomplete"
+                if identity_error or management_error
+                else "Google Health OAuth completed"
+            ),
             error=identity_error,
         )
     except Exception as exc:
@@ -118,10 +138,16 @@ def handle_google_health_callback(auth_controller) -> bool:
             key="google_health_callback",
             context="finishing Google Health connection",
         ):
-            st.error(f"Google Health OAuth callback failed: {exc}")
+            st.error("Google Health OAuth callback could not be completed. Please request a new link.")
         return True
 
     st.success(f"Google Health connected successfully for watch '{watch_name}'. You can close this tab.")
+    if management_url:
+        st.info("Save this private link if you want to disconnect or request deletion later.")
+        st.code(management_url)
+        st.link_button("Manage this connection", management_url)
+    else:
+        st.warning("The connection is active, but its management link could not be created. Contact the study team.")
     try:
         st.query_params.clear()
     except Exception:

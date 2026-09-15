@@ -20,6 +20,7 @@ import toml
 
 DEFAULT_OIDC_METADATA_URL = "https://accounts.google.com/.well-known/openid-configuration"
 CONFIG_VAR_NAME = "STREAMLIT_SECRETS_TOML_B64"
+SECRET_REF_VAR_NAME = "STREAMLIT_SECRETS_SECRET_REF"
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -59,6 +60,13 @@ def _replace_section(source: str, section: str, values: dict[str, Any]) -> str:
         return pattern.sub(lambda _: replacement, source, count=1)
     suffix = "" if source.endswith("\n") else "\n"
     return f"{source}{suffix}\n{replacement}"
+
+
+def _remove_section(source: str, section: str) -> str:
+    pattern = re.compile(
+        rf"(?ms)^\[{re.escape(section)}\][ \t]*\n.*?(?=^\[|\Z)"
+    )
+    return pattern.sub("", source, count=1)
 
 
 def _upsert_root_value(source: str, key: str, value: Any) -> str:
@@ -113,11 +121,6 @@ def build_updated_secrets(
 
     updated = _replace_section(
         updated,
-        "gcp_service_account",
-        {key: value for key, value in service_account.items() if value is not None},
-    )
-    updated = _replace_section(
-        updated,
         "auth",
         {
             "redirect_uri": login_redirect,
@@ -138,8 +141,9 @@ def build_updated_secrets(
     validated = toml.loads(updated)
     if validated["auth"]["redirect_uri"] != login_redirect:
         raise ValueError("Generated Streamlit login redirect URI did not validate")
-    if validated["gcp_service_account"]["client_email"] != service_account["client_email"]:
-        raise ValueError("Generated service-account credentials did not validate")
+    # The Google credential is a single Heroku bootstrap value. Do not duplicate
+    # the private key inside Streamlit's secret bundle.
+    updated = _remove_section(updated, "gcp_service_account")
 
     callbacks = {
         "login_redirect": login_redirect,
@@ -149,14 +153,40 @@ def build_updated_secrets(
     return updated, callbacks
 
 
-def build_config_vars(secrets_toml: str, base_url: str) -> dict[str, str]:
+def build_config_vars(
+    secrets_toml: str,
+    base_url: str,
+    service_account: dict[str, Any] | None = None,
+    streamlit_secret_ref: str = "",
+    drive_folder_id: str = "",
+) -> dict[str, str]:
     encoded = base64.b64encode(secrets_toml.encode("utf-8")).decode("ascii")
-    return {
+    config = {
         "APP_BASE_URL": _normalize_base_url(base_url),
-        CONFIG_VAR_NAME: encoded,
         "STREAMLIT_BROWSER_GATHER_USAGE_STATS": "false",
         "STREAMLIT_SERVER_HEADLESS": "true",
+        "SECRET_MANAGER_ENABLED": "true",
+        "ALLOW_PLAINTEXT_SECRET_FALLBACK": "true",
+        "PARTICIPANT_DISCLOSURE_ENFORCED": "false",
+        "SCHEDULER_TIMEZONE": "Asia/Jerusalem",
+        "CLOCK_RUN_JOBS": "false",
+        "CLOCK_CATCH_UP_ON_START": "true",
+        "ARCHIVE_SHADOW_MODE": "true",
+        "GOOGLE_DRIVE_ARCHIVE_SUBFOLDER": "AdmonTracker Raw Archive",
     }
+    if streamlit_secret_ref:
+        config[SECRET_REF_VAR_NAME] = streamlit_secret_ref
+    else:
+        config[CONFIG_VAR_NAME] = encoded
+    if service_account:
+        service_json = json.dumps(service_account, separators=(",", ":"), sort_keys=True)
+        config["GOOGLE_SERVICE_ACCOUNT_JSON_B64"] = base64.b64encode(
+            service_json.encode("utf-8")
+        ).decode("ascii")
+        config["GOOGLE_CLOUD_PROJECT"] = str(service_account.get("project_id") or "")
+    if drive_folder_id:
+        config["GOOGLE_DRIVE_ARCHIVE_ROOT_ID"] = drive_folder_id.strip()
+    return config
 
 
 def parse_args() -> argparse.Namespace:
@@ -165,6 +195,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--oauth-client", type=Path, required=True)
     parser.add_argument("--service-account", type=Path, required=True)
     parser.add_argument("--base-url", required=True)
+    parser.add_argument("--streamlit-secret-ref", default="")
+    parser.add_argument("--drive-folder-id", default="15zlNAbm-0SvmjS-ez0Tw5eGJZ0vU69gC")
     parser.add_argument(
         "--output-dir",
         type=Path,
@@ -185,12 +217,19 @@ def main() -> int:
         service_account,
         args.base_url,
     )
-    config_vars = build_config_vars(updated, args.base_url)
+    config_vars = build_config_vars(
+        updated,
+        args.base_url,
+        service_account,
+        streamlit_secret_ref=args.streamlit_secret_ref,
+        drive_folder_id=args.drive_folder_id,
+    )
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     secrets_output = args.output_dir / "streamlit-secrets.toml"
     config_output = args.output_dir / "config-vars.json"
     callbacks_output = args.output_dir / "callback-urls.json"
+    runtime_secret_output = args.output_dir / "runtime-secrets-payload.json"
     secrets_output.write_text(updated, encoding="utf-8")
     config_output.write_text(
         json.dumps(config_vars, indent=2, sort_keys=True) + "\n",
@@ -200,16 +239,28 @@ def main() -> int:
         json.dumps(callbacks, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    runtime_secret_output.write_text(
+        json.dumps(
+            {"toml_b64": base64.b64encode(updated.encode("utf-8")).decode("ascii")},
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     secrets_output.chmod(0o600)
     config_output.chmod(0o600)
     callbacks_output.chmod(0o600)
+    runtime_secret_output.chmod(0o600)
 
-    encoded_size = len(config_vars[CONFIG_VAR_NAME].encode("utf-8"))
+    encoded_size = len(
+        base64.b64encode(updated.encode("utf-8"))
+    )
     total_size = sum(len(key) + len(value) for key, value in config_vars.items())
     print(f"Generated {config_output} with {len(config_vars)} config vars.")
     print(f"Secret bundle size: {encoded_size} bytes; total config payload: {total_size} bytes.")
     print(f"Generated updated local Streamlit secrets at {secrets_output}.")
     print(f"Generated non-secret callback checklist at {callbacks_output}.")
+    print(f"Generated Secret Manager payload at {runtime_secret_output}.")
     print("No secret values were printed. Keep the .heroku directory private.")
     return 0
 

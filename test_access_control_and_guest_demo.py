@@ -384,8 +384,10 @@ class PageBoundaryAndLegalTests(unittest.TestCase):
         self.assertIn("fictional examples", privacy)
         self.assertIn("medical device", terms)
         self.assertIn("laws of the State of Israel", terms)
-        self.assertIn("edenede2@gmail.com", privacy)
-        self.assertIn("edenede2@gmail.com", terms)
+        self.assertIn("PI_EMAIL", privacy)
+        self.assertIn("PI_EMAIL", terms)
+        self.assertIn("Google Secret Manager", privacy)
+        self.assertIn("Shared Drive", privacy)
 
     def test_production_brand_name_replaces_old_visible_name(self):
         tracked_ui_files = [PROJECT_ROOT / "app.py", *sorted((PROJECT_ROOT / "pages").glob("*.py"))]
@@ -446,7 +448,7 @@ class StreamlitGuestSmokeTests(unittest.TestCase):
         ), patch(
             "entity.Sheet.SheetsAPI.get_instance"
         ) as sheets_api, patch(
-            "entity.Sheet.Credentials.from_service_account_info"
+            "entity.Sheet.build_google_credentials"
         ) as credentials, patch(
             "requests.get"
         ) as request_get, patch(
@@ -484,7 +486,13 @@ class StreamlitGuestSmokeTests(unittest.TestCase):
 
         app = AppTest.from_file(str(PROJECT_ROOT / "app.py")).run(timeout=20)
         self.assertFalse(app.exception)
-        for page in ("pages/08_Privacy_Policy.py", "pages/09_Terms_of_Service.py"):
+        for page in (
+            "pages/08_Privacy_Policy.py",
+            "pages/09_Terms_of_Service.py",
+            "pages/10_Research_Ethics.py",
+            "pages/11_Participant_Authorization.py",
+            "pages/12_Manage_Connection.py",
+        ):
             with self.subTest(page=page):
                 app.switch_page(page).run(timeout=20)
                 self.assertFalse(app.exception)

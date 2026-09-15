@@ -7,13 +7,13 @@ from abc import ABC, abstractmethod
 import datetime
 import os
 import gspread
-from google.oauth2.service_account import Credentials
 import uuid
 import streamlit as st
 from entity.Watch import Watch, WatchFactory  # Remove FitbitAPI as it doesn't exist
 from entity.HealthDataProvider import SnapshotContext, clean_row, collect_watch_snapshot, collect_watch_snapshots_batch
 import traceback  # Add import for traceback
 from utils.sheets_cache import sheets_cache  # Import sheets_cache
+from utils.google_credentials import build_google_credentials
 
 # Import needed functions from model
 try:
@@ -163,7 +163,7 @@ class FitbitSheet(Sheet):
     """Sheet for storing Fitbit device data"""
     schema: SheetSchema = field(default_factory=lambda: SheetSchema(
         columns=[
-            'project', 'name', 'token', 'oauth_type', 'provider', 'oauth_client_key',
+            'project', 'name', 'token', 'token_secret_ref', 'oauth_type', 'provider', 'oauth_client_key',
             'auth_status', 'health_user_id', 'legacy_fitbit_user_id',
             'last_successful_fetch_at', 'last_data_timestamp', 'last_auth_error',
             'reauth_link', 'reauth_link_created_at', 'user', 'isActive', 'currentStudent'
@@ -383,9 +383,7 @@ class SheetsAPI:
             "https://www.googleapis.com/auth/drive.file"
         ]
 
-        credentials = Credentials.from_service_account_info(
-            secrets["gcp_service_account"], scopes=scopes
-        )
+        credentials = build_google_credentials(scopes)
 
         return gspread.authorize(credentials)
 
@@ -647,7 +645,9 @@ class GoogleSheetsAdapter:
                 "fitbit_oauth_tokens",
                 "health_oauth_clients", "health_oauth_states", "health_oauth_state_used",
                 "health_oauth_tokens", "health_reauth_queue", "health_api_logs",
-                "health_webhook_events"
+                "health_webhook_events", "health_oauth_consents",
+                "health_connection_management", "health_deletion_requests", "archive_manifest", "job_runs",
+                "clock_status", "watch_status_history"
             ]
             if sheet_name not in sheets_names:
                 continue

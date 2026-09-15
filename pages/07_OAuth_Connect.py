@@ -8,6 +8,7 @@ from utils.google_health_callback import handle_google_health_callback
 from utils.rate_limit_ui import show_rate_limit_notice
 from utils.access_control import require_device_management, require_write_access
 from utils.demo_ui import render_demo_page
+from utils.compliance import approved_disclosure_ready, participant_disclosure_enforced
 
 st.set_page_config(page_title="OAuth Connect - Wearable Research Manager", page_icon="🔑", layout="wide")
 
@@ -55,6 +56,20 @@ if sp is None:
     st.stop()
 
 st.title("🔑 Connect Account to a Watch")
+
+if participant_disclosure_enforced():
+    disclosure_ready, disclosure_missing = approved_disclosure_ready()
+    if disclosure_ready:
+        st.success("The ethics-approved participant disclosure gate is enforced.")
+    else:
+        st.error("Disclosure enforcement is misconfigured: " + ", ".join(disclosure_missing))
+        st.stop()
+else:
+    st.warning(
+        "Participant disclosure enforcement is OFF. Links currently go directly to the provider. "
+        "Do not submit the OAuth app for Google verification until the approved addendum is "
+        "configured and PARTICIPANT_DISCLOSURE_ENFORCED=true."
+    )
 
 
 def _active_google_client_rows():
@@ -276,6 +291,14 @@ overwrite_existing = st.checkbox(
         "watch name will be updated before generating the OAuth link."
     ),
 )
+staff_consent_verified = st.checkbox(
+    "I verified that the participant completed the current ethics-approved study consent",
+    key="new_staff_consent_verified",
+)
+adult_verified = st.checkbox(
+    "I verified that the participant is at least 18 years old",
+    key="new_adult_verified",
+)
 
 if st.button("Add watch & generate link"):
     require_device_management(context)
@@ -337,6 +360,8 @@ if st.button("Add watch & generate link"):
             oauth_client_key=oauth_client_key,
             purpose=purpose,
             created_by=st.session_state.get("user_email"),
+            staff_consent_verified=staff_consent_verified,
+            adult_verified=adult_verified,
         )
     except Exception as e:
         if not show_rate_limit_notice(
@@ -386,6 +411,14 @@ if existing_provider == "google_health":
         options=["reauth", "connect", "test"],
         key="existing_purpose",
     )
+existing_staff_consent_verified = st.checkbox(
+    "I verified the existing participant's current ethics-approved consent",
+    key="existing_staff_consent_verified",
+)
+existing_adult_verified = st.checkbox(
+    "I verified that the existing participant is at least 18 years old",
+    key="existing_adult_verified",
+)
 
 if st.button("Generate link for existing watch"):
     require_device_management(context)
@@ -418,6 +451,8 @@ if st.button("Generate link for existing watch"):
             oauth_client_key=existing_client_key,
             purpose=existing_purpose,
             created_by=st.session_state.get("user_email"),
+            staff_consent_verified=existing_staff_consent_verified,
+            adult_verified=existing_adult_verified,
         )
     except Exception as e:
         if not show_rate_limit_notice(

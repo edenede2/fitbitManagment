@@ -10,7 +10,13 @@ from utils.fitbit_token_store import (
     resolve_state,
     save_tokens_for_watch,
 )
+from utils.health_token_store import (
+    assert_state_authorized_for_callback,
+    mark_oauth_state_used,
+    resolve_oauth_state,
+)
 from utils.rate_limit_ui import show_rate_limit_notice
+from utils.connection_management import create_management_link
 
 
 def _get_callback_spreadsheet(auth_controller=None) -> Spreadsheet | None:
@@ -54,14 +60,29 @@ def handle_fitbit_callback(auth_controller=None) -> bool:
         st.error("Could not connect to spreadsheet for Fitbit OAuth callback")
         return True
 
-    if is_state_used(sp, state):
-        st.error("This OAuth link was already used. Please generate a new one.")
-        return True
+    generic_state = False
+    try:
+        state_row = resolve_oauth_state(sp, state=state, provider="fitbit")
+        generic_state = True
+        assert_state_authorized_for_callback(state_row)
+    except ValueError as generic_error:
+        # Temporary compatibility path for links generated before the unified,
+        # consent-aware state table was deployed.
+        if "Unknown OAuth state" not in str(generic_error):
+            st.error("This authorization link is invalid or no longer current. Please request a new link.")
+            return True
+        if is_state_used(sp, state):
+            st.error("This OAuth link was already used. Please generate a new one.")
+            return True
+        state_row = resolve_state(sp, state)
+        if not state_row:
+            st.error("Unknown state. Please generate a new connect link from the lab app.")
+            return True
+        from utils.compliance import participant_disclosure_enforced
 
-    state_row = resolve_state(sp, state)
-    if not state_row:
-        st.error("Unknown state. Please generate a new connect link from the lab app.")
-        return True
+        if participant_disclosure_enforced():
+            st.error("This legacy link has no approved disclosure record. Please request a new link.")
+            return True
 
     watch_name = state_row.get("watchName")
     if not watch_name:
@@ -71,7 +92,10 @@ def handle_fitbit_callback(auth_controller=None) -> bool:
     try:
         # Consume a validated state before contacting Fitbit. Failed exchanges
         # require a fresh link and cannot leave a replayable callback state.
-        mark_state_used(sp, state=state, watch_name=watch_name)
+        if generic_state:
+            mark_oauth_state_used(sp, state_row=state_row, code=code)
+        else:
+            mark_state_used(sp, state=state, watch_name=watch_name)
     except Exception as e:
         if not show_rate_limit_notice(
             e,
@@ -79,7 +103,7 @@ def handle_fitbit_callback(auth_controller=None) -> bool:
             key="fitbit_state_consumption",
             context="validating the Fitbit OAuth link",
         ):
-            st.error(f"Failed to consume OAuth state: {e}")
+            st.error("The authorization link could not be validated. Please request a new link.")
         return True
 
     try:
@@ -91,7 +115,7 @@ def handle_fitbit_callback(auth_controller=None) -> bool:
             key="fitbit_token_exchange",
             context="connecting to Fitbit",
         ):
-            st.error(f"Token exchange failed: {e}")
+            st.error("Fitbit authorization could not be completed. Please request a new link.")
         return True
 
     try:
@@ -103,10 +127,27 @@ def handle_fitbit_callback(auth_controller=None) -> bool:
             key="fitbit_token_store",
             context="saving Fitbit OAuth tokens",
         ):
-            st.error(f"Failed to store tokens: {e}")
+            st.error("The connection was authorized but could not be stored securely. Please contact the study team.")
         return True
 
+    management_url = ""
+    try:
+        management_url = create_management_link(
+            sp,
+            watch_name=watch_name,
+            project=str(state_row.get("project") or ""),
+            provider="fitbit",
+        )
+    except Exception:
+        # Authorization and secure token storage are already complete.
+        pass
     st.success(f"Fitbit watch '{watch_name}' connected successfully. You can close this tab.")
+    if management_url:
+        st.info("Save this private link if you want to disconnect or request deletion later.")
+        st.code(management_url)
+        st.link_button("Manage this connection", management_url)
+    else:
+        st.warning("The connection is active, but its management link could not be created. Contact the study team.")
     try:
         st.query_params.clear()
     except Exception:

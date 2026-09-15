@@ -9,9 +9,11 @@ import time
 import requests
 
 from model.config import get_secrets
+from utils.secret_store import load_json_secret
 
 AUTH_URL = "https://www.fitbit.com/oauth2/authorize"
 TOKEN_URL = "https://api.fitbit.com/oauth2/token"
+REVOKE_URL = "https://api.fitbit.com/oauth2/revoke"
 
 
 class FitbitOAuthError(RuntimeError):
@@ -33,6 +35,11 @@ def _cfg():
         or secrets.get("FITBIT_CLIENT_SECRET")
         or secrets.get("fitbit_client_secret")
     )
+    client_secret_ref = os.getenv("FITBIT_CLIENT_SECRET_REF", "").strip()
+    if client_secret_ref:
+        protected = load_json_secret(client_secret_ref)
+        client_id = protected.get("client_id") or client_id
+        client_secret = protected.get("client_secret") or client_secret
     redirect_uri = (
         os.getenv("FITBIT_REDIRECT_URI")
         or secrets.get("FITBIT_REDIRECT_URI")
@@ -82,21 +89,12 @@ def _basic_auth_header(client_id: str, client_secret: str) -> dict:
     b64 = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
     return {"Authorization": f"Basic {b64}"}
 
-def _redact_oauth_text(text: str, *secrets: str) -> str:
-    text = " ".join(str(text or "").strip().split())
-    for secret in secrets:
-        if secret and len(str(secret)) > 6:
-            text = text.replace(str(secret), "[redacted]")
-    return text[:500]
-
 def _raise_for_oauth_response(response, action: str, *secrets: str) -> None:
     if response.ok:
         return
-    response_text = _redact_oauth_text(getattr(response, "text", ""), *secrets)
-    message = f"Fitbit token {action} failed: {response.status_code}"
-    if response_text:
-        message = f"{message}. Response: {response_text}"
-    raise FitbitOAuthError(message)
+    # Provider bodies can echo authorization codes, tokens, credentials, or
+    # account data. Keep only the status code in application logs and UI.
+    raise FitbitOAuthError(f"Fitbit token {action} failed: HTTP {response.status_code}")
 
 def exchange_code_for_tokens(code: str) -> dict:
     client_id, client_secret, redirect_uri, _ = _cfg()
@@ -120,6 +118,17 @@ def refresh_tokens(refresh_token: str) -> dict:
     r = requests.post(TOKEN_URL, data=data, headers=headers, timeout=20)
     _raise_for_oauth_response(r, "refresh", refresh_token, client_secret)
     return r.json()
+
+
+def revoke_token(token: str) -> None:
+    client_id, client_secret, _, _ = _cfg()
+    response = requests.post(
+        REVOKE_URL,
+        data={"token": token},
+        headers=_basic_auth_header(client_id, client_secret),
+        timeout=20,
+    )
+    _raise_for_oauth_response(response, "revocation", token, client_secret)
 
 def now_ts() -> int:
     return int(time.time())

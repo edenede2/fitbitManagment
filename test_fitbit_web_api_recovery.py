@@ -157,7 +157,7 @@ class FitbitWebApiRecoveryTests(unittest.TestCase):
         refresh_tokens.assert_called_once_with("refresh-token")
         save_tokens.assert_called_once()
 
-    def test_refresh_token_error_includes_sanitized_fitbit_body(self):
+    def test_refresh_token_error_omits_fitbit_response_body(self):
         with patch(
             "utils.fitbit_oauth._cfg",
             return_value=("client-id", "client-secret", "redirect-uri", "settings heartrate"),
@@ -172,8 +172,9 @@ class FitbitWebApiRecoveryTests(unittest.TestCase):
                 refresh_tokens("refresh-secret")
 
         message = str(raised.exception)
-        self.assertIn("invalid_grant", message)
-        self.assertIn("Refresh token invalid", message)
+        self.assertIn("HTTP 400", message)
+        self.assertNotIn("invalid_grant", message)
+        self.assertNotIn("Refresh token invalid", message)
         self.assertNotIn("refresh-secret", message)
         self.assertNotIn("client-secret", message)
 

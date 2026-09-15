@@ -13,6 +13,7 @@ import toml
 
 
 CONFIG_VAR_NAME = "STREAMLIT_SECRETS_TOML_B64"
+SECRET_REF_VAR_NAME = "STREAMLIT_SECRETS_SECRET_REF"
 DEFAULT_TARGET = Path(".streamlit/secrets.toml")
 
 
@@ -26,17 +27,21 @@ def decode_secrets(encoded: str) -> str:
 
     auth = parsed.get("auth")
     google = auth.get("google") if isinstance(auth, dict) else None
-    service = parsed.get("gcp_service_account")
     if not isinstance(auth, dict) or not all(auth.get(k) for k in ("redirect_uri", "cookie_secret")):
         raise ValueError("Generated secrets are missing required [auth] values")
     if not isinstance(google, dict) or not all(
         google.get(k) for k in ("client_id", "client_secret", "server_metadata_url")
     ):
         raise ValueError("Generated secrets are missing required [auth.google] values")
-    if not isinstance(service, dict) or not all(
-        service.get(k) for k in ("project_id", "private_key", "client_email")
-    ):
-        raise ValueError("Generated secrets are missing required service-account values")
+    service = parsed.get("gcp_service_account")
+    if not os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON_B64"):
+        if not isinstance(service, dict) or not all(
+            service.get(k) for k in ("project_id", "private_key", "client_email")
+        ):
+            raise ValueError(
+                "Generated secrets are missing service-account values and "
+                "GOOGLE_SERVICE_ACCOUNT_JSON_B64 is not configured"
+            )
 
     base_url = os.getenv("APP_BASE_URL", "").rstrip("/")
     if base_url:
@@ -78,13 +83,24 @@ def render_secrets(encoded: str, target: Path = DEFAULT_TARGET) -> None:
 
 def main() -> int:
     encoded = os.getenv(CONFIG_VAR_NAME, "")
+    secret_ref = os.getenv(SECRET_REF_VAR_NAME, "").strip()
+    if secret_ref:
+        from utils.secret_store import GoogleSecretStore
+
+        payload = GoogleSecretStore.from_environment().get_json(secret_ref)
+        encoded = str(payload.get("toml_b64") or "")
+        if not encoded:
+            raise SystemExit(f"Secret {secret_ref} does not contain toml_b64")
     if not encoded:
         if DEFAULT_TARGET.exists():
             print("Using the existing local .streamlit/secrets.toml file.")
             return 0
-        raise SystemExit(f"Missing required config var: {CONFIG_VAR_NAME}")
+        raise SystemExit(
+            f"Missing required config var: {CONFIG_VAR_NAME} or {SECRET_REF_VAR_NAME}"
+        )
     render_secrets(encoded)
-    print("Rendered .streamlit/secrets.toml from the Heroku config var.")
+    source = "Google Secret Manager" if secret_ref else "the legacy Heroku config var"
+    print(f"Rendered .streamlit/secrets.toml from {source}.")
     return 0
 
 

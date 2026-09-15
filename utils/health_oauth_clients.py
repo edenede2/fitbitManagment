@@ -9,11 +9,17 @@ from urllib.parse import urlsplit, urlunsplit
 import gspread
 
 from entity.Sheet import GoogleSheetsAdapter, Spreadsheet
+from utils.secret_store import (
+    load_json_secret,
+    plaintext_secret_fallback_allowed,
+    secret_manager_enabled,
+    store_json_secret,
+)
 
 
 CLIENTS_TAB = "health_oauth_clients"
 CLIENT_COLUMNS = [
-    "client_key", "provider", "enviroment", "client_id", "client_secret",
+    "client_key", "provider", "enviroment", "client_id", "client_secret_ref", "client_secret",
     "credentials_json_raw", "redirect_uri", "auth_uri", "token_uri", "scopes",
     "status", "created_at", "updated_at", "notes",
 ]
@@ -163,13 +169,25 @@ def upsert_oauth_client_config(
         )
 
     now = utc_now_iso()
+    client_secret_ref = store_json_secret(
+        "oauth-client",
+        [provider, enviroment, client_key],
+        {
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "auth_uri": auth_uri,
+            "token_uri": token_uri,
+        },
+    )
+    store_plaintext = not secret_manager_enabled()
     values = _ordered_client_row({
         "client_key": client_key,
         "provider": provider,
         "enviroment": enviroment,
         "client_id": client_id,
-        "client_secret": client_secret,
-        "credentials_json_raw": credentials_json_raw,
+        "client_secret_ref": client_secret_ref,
+        "client_secret": client_secret if store_plaintext else "",
+        "credentials_json_raw": credentials_json_raw if store_plaintext else "",
         "redirect_uri": redirect_uri,
         "auth_uri": auth_uri,
         "token_uri": token_uri,
@@ -235,7 +253,21 @@ def get_oauth_client_config(spreadsheet: Spreadsheet, client_key: str) -> OAuthC
     auth_uri = _first_present(row, "auth_uri") or "https://accounts.google.com/o/oauth2/v2/auth"
     token_uri = _first_present(row, "token_uri") or "https://oauth2.googleapis.com/token"
 
-    if raw:
+    secret_ref = str(row.get("client_secret_ref") or "").strip()
+    if secret_ref:
+        try:
+            protected = load_json_secret(secret_ref)
+            client_id = client_id or str(protected.get("client_id") or "")
+            client_secret = str(protected.get("client_secret") or "")
+            auth_uri = str(protected.get("auth_uri") or auth_uri)
+            token_uri = str(protected.get("token_uri") or token_uri)
+        except Exception:
+            if not plaintext_secret_fallback_allowed() or not client_secret:
+                raise
+    elif not plaintext_secret_fallback_allowed() and (client_secret or raw):
+        raise RuntimeError(f"OAuth client {client_key} still uses plaintext secret storage")
+
+    if raw and plaintext_secret_fallback_allowed():
         parsed = json.loads(raw)
         oauth_config = parsed.get("web") or parsed.get("installed") or {}
         client_id = client_id or oauth_config.get("client_id", "")
@@ -267,5 +299,5 @@ def get_oauth_client_config(spreadsheet: Spreadsheet, client_key: str) -> OAuthC
         auth_uri=auth_uri,
         token_uri=token_uri,
         scopes=scopes,
-        credentials_json_raw=raw,
+        credentials_json_raw=None if secret_ref else raw,
     )

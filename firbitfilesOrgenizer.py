@@ -373,7 +373,6 @@ def getHRVfiles(path, start_date, end_date, token):
         else:
             if response.status_code == 403:
                 print(f'Error 403: Forbidden - {date} from {path}')
-            # print(response.json())
         newDfHRV.to_csv(SleepPath.joinpath('Heart Rate Variability Details - ' + date + '.csv'), index=False)
         with open(SleepPath.joinpath('Heart Rate Variability Details - ' + date + '.csv'), 'w') as newFHRV:
             FILES_DICT['csv'].append(newFHRV)
@@ -644,7 +643,7 @@ def getSleepfiles(path, start_date, end_date, token):
             if 'Request failed with status code 502' in response:
                 continue
             if '492' in response:
-                print(response)
+                print("Fitbit sleep response contained provider error 492")
                 continue
             # save the data to a json file
             with open(SleepPath.joinpath('sleep-' + start_date + '.json'), 'w') as newF:
@@ -656,10 +655,6 @@ def getSleepfiles(path, start_date, end_date, token):
 
 def saveAsZIP(path, token, start_date, end_date,sub_name):
     with TemporaryDirectory() as temp_dir:
-        # Nova131_token = 'eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiIyM1JXVEQiLCJzdWIiOiJCVDRHUEIiLCJpc3MiOiJGaXRiaXQiLCJ0eXAiOiJhY2Nlc3NfdG9rZW4iLCJzY29wZXMiOiJyc29jIHJzZXQgcm94eSBycHJvIHJudXQgcnNsZSByYWN0IHJyZXMgcmxvYyByd2VpIHJociBydGVtIiwiZXhwIjoxNzQ1MjQyMjYyLCJpYXQiOjE3MTM3MDYyNjZ9.wmP3VhhaoxoGxUEqALN284VW--DQpR7Tum37CdHLX7I'
-        # Nova131_start_date = '2024-03-07'
-        # Nova131_end_date = '2024-04-21'
-
         temp_dir = Path(temp_dir)
         sub_temp_path = temp_dir.joinpath(sub_name)
         if not sub_temp_path.exists():
@@ -854,9 +849,6 @@ def download_watch_data(watch_name, token, data_type, start_date, end_date):
                 # Since responses contain processed JSON data (not HTTP response objects),
                 # we check for non-empty responses with valid data structure and no error messages
                 print(f"  Responses received: {len(responses) if responses else 0}")
-                if responses:
-                    print(f"  Sample response keys: {list(responses[0].keys()) if isinstance(responses[0], dict) else 'Not a dict'}")
-
                 if responses and any(
                     isinstance(r, dict) and
                     len(r) > 0 and
@@ -868,8 +860,6 @@ def download_watch_data(watch_name, token, data_type, start_date, end_date):
                     print(f"  ✓ Successfully downloaded {data_type} data for {watch_name}")
                 else:
                     print(f"  ✗ No valid data received for {data_type}")
-                    if responses:
-                        print(f"    Response sample: {str(responses[0])[:200]}...")
 
                 # Small delay to respect rate limits
                 ti.sleep(1)
@@ -928,7 +918,7 @@ def process_watch_data_downloads(watch_row, tracking_df, initial_days=None, spre
         return tracking_df
 
     if not watch_name or not token:
-        print(f"Missing name or token for watch: {watch_row}")
+        print(f"Missing watch name or access token for watch '{watch_name or 'unknown'}'")
         return tracking_df
 
     print(f"Processing downloads for watch: {watch_name}")

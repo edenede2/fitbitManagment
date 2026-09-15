@@ -23,6 +23,10 @@ from entity.Sheet import Spreadsheet, GoogleSheetsAdapter, ServerLogFile, SheetF
 from entity.Watch import Watch, WatchFactory
 from dotenv import load_dotenv
 from model.config import get_secrets
+from utils.health_token_store import _append, _update_row_by_keys, utc_now_iso
+
+WATCH_STATUS_TAB = "watch_status_history"
+WATCH_STATUS_COLUMNS = ["watch_id", "name", "active", "updated_at"]
 
 def load_runtime_config():
     """
@@ -57,7 +61,7 @@ def load_runtime_config():
                 os.environ[env_key] = str(value)
                 break
 
-def get_watch_status_history():
+def get_watch_status_history(spreadsheet=None):
     """
     Load watch status history from a local JSON file.
     This tracks which watches were active in previous runs.
@@ -65,6 +69,17 @@ def get_watch_status_history():
     Returns:
         dict: Dictionary mapping watch IDs to their previous status
     """
+    if spreadsheet is not None:
+        rows = GoogleSheetsAdapter.get_rows(spreadsheet, WATCH_STATUS_TAB)
+        return {
+            str(row.get("watch_id") or ""): {
+                "active": str(row.get("active") or "").upper() == "TRUE",
+                "name": str(row.get("name") or ""),
+            }
+            for row in rows
+            if str(row.get("watch_id") or "").strip()
+        }
+
     status_file = Path(project_root) / "data" / "watch_status_history.json"
 
     if status_file.exists():
@@ -77,13 +92,30 @@ def get_watch_status_history():
     else:
         return {}
 
-def save_watch_status_history(status_data):
+def save_watch_status_history(status_data, spreadsheet=None):
     """
     Save watch status history to a local JSON file.
 
     Args:
         status_data (dict): Dictionary mapping watch IDs to their status
     """
+    if spreadsheet is not None:
+        for watch_id, status in status_data.items():
+            values = {
+                "watch_id": watch_id,
+                "name": status.get("name", ""),
+                "active": "TRUE" if status.get("active") else "FALSE",
+                "updated_at": utc_now_iso(),
+            }
+            if not _update_row_by_keys(
+                spreadsheet,
+                WATCH_STATUS_TAB,
+                keys={"watch_id": watch_id},
+                updates=values,
+            ):
+                _append(spreadsheet, WATCH_STATUS_TAB, WATCH_STATUS_COLUMNS, values)
+        return True
+
     status_file = Path(project_root) / "data" / "watch_status_history.json"
 
     # Create directory if it doesn't exist
@@ -348,6 +380,12 @@ def save_to_csv(data: pl.DataFrame) -> None:
     Args:
         data (pl.DataFrame): The watch data to save.
     """
+    persist_default = "false" if os.getenv("DYNO") else "true"
+    persist_local = os.getenv("PERSIST_LOCAL_COLLECTION_CSV", persist_default).strip().casefold()
+    if persist_local not in {"1", "true", "yes", "on"}:
+        print("Skipping local collection CSV persistence on ephemeral runtime")
+        return
+
     # Create directory if it doesn't exist
     csv_dir = Path(project_root) / "data"
     csv_dir.mkdir(parents=True, exist_ok=True)
@@ -1245,7 +1283,7 @@ def hourly_data_collection():
 
         # Step 1: Get watch data and previous status history
         watch_data = get_watch_details(spreadsheet)
-        previous_status = get_watch_status_history()
+        previous_status = get_watch_status_history(spreadsheet)
 
         if not watch_data.is_empty():
             # Create current status mapping
@@ -1330,7 +1368,7 @@ def hourly_data_collection():
                 print(f"[{datetime.datetime.now()}] No new entries to add to FitbitLog")
 
             # Save the current status for the next run
-            save_watch_status_history(current_status)
+            save_watch_status_history(current_status, spreadsheet)
 
             if result:
                 print(f"[{datetime.datetime.now()}] Successfully updated log data")

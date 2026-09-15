@@ -40,7 +40,7 @@ class GoogleHealthClient:
             timeout=timeout,
         )
         if not response.ok:
-            raise RuntimeError(f"Google Health API failed: {response.status_code} {response.text}")
+            raise RuntimeError(f"Google Health API failed with HTTP {response.status_code}")
         return response.json() if response.text else {}
 
     def list_data_points(
@@ -50,7 +50,10 @@ class GoogleHealthClient:
         filter_expr: str | None = None,
         page_size: int = 10000,
     ) -> list[dict[str, Any]]:
-        params = {"pageSize": min(page_size, 10000)}
+        # Google Health limits sleep and exercise list pages to 25 items; most
+        # other data types allow 10,000. Keep the client safe for both callers.
+        maximum_page_size = 25 if data_type in {"sleep", "exercise"} else 10000
+        params = {"pageSize": min(page_size, maximum_page_size)}
         if filter_expr:
             params["filter"] = filter_expr
 

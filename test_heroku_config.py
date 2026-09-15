@@ -65,31 +65,42 @@ class PrepareHerokuConfigTests(unittest.TestCase):
         )
         self.assertEqual(parsed["auth"]["redirect_uri"], callbacks["login_redirect"])
         self.assertEqual(parsed["auth"]["google"]["client_id"], "new-client")
-        self.assertEqual(parsed["gcp_service_account"]["project_id"], "new-project")
+        self.assertNotIn("gcp_service_account", parsed)
         self.assertIn("dotted.user", updated)
 
     def test_config_bundle_round_trips_without_exposing_nested_keys(self):
         updated, _ = build_updated_secrets(
             SOURCE, OAUTH, SERVICE_ACCOUNT, "https://app.admontracker.online"
         )
-        config = build_config_vars(updated, "https://app.admontracker.online")
+        config = build_config_vars(
+            updated, "https://app.admontracker.online", SERVICE_ACCOUNT
+        )
         decoded = base64.b64decode(config["STREAMLIT_SECRETS_TOML_B64"]).decode()
 
         self.assertEqual(decoded, updated)
         self.assertNotIn("auth.google.client_secret", config)
-        self.assertEqual(decode_secrets(config["STREAMLIT_SECRETS_TOML_B64"]), updated)
+        with patch.dict(
+            "os.environ",
+            {"GOOGLE_SERVICE_ACCOUNT_JSON_B64": config["GOOGLE_SERVICE_ACCOUNT_JSON_B64"]},
+        ):
+            self.assertEqual(decode_secrets(config["STREAMLIT_SECRETS_TOML_B64"]), updated)
 
     def test_runtime_renderer_writes_private_file(self):
         updated, _ = build_updated_secrets(
             SOURCE, OAUTH, SERVICE_ACCOUNT, "https://app.admontracker.online"
         )
-        encoded = build_config_vars(updated, "https://app.admontracker.online")[
+        config = build_config_vars(updated, "https://app.admontracker.online", SERVICE_ACCOUNT)
+        encoded = config[
             "STREAMLIT_SECRETS_TOML_B64"
         ]
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory) / ".streamlit" / "secrets.toml"
             with patch.dict(
-                "os.environ", {"APP_BASE_URL": "https://app.admontracker.online"}
+                "os.environ",
+                {
+                    "APP_BASE_URL": "https://app.admontracker.online",
+                    "GOOGLE_SERVICE_ACCOUNT_JSON_B64": config["GOOGLE_SERVICE_ACCOUNT_JSON_B64"],
+                },
             ):
                 render_secrets(encoded, target)
             self.assertEqual(target.read_text(), updated)
@@ -99,10 +110,17 @@ class PrepareHerokuConfigTests(unittest.TestCase):
         updated, _ = build_updated_secrets(
             SOURCE, OAUTH, SERVICE_ACCOUNT, "https://app.admontracker.online"
         )
-        encoded = build_config_vars(updated, "https://app.admontracker.online")[
+        config = build_config_vars(updated, "https://app.admontracker.online", SERVICE_ACCOUNT)
+        encoded = config[
             "STREAMLIT_SECRETS_TOML_B64"
         ]
-        with patch.dict("os.environ", {"APP_BASE_URL": "https://admontracker.online"}):
+        with patch.dict(
+            "os.environ",
+            {
+                "APP_BASE_URL": "https://admontracker.online",
+                "GOOGLE_SERVICE_ACCOUNT_JSON_B64": config["GOOGLE_SERVICE_ACCOUNT_JSON_B64"],
+            },
+        ):
             with self.assertRaisesRegex(
                 ValueError,
                 r"app\.admontracker\.online.*admontracker\.online.*same generated",
@@ -112,6 +130,28 @@ class PrepareHerokuConfigTests(unittest.TestCase):
     def test_http_base_url_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "HTTPS"):
             build_updated_secrets(SOURCE, OAUTH, SERVICE_ACCOUNT, "http://example.com")
+
+    def test_secret_manager_reference_replaces_large_streamlit_config_var(self):
+        updated, _ = build_updated_secrets(
+            SOURCE, OAUTH, SERVICE_ACCOUNT, "https://app.admontracker.online"
+        )
+        config = build_config_vars(
+            updated,
+            "https://app.admontracker.online",
+            SERVICE_ACCOUNT,
+            streamlit_secret_ref="projects/new-project/secrets/runtime",
+            drive_folder_id="drive-folder",
+        )
+        self.assertNotIn("STREAMLIT_SECRETS_TOML_B64", config)
+        self.assertEqual(
+            config["STREAMLIT_SECRETS_SECRET_REF"],
+            "projects/new-project/secrets/runtime",
+        )
+        self.assertEqual(config["GOOGLE_DRIVE_ARCHIVE_ROOT_ID"], "drive-folder")
+        self.assertEqual(config["PARTICIPANT_DISCLOSURE_ENFORCED"], "false")
+        self.assertEqual(config["CLOCK_RUN_JOBS"], "false")
+        self.assertEqual(config["CLOCK_CATCH_UP_ON_START"], "true")
+        self.assertEqual(config["ARCHIVE_SHADOW_MODE"], "true")
 
 
 if __name__ == "__main__":

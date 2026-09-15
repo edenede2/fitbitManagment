@@ -41,7 +41,7 @@ def main():
         """)
         st.sidebar.markdown("---")
         st.sidebar.markdown("### Need Help?")
-        st.sidebar.markdown("Contact support: edenede2@gmail.com")
+        st.sidebar.markdown("Contact: radmon@psy.haifa.ac.il")
 
         st.title("Welcome to Wearable Research Manager")
         st.write(f"You are logged in as: **{context.email}**")
@@ -62,18 +62,38 @@ def main():
         """)
     else:
         st.title("Welcome to Wearable Research Manager")
-        st.write("Please log in to access the dashboard and features.")
-        st.info("Use the sidebar to authenticate or open the read-only guest demonstration.")
-        st.markdown("## Features Available After Login:")
-        st.markdown("""
-        - **Dashboard**: Overview of wearable activity and stats
-        - **Device Tracking**: Monitor research devices and sync status
-        - **Data Analysis**: Analyze collected health and activity data
-        - **Research Operations**: Review alerts and connected study tools
-        """)
+        st.caption("Stress & Psychopathology Lab • University of Haifa")
+        english, hebrew = st.tabs(["English", "עברית"])
+        with english:
+            st.write(
+                "This service supports University of Haifa ethics-approved research by "
+                "connecting invited adult participants' wearable accounts, collecting "
+                "authorized read-only Fitbit or Google Health measurements, and helping "
+                "authorized study staff monitor data completeness."
+            )
+            st.info(
+                "Research staff may log in from the sidebar. Participants should use only "
+                "the private authorization link supplied by the study team."
+            )
+            st.markdown("### Staff features")
+            st.markdown("""
+            - Wearable activity, sleep, and physiology dashboards
+            - Device and data-completeness monitoring
+            - Research alerts and approved study integrations
+            """)
+        with hebrew:
+            st.write(
+                "השירות תומך במחקר שאושר על-ידי ועדת האתיקה של אוניברסיטת חיפה. "
+                "הוא מאפשר חיבור חשבונות לבישים של משתתפים בגירים שהוזמנו למחקר, "
+                "איסוף מדדי Fitbit או Google Health בקריאה בלבד שאושרו, ובקרת שלמות הנתונים."
+            )
+            st.info(
+                "אנשי צוות יכולים להתחבר מהסרגל. משתתפים צריכים להשתמש רק בקישור "
+                "ההרשאה הפרטי שנמסר להם מצוות המחקר."
+            )
         st.markdown("---")
         st.markdown("### Need Help?")
-        st.markdown("Contact support: edenede2@gmail.com")
+        st.markdown("Contact Prof. Roee Admon: radmon@psy.haifa.ac.il")
         st.markdown("### Legal")
         render_legal_links()
 

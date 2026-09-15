@@ -9,6 +9,17 @@ from typing import Any, Optional
 import gspread
 
 from entity.Sheet import GoogleSheetsAdapter, Spreadsheet
+from utils.compliance import (
+    disclosure_document_hash,
+    disclosure_version,
+    participant_disclosure_enforced,
+)
+from utils.secret_store import (
+    load_json_secret,
+    plaintext_secret_fallback_allowed,
+    secret_manager_enabled,
+    store_json_secret,
+)
 
 
 HEALTH_STATES_TAB = "health_oauth_states"
@@ -16,19 +27,28 @@ HEALTH_USED_TAB = "health_oauth_state_used"
 HEALTH_TOKENS_TAB = "health_oauth_tokens"
 HEALTH_REAUTH_TAB = "health_reauth_queue"
 HEALTH_LOGS_TAB = "health_api_logs"
+HEALTH_CONSENTS_TAB = "health_oauth_consents"
 FITBIT_SHEET = "fitbit"
 
 STATE_COLUMNS = [
     "state", "provider", "watchName", "project", "oauth_client_key", "purpose",
     "created_by", "created_at", "expires_at", "used", "used_at", "callback_error",
+    "staff_consent_verified", "staff_consent_verified_at", "adult_verified",
+    "participant_language", "participant_disclosure_version",
+    "participant_document_hash", "participant_acknowledged_at",
 ]
 USED_COLUMNS = ["state", "provider", "watchName", "used_at", "code_hash"]
 TOKEN_COLUMNS = [
     "token_id", "watchName", "project", "provider", "oauth_client_key",
-    "health_user_id", "legacy_fitbit_user_id", "access_token", "refresh_token",
+    "health_user_id", "legacy_fitbit_user_id", "token_secret_ref", "access_token", "refresh_token",
     "access_expires_at", "refresh_expires_at", "refresh_token_expires_in", "scope",
     "token_type", "auth_status", "last_refresh_at", "last_refresh_error",
     "created_at", "updated_at", "is_active",
+]
+CONSENT_COLUMNS = [
+    "consent_id", "state", "watchName", "project", "provider", "purpose",
+    "language", "disclosure_version", "document_hash", "staff_consent_verified_at",
+    "adult_verified", "participant_acknowledged_at",
 ]
 REAUTH_COLUMNS = [
     "queue_id", "watchName", "project", "provider", "reason", "detected_at",
@@ -161,6 +181,8 @@ def save_oauth_state(
     oauth_client_key: str,
     purpose: str = "connect",
     created_by: str | None = None,
+    staff_consent_verified: bool = False,
+    adult_verified: bool = False,
     ttl_hours: int = 48,
 ) -> None:
     now = utc_now()
@@ -181,6 +203,13 @@ def save_oauth_state(
             "used": "FALSE",
             "used_at": "",
             "callback_error": "",
+            "staff_consent_verified": "TRUE" if staff_consent_verified else "FALSE",
+            "staff_consent_verified_at": now.isoformat() if staff_consent_verified else "",
+            "adult_verified": "TRUE" if adult_verified else "FALSE",
+            "participant_language": "",
+            "participant_disclosure_version": "",
+            "participant_document_hash": "",
+            "participant_acknowledged_at": "",
         },
     )
 
@@ -217,6 +246,99 @@ def resolve_oauth_state(spreadsheet: Spreadsheet, *, state: str, provider: str) 
         raise ValueError("OAuth state replay detected")
 
     return state_row
+
+
+def resolve_oauth_state_any_provider(spreadsheet: Spreadsheet, *, state: str) -> dict[str, Any]:
+    rows = GoogleSheetsAdapter.get_rows(
+        spreadsheet,
+        HEALTH_STATES_TAB,
+        "state",
+        state=state,
+    )
+    if not rows:
+        raise ValueError("Unknown OAuth state")
+    provider = str(rows[-1].get("provider") or "")
+    if provider not in {"fitbit", "google_health"}:
+        raise ValueError("OAuth state has an unsupported provider")
+    return resolve_oauth_state(spreadsheet, state=state, provider=provider)
+
+
+def _is_true(value: Any) -> bool:
+    return str(value or "").strip().upper() == "TRUE"
+
+
+def assert_state_authorized_for_callback(state_row: dict[str, Any]) -> None:
+    """Fail closed once the ethics-approved participant disclosure is enforced."""
+    if not participant_disclosure_enforced():
+        return
+    if not _is_true(state_row.get("staff_consent_verified")):
+        raise ValueError("Staff consent verification is missing")
+    if not _is_true(state_row.get("adult_verified")):
+        raise ValueError("Adult eligibility verification is missing")
+    if not str(state_row.get("participant_acknowledged_at") or "").strip():
+        raise ValueError("Participant disclosure acknowledgement is missing")
+    if str(state_row.get("participant_disclosure_version") or "") != disclosure_version():
+        raise ValueError("Participant disclosure version is no longer current")
+
+
+def acknowledge_oauth_state(
+    spreadsheet: Spreadsheet,
+    *,
+    state_row: dict[str, Any],
+    language: str,
+) -> dict[str, Any]:
+    """Persist a versioned, pseudonymous acknowledgement without names or IPs."""
+    if language not in {"en", "he"}:
+        raise ValueError("Unsupported disclosure language")
+    if not _is_true(state_row.get("staff_consent_verified")):
+        raise ValueError("Research staff have not verified the approved study consent")
+    if not _is_true(state_row.get("adult_verified")):
+        raise ValueError("This authorization flow is limited to adults")
+
+    existing_time = str(state_row.get("participant_acknowledged_at") or "").strip()
+    if existing_time:
+        return state_row
+
+    acknowledged_at = utc_now_iso()
+    version = disclosure_version()
+    document_hash = disclosure_document_hash()
+    updates = {
+        "participant_language": language,
+        "participant_disclosure_version": version,
+        "participant_document_hash": document_hash,
+        "participant_acknowledged_at": acknowledged_at,
+    }
+    # Append the immutable audit record first. The state is only marked as
+    # acknowledged after the consent record exists, so a partial Sheets failure
+    # cannot allow a callback without its corresponding audit evidence.
+    _append(
+        spreadsheet,
+        HEALTH_CONSENTS_TAB,
+        CONSENT_COLUMNS,
+        {
+            "consent_id": new_uuid(),
+            "state": state_row["state"],
+            "watchName": state_row.get("watchName", ""),
+            "project": state_row.get("project", ""),
+            "provider": state_row.get("provider", ""),
+            "purpose": state_row.get("purpose", "connect"),
+            "language": language,
+            "disclosure_version": version,
+            "document_hash": document_hash,
+            "staff_consent_verified_at": state_row.get("staff_consent_verified_at", ""),
+            "adult_verified": "TRUE",
+            "participant_acknowledged_at": acknowledged_at,
+        },
+    )
+    updated = _update_row_by_keys(
+        spreadsheet,
+        HEALTH_STATES_TAB,
+        keys={"state": state_row["state"], "provider": state_row["provider"]},
+        updates=updates,
+    )
+    if not updated:
+        raise RuntimeError("Could not persist participant acknowledgement")
+    return {**state_row, **updates}
 
 
 def mark_oauth_state_used(
@@ -272,7 +394,43 @@ def get_active_token_row(
         provider=provider,
     )
     active = [row for row in rows if str(row.get("is_active", "TRUE")).upper() == "TRUE"]
-    return active[-1] if active else None
+    if not active:
+        return None
+    row = dict(active[-1])
+    secret_ref = str(row.get("token_secret_ref") or "").strip()
+    if secret_ref:
+        try:
+            row.update(load_json_secret(secret_ref))
+        except Exception:
+            if not plaintext_secret_fallback_allowed() or not row.get("access_token"):
+                raise
+    elif not plaintext_secret_fallback_allowed() and (row.get("access_token") or row.get("refresh_token")):
+        raise RuntimeError("Plaintext OAuth token fallback is disabled")
+    return row
+
+
+def _store_token_payload(
+    *,
+    provider: str,
+    project: str,
+    watch_name: str,
+    token_id: str,
+    token_data: dict[str, Any],
+    existing_ref: str = "",
+) -> tuple[str, str, str]:
+    access_token = str(token_data.get("access_token") or "")
+    refresh_token = str(token_data.get("refresh_token") or "")
+    secret_ref = store_json_secret(
+        "participant-oauth",
+        [provider, project, watch_name, token_id],
+        {"access_token": access_token, "refresh_token": refresh_token},
+        existing_ref=existing_ref,
+    )
+    if secret_manager_enabled():
+        if not secret_ref:
+            raise RuntimeError("Secret Manager did not return a token secret reference")
+        return secret_ref, "", ""
+    return "", access_token, refresh_token
 
 
 def is_access_token_valid(token_row: dict[str, Any], safety_margin_minutes: int = 5) -> bool:
@@ -319,16 +477,26 @@ def save_google_health_tokens_for_watch(
         "fitbitUserId",
     )
 
+    token_id = (existing or {}).get("token_id") or new_uuid()
+    token_secret_ref, access_token, stored_refresh_token = _store_token_payload(
+        provider="google_health",
+        project=project,
+        watch_name=watchName,
+        token_id=token_id,
+        token_data={**token_data, "refresh_token": refresh_token},
+        existing_ref=str((existing or {}).get("token_secret_ref") or ""),
+    )
     row = {
-        "token_id": (existing or {}).get("token_id") or new_uuid(),
+        "token_id": token_id,
         "watchName": watchName,
         "project": project,
         "provider": "google_health",
         "oauth_client_key": oauth_client_key,
         "health_user_id": health_user_id,
         "legacy_fitbit_user_id": legacy_fitbit_user_id,
-        "access_token": token_data.get("access_token") or "",
-        "refresh_token": refresh_token,
+        "token_secret_ref": token_secret_ref,
+        "access_token": access_token,
+        "refresh_token": stored_refresh_token,
         "access_expires_at": ts_to_iso(token_data.get("access_expires_at")),
         "refresh_expires_at": ts_to_iso(token_data.get("refresh_expires_at")),
         "refresh_token_expires_in": token_data.get("refresh_token_expires_in") or "",
@@ -360,9 +528,19 @@ def update_token_row_after_refresh(
     token_data: dict[str, Any],
 ) -> None:
     now = utc_now_iso()
+    refresh_token = token_data.get("refresh_token") or token_row.get("refresh_token", "")
+    secret_ref, access_token, stored_refresh_token = _store_token_payload(
+        provider=str(token_row.get("provider") or "google_health"),
+        project=str(token_row.get("project") or ""),
+        watch_name=str(token_row.get("watchName") or ""),
+        token_id=str(token_row.get("token_id") or new_uuid()),
+        token_data={**token_data, "refresh_token": refresh_token},
+        existing_ref=str(token_row.get("token_secret_ref") or ""),
+    )
     updates = {
-        "access_token": token_data.get("access_token") or "",
-        "refresh_token": token_data.get("refresh_token") or token_row.get("refresh_token", ""),
+        "token_secret_ref": secret_ref,
+        "access_token": access_token,
+        "refresh_token": stored_refresh_token,
         "access_expires_at": ts_to_iso(token_data.get("access_expires_at")),
         "refresh_expires_at": ts_to_iso(token_data.get("refresh_expires_at")),
         "refresh_token_expires_in": token_data.get("refresh_token_expires_in") or "",
@@ -575,6 +753,17 @@ def log_health_api_event(
             "start_time": start_time,
             "end_time": end_time,
             "message": message,
-            "error": error,
+            "error": sanitize_error(error),
         },
     )
+
+
+def sanitize_error(value: Any, *secrets: str) -> str:
+    text = " ".join(str(value or "").strip().split())
+    for secret in secrets:
+        if secret and len(str(secret)) > 6:
+            text = text.replace(str(secret), "[redacted]")
+    for marker in ("access_token", "refresh_token", "client_secret", "authorization"):
+        if marker in text.casefold():
+            return "Sensitive provider error was redacted"
+    return text[:500]

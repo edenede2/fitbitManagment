@@ -1,0 +1,323 @@
+#!/usr/bin/env python3
+"""Collect bounded wearable periods and upsert deterministic Shared Drive ZIPs."""
+
+from __future__ import annotations
+
+import argparse
+import io
+import json
+import os
+import traceback
+import zipfile
+from dataclasses import dataclass
+from datetime import date, datetime, time, timedelta, timezone
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import Any
+from zoneinfo import ZoneInfo
+
+import pandas as pd
+
+from firbitfilesOrgenizer import (
+    _resolve_watch_access_token,
+    download_watch_data,
+    get_active_watches,
+)
+from run_data_collection import load_runtime_config
+from services.archive_manifest import (
+    archive_logical_key,
+    get_archive_record,
+    upsert_archive_record,
+)
+from services.drive_archive import SharedDriveArchive, sha256_bytes
+from services.health_client_factory import HealthClientFactory
+
+
+LOCAL_TZ = ZoneInfo(os.getenv("SCHEDULER_TIMEZONE", "Asia/Jerusalem"))
+CADENCE = {
+    "heart_rate": "daily",
+    "hrv": "daily",
+    "calories": "daily",
+    "steps": "monthly",
+    "sleep": "monthly",
+    "temperature": "monthly",
+    "breathing_rate": "monthly",
+}
+GOOGLE_DATA_TYPES = {
+    "heart_rate": ("heart-rate", "rollup"),
+    "hrv": ("daily-heart-rate-variability", "daily"),
+    "calories": ("calories", "interval"),
+    "steps": ("steps", "rollup"),
+    "sleep": ("sleep", "sleep"),
+    "temperature": ("daily-sleep-temperature-derivations", "daily"),
+    "breathing_rate": ("daily-respiratory-rate", "daily"),
+}
+
+
+@dataclass(frozen=True)
+class PeriodWindow:
+    period: str
+    start_date: date
+    end_date: date
+    cadence: str
+
+    @property
+    def filename_suffix(self) -> str:
+        return self.period
+
+
+def parse_cutover(value: str) -> datetime:
+    if not value:
+        raise ValueError("ARCHIVE_CUTOVER_AT is required")
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=LOCAL_TZ)
+    return parsed.astimezone(LOCAL_TZ)
+
+
+def period_windows(now: datetime, cadence: str, cutover: datetime) -> list[PeriodWindow]:
+    local_now = now.astimezone(LOCAL_TZ)
+    cutoff_date = cutover.astimezone(LOCAL_TZ).date()
+    today = local_now.date()
+    windows: list[PeriodWindow] = []
+    if cadence == "daily":
+        for target in (today - timedelta(days=1), today):
+            if target >= cutoff_date:
+                windows.append(PeriodWindow(target.isoformat(), target, target, cadence))
+        return windows
+    if cadence != "monthly":
+        raise ValueError(f"Unsupported archive cadence: {cadence}")
+
+    month_starts = [today.replace(day=1)]
+    if today.day <= 3:
+        month_starts.insert(0, (today.replace(day=1) - timedelta(days=1)).replace(day=1))
+    for start in month_starts:
+        month_end = (start.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+        end = min(month_end, today)
+        bounded_start = max(start, cutoff_date)
+        if bounded_start <= end:
+            windows.append(PeriodWindow(start.strftime("%Y-%m"), bounded_start, end, cadence))
+    return windows
+
+
+def _zip_tree(root: Path, metadata: dict[str, Any]) -> bytes:
+    stream = io.BytesIO()
+    with zipfile.ZipFile(stream, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for file_path in sorted(root.rglob("*")):
+            if file_path.is_file():
+                info = zipfile.ZipInfo(file_path.relative_to(root).as_posix())
+                info.date_time = (1980, 1, 1, 0, 0, 0)
+                info.compress_type = zipfile.ZIP_DEFLATED
+                info.external_attr = 0o600 << 16
+                archive.writestr(info, file_path.read_bytes())
+        metadata_info = zipfile.ZipInfo("admontracker-metadata.json")
+        metadata_info.date_time = (1980, 1, 1, 0, 0, 0)
+        metadata_info.compress_type = zipfile.ZIP_DEFLATED
+        metadata_info.external_attr = 0o600 << 16
+        archive.writestr(
+            metadata_info,
+            json.dumps(metadata, indent=2, sort_keys=True, ensure_ascii=False).encode("utf-8"),
+        )
+    return stream.getvalue()
+
+
+def _fitbit_package(spreadsheet, row: dict[str, Any], data_type: str, window: PeriodWindow) -> bytes:
+    token = _resolve_watch_access_token(row, spreadsheet)
+    if not token:
+        raise RuntimeError("No active Fitbit token")
+    temp_dir, temp_path = download_watch_data(
+        str(row.get("name") or row.get("watchName") or ""),
+        token,
+        data_type,
+        window.start_date,
+        window.end_date,
+    )
+    if not temp_dir or not temp_path:
+        raise RuntimeError("Provider returned no archiveable Fitbit data")
+    try:
+        return _zip_tree(
+            Path(temp_path),
+            {
+                "schema_version": 1,
+                "provider": "fitbit",
+                "data_type": data_type,
+                "source_start": window.start_date.isoformat(),
+                "source_end": window.end_date.isoformat(),
+            },
+        )
+    finally:
+        temp_dir.cleanup()
+
+
+def _utc_bounds(window: PeriodWindow) -> tuple[str, str]:
+    start = datetime.combine(window.start_date, time.min, tzinfo=LOCAL_TZ)
+    end = datetime.combine(window.end_date + timedelta(days=1), time.min, tzinfo=LOCAL_TZ)
+    return (
+        start.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+        end.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+    )
+
+
+def _google_filter(data_type: str, record_type: str, window: PeriodWindow) -> str:
+    start = window.start_date.isoformat()
+    end = (window.end_date + timedelta(days=1)).isoformat()
+    identifier = data_type.replace("-", "_")
+    if record_type == "daily":
+        field = f"{identifier}.date"
+    elif record_type == "sleep":
+        field = "sleep.interval.civil_end_time"
+    elif record_type == "interval":
+        field = f"{identifier}.interval.civil_start_time"
+    else:
+        raise ValueError(f"No list filter for {record_type}")
+    return f'{field} >= "{start}" AND {field} < "{end}"'
+
+
+def _google_package(spreadsheet, row: dict[str, Any], data_type: str, window: PeriodWindow) -> bytes:
+    client = HealthClientFactory.from_watch_row(spreadsheet, row)
+    if client is None:
+        raise RuntimeError("Google Health client is unavailable")
+    google_type, record_type = GOOGLE_DATA_TYPES[data_type]
+    if record_type == "rollup":
+        start_time, end_time = _utc_bounds(window)
+        payload = client.fetch_raw(
+            google_type,
+            start_time=start_time,
+            end_time=end_time,
+            window_size="60s" if data_type == "heart_rate" else "3600s",
+        )
+    else:
+        payload = client.fetch_raw(
+            google_type,
+            filter_expr=_google_filter(google_type, record_type, window),
+        )
+    if not any(payload.values()):
+        raise RuntimeError("Provider returned no archiveable Google Health data")
+
+    with TemporaryDirectory() as directory:
+        root = Path(directory)
+        (root / "raw.json").write_text(
+            json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        points = payload.get("dataPoints") or payload.get("rollupDataPoints") or []
+        if points:
+            pd.json_normalize(points).to_csv(root / "normalized.csv", index=False)
+        return _zip_tree(
+            root,
+            {
+                "schema_version": 1,
+                "provider": "google_health",
+                "google_data_type": google_type,
+                "data_type": data_type,
+                "source_start": window.start_date.isoformat(),
+                "source_end": window.end_date.isoformat(),
+            },
+        )
+
+
+def collect_drive_archives(*, now: datetime | None = None, shadow: bool | None = None) -> dict[str, int]:
+    load_runtime_config()
+    now = now or datetime.now(LOCAL_TZ)
+    if shadow is None:
+        shadow = os.getenv("ARCHIVE_SHADOW_MODE", "true").strip().casefold() in {"1", "true", "yes", "on"}
+    cutover_raw = os.getenv("ARCHIVE_CUTOVER_AT", "")
+    cutover = parse_cutover(cutover_raw) if cutover_raw else now
+    if not shadow and not cutover_raw:
+        raise RuntimeError("ARCHIVE_CUTOVER_AT must be set before disabling shadow mode")
+
+    watches, spreadsheet = get_active_watches(return_spreadsheet=True)
+    if spreadsheet is None:
+        raise RuntimeError("Could not connect to the production spreadsheet")
+    drive = None if shadow else SharedDriveArchive.from_environment()
+    counts = {"uploaded": 0, "unchanged": 0, "shadow": 0, "empty": 0, "failed": 0}
+
+    for row in watches.iter_rows(named=True):
+        watch_name = str(row.get("name") or row.get("watchName") or "").strip()
+        project = str(row.get("project") or "unassigned").strip()
+        provider_value = str(row.get("provider") or row.get("oauth_type") or "fitbit").casefold()
+        provider = "google_health" if "google" in provider_value or provider_value == "health" else "fitbit"
+        if not watch_name:
+            continue
+        for data_type, cadence in CADENCE.items():
+            for window in period_windows(now, cadence, cutover):
+                logical_key = archive_logical_key(project, watch_name, provider, data_type, window.period)
+                base_record = {
+                    "logical_key": logical_key,
+                    "project": project,
+                    "watchName": watch_name,
+                    "provider": provider,
+                    "data_type": data_type,
+                    "cadence": cadence,
+                    "period": window.period,
+                    "source_start": window.start_date.isoformat(),
+                    "source_end": window.end_date.isoformat(),
+                }
+                try:
+                    content = (
+                        _google_package(spreadsheet, row, data_type, window)
+                        if provider == "google_health"
+                        else _fitbit_package(spreadsheet, row, data_type, window)
+                    )
+                    checksum = sha256_bytes(content)
+                    existing = get_archive_record(spreadsheet, logical_key)
+                    if existing and str(existing.get("checksum") or "") == checksum and str(existing.get("status") or "") == "uploaded":
+                        counts["unchanged"] += 1
+                        continue
+                    if shadow:
+                        upsert_archive_record(
+                            spreadsheet,
+                            {**base_record, "checksum": checksum, "size_bytes": len(content), "status": "shadow_validated"},
+                        )
+                        counts["shadow"] += 1
+                        continue
+                    filename = f"{data_type}_{window.filename_suffix}.zip"
+                    upload = drive.upsert_zip(
+                        project=project,
+                        watch_name=watch_name,
+                        data_type=data_type,
+                        filename=filename,
+                        content=content,
+                    )
+                    upsert_archive_record(
+                        spreadsheet,
+                        {
+                            **base_record,
+                            "checksum": upload.checksum,
+                            "drive_file_id": upload.file_id,
+                            "drive_web_view_link": upload.web_view_link,
+                            "size_bytes": upload.size,
+                            "status": "uploaded",
+                            "message": upload.action,
+                        },
+                    )
+                    counts["uploaded"] += 1
+                except RuntimeError as exc:
+                    message = " ".join(str(exc).split())[:300]
+                    status = "empty" if "no archiveable" in message.casefold() else "failed"
+                    upsert_archive_record(spreadsheet, {**base_record, "status": status, "message": message})
+                    counts[status] += 1
+                except Exception as exc:
+                    upsert_archive_record(
+                        spreadsheet,
+                        {**base_record, "status": "failed", "message": type(exc).__name__},
+                    )
+                    counts["failed"] += 1
+    return counts
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--apply", action="store_true", help="Upload to Drive; default is shadow mode")
+    args = parser.parse_args()
+    try:
+        result = collect_drive_archives(shadow=not args.apply)
+        print(json.dumps(result, sort_keys=True))
+        return 1 if result["failed"] else 0
+    except Exception:
+        traceback.print_exc()
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

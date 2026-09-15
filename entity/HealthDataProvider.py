@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Tuple
 
 import requests
+from utils.secret_store import load_json_secret, plaintext_secret_fallback_allowed
 
 from entity.Watch import ApiAuthError, ApiRateLimitError, Watch, WatchFactory
 from services.google_health_client import GoogleHealthClient as SpreadsheetGoogleHealthClient
@@ -50,12 +51,28 @@ class SnapshotContext:
                 continue
             watch_name = str(row.get("watchName") or "").strip()
             if watch_name:
+                secret_ref = str(row.get("token_secret_ref") or "").strip()
+                if secret_ref:
+                    try:
+                        row.update(load_json_secret(secret_ref))
+                    except Exception:
+                        if not plaintext_secret_fallback_allowed() or not row.get("access_token"):
+                            raise
                 self.google_tokens_by_watch[watch_name] = row
 
     def _load_fitbit_tokens(self) -> None:
         for row in self._sheet_rows("fitbit_oauth_tokens"):
+            if str(row.get("status") or "connected").strip().casefold() != "connected":
+                continue
             watch_name = str(row.get("watchName") or "").strip()
             if watch_name:
+                secret_ref = str(row.get("token_secret_ref") or "").strip()
+                if secret_ref:
+                    try:
+                        row.update(load_json_secret(secret_ref))
+                    except Exception:
+                        if not plaintext_secret_fallback_allowed() or not row.get("access_token"):
+                            raise
                 self.fitbit_tokens_by_watch[watch_name] = row
 
     def get_active_fitbit_token_row(self, watch_name: str) -> dict[str, Any] | None:
@@ -229,7 +246,21 @@ def _oauth_client_config_from_row(row: dict[str, Any], client_key: str):
     auth_uri = str(row.get("auth_uri") or "https://accounts.google.com/o/oauth2/v2/auth").strip()
     token_uri = str(row.get("token_uri") or "https://oauth2.googleapis.com/token").strip()
 
-    if raw:
+    secret_ref = str(row.get("client_secret_ref") or "").strip()
+    if secret_ref:
+        try:
+            protected = load_json_secret(secret_ref)
+            client_id = client_id or str(protected.get("client_id") or "")
+            client_secret = str(protected.get("client_secret") or "")
+            auth_uri = str(protected.get("auth_uri") or auth_uri)
+            token_uri = str(protected.get("token_uri") or token_uri)
+        except Exception:
+            if not plaintext_secret_fallback_allowed() or not client_secret:
+                raise
+    elif not plaintext_secret_fallback_allowed() and (client_secret or raw):
+        raise RuntimeError(f"OAuth client {client_key} still uses plaintext secret storage")
+
+    if raw and plaintext_secret_fallback_allowed():
         parsed = json.loads(raw)
         oauth_config = parsed.get("web") or parsed.get("installed") or {}
         client_id = client_id or oauth_config.get("client_id", "")
@@ -262,7 +293,7 @@ def _oauth_client_config_from_row(row: dict[str, Any], client_key: str):
         auth_uri=auth_uri,
         token_uri=token_uri,
         scopes=scopes,
-        credentials_json_raw=raw,
+        credentials_json_raw=None if secret_ref else raw,
     )
 
 

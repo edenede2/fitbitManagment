@@ -1,181 +1,148 @@
 import streamlit as st
 
+from utils.compliance import PI_EMAIL
+
 
 st.set_page_config(
-    page_title="Terms of Service - Wearable Research Manager",
+    page_title="Terms of Use - Wearable Research Manager",
     page_icon="📄",
     layout="wide",
 )
 
-st.title("Terms of Service")
-st.caption("Wearable Research Manager • Effective August 16, 2026")
+language = st.radio("Language / שפה", ["English", "עברית"], horizontal=True)
 
-st.markdown(
-    """
-## 1. About these Terms
+if language == "English":
+    st.title("Terms of Use")
+    st.caption("Wearable Research Manager • Last updated 14 September 2026")
+    st.markdown(
+        f"""
+## Research service and eligibility
 
-These Terms of Service (**Terms**) govern access to and use of Wearable Research
-Manager (the **Service**), operated by **Prof. Roee Admon's Stress &
-Psychopathology Lab at the University of Haifa** (the **Lab**, **we**, **us**, or
-**our**). By accessing or using the authenticated Service or public guest
-demonstration, you agree to these Terms. If you do not agree, do not use the Service.
+Wearable Research Manager is operated by the Stress & Psychopathology Lab,
+School of Psychological Sciences, University of Haifa. Authenticated functions are
+for invited research personnel. Participant authorization is for **adults aged 18
+or older** who were invited to an approved study and completed the required consent.
+Participation is voluntary and may be stopped without penalty as described in the
+approved consent.
 
-The Service is a private research-operations tool for invited personnel. Research
-participants may interact with a separate account-authorization flow; their
-participation is governed primarily by the applicable informed-consent documents,
-ethics approval, and privacy notices.
+## Authorized use
 
-## 2. Eligibility and authorized access
+Staff may use the service only within their assigned role and approved project.
+Users must protect credentials, access only assigned records, follow the protocol,
+ethics approval, University rules and law, and promptly report suspected disclosure
+or compromise. Participant links and credentials must not be shared or reused.
 
-Authenticated access is limited to invited research staff and other people approved
-by the Lab. You must use your own authorized account, provide accurate account
-information, protect your credentials, and promptly report suspected unauthorized
-access. You may access only the projects, participants, devices, and functions
-assigned to your role.
+You must not bypass access controls; re-identify participants without approval;
+scrape, overload, reverse engineer or disrupt the service; falsify data or audit
+records; introduce malware; disclose data through an unapproved channel; sell data;
+or use it for advertising, credit, employment, insurance, unrelated marketing, or
+unrelated model training.
 
-You must not share credentials, impersonate another person, reuse a participant's
-authorization link, or attempt to gain broader permissions. The Lab may suspend or
-terminate access to protect participants, research integrity, the Service, or third
-parties.
+## Guest demonstration
 
-## 3. Guest demonstration
+The guest demonstration is read-only and contains fictional examples. Do not enter
+real personal, study, device, or health information or attempt to connect an account.
 
-The public guest demonstration contains fictional, synthetic examples and is
-read-only. It does not provide access to real participants, watches, health data,
-OAuth clients, or production systems. Guest visitors must not submit personal,
-confidential, health, study, or real device information; connect a real account or
-device; attempt to activate disabled functions; or rely on sample values as factual
-research or medical information.
+## Connected services
 
-## 4. Permitted research use
-
-Authorized users may use the Service only for legitimate activities within an
-approved research project and within their assigned role. Users must comply with
-the applicable study protocol, ethics or review-board approval, informed-consent
-documents, University policies, privacy and security requirements, and all relevant
-laws and platform terms.
-
-Users are responsible for confirming that a participant is eligible and has
-completed any required informed consent before connecting an account or processing
-research data. Access to participant data must be limited to people with a genuine
-need to know.
-
-## 5. Prohibited conduct
-
-You must not:
-
-- access, use, disclose, or change data without authorization;
-- bypass role, project, guest, OAuth-state, or other security controls;
-- scrape, bulk-export, probe, reverse engineer, disrupt, or overload the Service or a connected platform;
-- re-identify or attempt to re-identify a participant or combine pseudonymous data with identifying sources without explicit approval;
-- sell data or use it for advertising, data brokerage, credit, employment, insurance, unrelated marketing, or unrelated model training;
-- upload malware, falsify research or device data, interfere with audit records, or use the Service unlawfully; or
-- disclose participant information to an unauthorized person or through an unapproved channel.
-
-## 6. Third-party platforms
-
-The Service may interoperate with Google Sign-In, Google Cloud and Workspace,
-Google Health, Fitbit, Streamlit, approved survey and AppSheet tools, and email
-services. Your use of those platforms may be subject to their own terms and privacy
-policies. Availability, authorization, data formats, and functionality may change
-when a provider changes or discontinues a service.
-
-You must not use the Service in a way that violates the
+The service can use Google Sign-In, Google Cloud and Workspace, Google Health,
+Fitbit, Heroku, AppSheet, Qualtrics, and approved email infrastructure. Their
+availability and separate terms may apply. Use must comply with the
 [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy),
 [Google OAuth policies](https://developers.google.com/identity/protocols/oauth2/policies),
-[Google Health API policies](https://developers.google.com/health/policies/health-api-user-data-and-research-policy),
-or [Fitbit Platform Terms](https://dev.fitbit.com/legal/platform-terms-of-service/).
+[Google Health policies](https://developers.google.com/health/policies/health-api-user-data-and-research-policy),
+and [Fitbit Platform Terms](https://dev.fitbit.com/legal/platform-terms-of-service/).
 
-## 7. Not medical care or emergency monitoring
+## Not medical care or emergency monitoring
 
-The Service is a research and operational-management tool. It is **not** medical
-advice, a medical device, a diagnostic service, an emergency-monitoring system, or
-a substitute for professional clinical judgment. Device readings, synchronization
-times, alerts, and missing-data indicators may be delayed, incomplete, inaccurate,
-or unavailable. They must not be used to make urgent treatment or safety decisions.
-In an emergency, contact the appropriate emergency service or qualified healthcare
-professional.
+This is a research and operations service. It is **not medical advice, not a medical device,
+diagnosis, treatment, or emergency monitoring**. Measurements, sync status,
+and alerts can be delayed, incomplete, inaccurate, or unavailable. In an emergency,
+contact the appropriate emergency service or healthcare professional.
 
-## 8. Confidentiality and security responsibilities
+## Availability, intellectual property, and termination
 
-Authorized users must treat participant and research information as confidential,
-use approved devices and networks, follow access and data-handling procedures, and
-report suspected loss, disclosure, or compromise promptly. Do not place account
-tokens, credentials, or unnecessary health information in email, chat, support
-requests, or the guest demonstration.
+The service may be changed, restricted, suspended, or discontinued for research,
+security, ethics, legal, or provider reasons. Software and original content belong
+to or are licensed to their respective owners. Authorized access is limited,
+revocable, and non-transferable. Access may be terminated after a role or project
+ends, consent or provider access is withdrawn, or a security or policy issue occurs.
 
-## 9. Intellectual property
+To the maximum extent permitted by law, the service is provided “as is” and “as
+available,” without a promise of uninterrupted availability or error-free device
+data. Nothing excludes rights or liabilities that cannot legally be excluded.
 
-The Service's software, interface, documentation, and original content are owned by
-or licensed to the Lab or their respective owners. Subject to these Terms, invited
-users receive a limited, revocable, non-transferable right to use the Service for
-approved research operations. No other rights are granted.
+## Privacy, governing law, and contact
 
-Fitbit is a registered trademark or trademark of Fitbit, LLC in the United States
-and certain other countries. A list of Fitbit logos can be found at the
-[Fitbit trademark list](https://www.fitbit.com/legal/trademark-list).
+The public Privacy Policy and the study-specific approved consent explain data use
+and form part of these terms. These terms are governed by the laws of the State of Israel
+without limiting mandatory participant rights or available forums.
 
-The Wearable Research Manager application is designed for use with the Fitbit
-platform. This application is not authored by Fitbit, and Fitbit does not service
-or warrant the functionality of this application. Other names and marks belong to
-their respective owners.
-
-## 10. Availability and changes
-
-We may maintain, modify, suspend, restrict, or discontinue any part of the Service,
-including to respond to security, legal, ethics, research, or third-party-platform
-requirements. We do not promise uninterrupted operation or permanent retention of
-guest-demo settings. Guest state may reset at any time.
-
-## 11. Disclaimers and limitation of liability
-
-To the maximum extent permitted by applicable law, the Service and guest examples
-are provided on an “as is” and “as available” basis without warranties of
-merchantability, fitness for a particular purpose, non-infringement, uninterrupted
-availability, or error-free data. Nothing in these Terms excludes a right or
-liability that cannot lawfully be excluded.
-
-To the maximum extent permitted by law, the Lab and its personnel will not be liable
-for indirect, incidental, special, consequential, or punitive loss arising from use
-of or inability to use the Service, reliance on device or guest data, or third-party
-platform failure. Users remain responsible for complying with their professional,
-research, security, and legal duties.
-
-## 12. Suspension and termination
-
-We may immediately restrict or terminate access for suspected unauthorized use,
-security risk, breach of these Terms, end of a project or role, withdrawal of a
-required platform authorization, or legal or ethics requirements. On termination,
-you must stop using the Service and continue to protect confidential information.
-
-## 13. Privacy
-
-Our [Privacy Policy](./Privacy_Policy) explains how the Service processes
-information and is incorporated into these Terms. Study-specific informed-consent
-documents and privacy notices continue to apply.
-
-## 14. Governing law
-
-These Terms are governed by the laws of the State of Israel, without selecting an
-exclusive court or limiting any mandatory right or forum available under applicable
-law.
-
-## 15. Changes to these Terms
-
-We may update these Terms to reflect changes in the Service, research requirements,
-platform rules, or law. The effective date at the top identifies the current
-version. Where required, material changes will be communicated before they apply.
-
-## 16. Contact
-
-Questions about these Terms or the Service may be sent to
-**edenede2@gmail.com**.
+Questions may be sent to **{PI_EMAIL}**. Do not send health data or access tokens
+in unencrypted email.
 """
-)
+    )
+else:
+    st.title("תנאי שימוש")
+    st.caption("Wearable Research Manager • עודכן לאחרונה: 14 בספטמבר 2026")
+    st.markdown(
+        f"""
+## שירות מחקר וזכאות
+
+השירות מופעל על-ידי המעבדה ללחץ ופסיכופתולוגיה, בית הספר למדעי הפסיכולוגיה,
+אוניברסיטת חיפה. תפקודי הצוות מיועדים למשתמשים שהוזמנו ואושרו. הרשאת משתתף
+מיועדת **לבגירים בני 18 ומעלה** שהוזמנו למחקר מאושר והשלימו את ההסכמה הנדרשת.
+ההשתתפות התנדבותית וניתן להפסיקה ללא קנס בהתאם להסכמה המאושרת.
+
+## שימוש מורשה
+
+אנשי צוות רשאים להשתמש בשירות רק במסגרת תפקידם והפרויקט שהוקצה להם. יש להגן
+על פרטי הגישה, לגשת רק לרשומות מורשות, לפעול לפי הפרוטוקול, אישור האתיקה,
+נהלי האוניברסיטה והדין, ולדווח מיד על חשד לחשיפה. אין לשתף או להשתמש מחדש
+בקישורי משתתפים או בפרטי גישה.
+
+אין לעקוף בקרות גישה; לזהות מחדש משתתפים ללא אישור; לגרד, להעמיס או לשבש את
+השירות; לזייף נתונים או רישומי ביקורת; לחשוף מידע בערוץ לא מאושר; למכור מידע;
+או להשתמש בו לפרסום, אשראי, תעסוקה, ביטוח, שיווק לא קשור או אימון מודלים לא קשור.
+
+## סביבת הדגמה
+
+ההדגמה לקריאה בלבד וכוללת דוגמאות בדויות. אין להזין בה מידע אישי, מחקרי,
+בריאותי או מידע על מכשיר אמיתי, ואין לנסות לחבר אליה חשבון.
+
+## שירותים מחוברים
+
+השירות עשוי להשתמש ב-Google Sign-In, Google Cloud ו-Workspace, Google Health,
+Fitbit, Heroku, AppSheet, Qualtrics ותשתית דוא״ל מאושרת. חלים גם התנאים הנפרדים
+של ספקים אלה וכללי Google API, OAuth, Google Health ו-Fitbit.
+
+## לא טיפול רפואי או ניטור חירום
+
+זהו כלי מחקר ותפעול. הוא **אינו ייעוץ רפואי, מכשיר רפואי, אבחון, טיפול או מערכת
+ניטור חירום**. מדדים, מצב סנכרון והתראות עלולים להיות מאוחרים, חלקיים או שגויים.
+במקרה חירום יש לפנות לשירותי החירום או לאיש מקצוע רפואי.
+
+## זמינות, זכויות וסיום גישה
+
+ניתן לשנות, להגביל, להשעות או להפסיק את השירות מטעמי מחקר, אבטחה, אתיקה,
+דין או ספק. הגישה מוגבלת, ניתנת לביטול ואינה ניתנת להעברה. ניתן לסיימה עם
+סיום תפקיד או פרויקט, משיכת הסכמה או הרשאת ספק, או אירוע אבטחה או מדיניות.
+השירות ניתן, במידה שהדין מתיר, כפי שהוא וכפי שהוא זמין, ללא הבטחת זמינות רצופה.
+
+## פרטיות, דין ויצירת קשר
+
+מדיניות הפרטיות ומסמכי ההסכמה המאושרים מסבירים את השימוש במידע ומהווים חלק
+מתנאים אלה. הדין החל הוא דין מדינת ישראל, בלי לגרוע מזכויות חובה או פורומים
+העומדים למשתתפים. לשאלות: **{PI_EMAIL}**. אין לשלוח מידע רפואי או אסימוני גישה
+בדוא״ל שאינו מוצפן.
+"""
+    )
 
 st.divider()
-col1, col2 = st.columns(2)
-with col1:
-    st.page_link("app.py", label="Return to Wearable Research Manager", icon="🏠")
-with col2:
-    st.page_link("pages/08_Privacy_Policy.py", label="Privacy Policy", icon="🔒")
+cols = st.columns(3)
+with cols[0]:
+    st.page_link("app.py", label="Home / דף הבית", icon="🏠")
+with cols[1]:
+    st.page_link("pages/08_Privacy_Policy.py", label="Privacy / פרטיות", icon="🔒")
+with cols[2]:
+    st.page_link("pages/10_Research_Ethics.py", label="Ethics / אתיקה", icon="🏛️")

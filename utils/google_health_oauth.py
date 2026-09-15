@@ -10,6 +10,13 @@ import requests
 GOOGLE_AUTH_URI = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
 GOOGLE_HEALTH_BASE_URL = "https://health.googleapis.com/v4"
+GOOGLE_REVOKE_URI = "https://oauth2.googleapis.com/revoke"
+
+
+def _provider_error(action: str, response) -> RuntimeError:
+    # Provider bodies can echo codes, tokens, client credentials, or account data.
+    # Keep details in provider-side logs and expose only the HTTP status locally.
+    return RuntimeError(f"Google {action} failed with HTTP {response.status_code}")
 
 
 def now_ts() -> int:
@@ -76,7 +83,7 @@ def exchange_code_for_google_health_tokens(
         timeout=30,
     )
     if not response.ok:
-        raise RuntimeError(f"Google token exchange failed: {response.status_code} {response.text}")
+        raise _provider_error("token exchange", response)
     return normalize_google_token_response(response.json())
 
 
@@ -98,7 +105,7 @@ def refresh_google_health_tokens(
         timeout=30,
     )
     if not response.ok:
-        raise RuntimeError(f"Google token refresh failed: {response.status_code} {response.text}")
+        raise _provider_error("token refresh", response)
 
     normalized = normalize_google_token_response(response.json())
     if not normalized.get("refresh_token"):
@@ -113,5 +120,16 @@ def get_google_health_identity(access_token: str) -> dict[str, Any]:
         timeout=30,
     )
     if not response.ok:
-        raise RuntimeError(f"Google Health identity failed: {response.status_code} {response.text}")
+        raise _provider_error("Health identity lookup", response)
     return response.json()
+
+
+def revoke_google_health_token(token: str, revoke_uri: str = GOOGLE_REVOKE_URI) -> None:
+    response = requests.post(
+        revoke_uri,
+        data={"token": token},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        timeout=30,
+    )
+    if not response.ok:
+        raise _provider_error("token revocation", response)
