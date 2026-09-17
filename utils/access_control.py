@@ -294,6 +294,6 @@ def render_demo_banner(*, include_sidebar: bool = False) -> None:
 
 def render_legal_links() -> None:
     """Render public policy links in the current container."""
-    st.markdown("[🔒 Privacy Policy](https://admontracker.online/privacy.html)")
-    st.markdown("[📄 Terms of Use](https://admontracker.online/terms.html)")
-    st.markdown("[🏛️ Research ethics & documents](https://admontracker.online/research-ethics.html)")
+    st.page_link("pages/08_Privacy_Policy.py", label="Privacy Policy", icon="🔒")
+    st.page_link("pages/09_Terms_of_Service.py", label="Terms of Use", icon="📄")
+    st.page_link("pages/10_Research_Ethics.py", label="Research ethics & documents", icon="🏛️")

@@ -12,6 +12,6 @@ def render_app_logo(*, show_in_page: bool = False) -> None:
     """Render the lab logo consistently without exposing asset diagnostics."""
     if not LOGO_PATH.is_file():
         return
-    st.logo(str(LOGO_PATH), size="large", link="https://admontracker.online/")
+    st.logo(str(LOGO_PATH), size="large")
     if show_in_page:
         st.image(str(LOGO_PATH), width=520)
