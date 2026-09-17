@@ -3,6 +3,7 @@
 import streamlit as st
 
 from entity.Sheet import Spreadsheet
+from utils.branding import render_app_logo
 from utils.compliance import (
     PI_EMAIL,
     research_documents,
@@ -24,6 +25,7 @@ st.set_page_config(
     page_icon="🔗",
     layout="centered",
 )
+render_app_logo()
 
 language_label = st.radio("Language / שפה", ["English", "עברית"], horizontal=True)
 language = "he" if language_label == "עברית" else "en"

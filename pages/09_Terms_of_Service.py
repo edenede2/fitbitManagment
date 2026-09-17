@@ -1,6 +1,7 @@
 import streamlit as st
 
 from utils.compliance import PI_EMAIL
+from utils.branding import render_app_logo
 
 
 st.set_page_config(
@@ -8,6 +9,7 @@ st.set_page_config(
     page_icon="📄",
     layout="wide",
 )
+render_app_logo()
 
 language = st.radio("Language / שפה", ["English", "עברית"], horizontal=True)
 

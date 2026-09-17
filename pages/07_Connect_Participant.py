@@ -1,4 +1,5 @@
 import streamlit as st
+from utils.branding import render_app_logo
 
 from controllers.auth_controller import AuthenticationController
 from utils.access_control import require_device_management, require_write_access
@@ -6,6 +7,7 @@ from utils.demo_ui import render_demo_page
 
 
 st.set_page_config(page_title="Participant Connect - Wearable Research Manager", page_icon="🔗", layout="wide")
+render_app_logo()
 
 auth_controller = AuthenticationController()
 auth_controller.render_auth_ui()

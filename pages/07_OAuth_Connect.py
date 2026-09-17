@@ -1,5 +1,6 @@
 # pages/🔑 OAuth Connect.py
 import streamlit as st
+from utils.branding import render_app_logo
 from controllers.auth_controller import AuthenticationController
 from collections import OrderedDict
 from entity.Sheet import GoogleSheetsAdapter
@@ -11,6 +12,7 @@ from utils.demo_ui import render_demo_page
 from utils.compliance import participant_disclosure_enforced
 
 st.set_page_config(page_title="OAuth Connect - Wearable Research Manager", page_icon="🔑", layout="wide")
+render_app_logo()
 
 auth_controller = AuthenticationController()
 

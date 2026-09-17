@@ -6,6 +6,7 @@ from controllers.auth_controller import AuthenticationController
 from utils.fitbit_callback import handle_fitbit_callback
 from utils.google_health_callback import handle_google_health_callback
 from utils.access_control import render_demo_banner, render_legal_links
+from utils.branding import render_app_logo
 
 # Set up app configuration
 st.set_page_config(
@@ -14,6 +15,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+render_app_logo(show_in_page=True)
 
 def main():
     """Main application function - handles authentication and session state"""

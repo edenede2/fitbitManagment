@@ -1,10 +1,12 @@
 import streamlit as st
+from utils.branding import render_app_logo
 
 from controllers.auth_controller import AuthenticationController
 from utils.demo_ui import render_demo_page
 
 
 st.set_page_config(page_title="Home - Wearable Research Manager", page_icon="🏠", layout="wide")
+render_app_logo()
 
 auth_controller = AuthenticationController()
 auth_controller.render_auth_ui()
