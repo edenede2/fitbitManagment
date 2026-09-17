@@ -13,7 +13,7 @@ language = st.radio("Language / שפה", ["English", "עברית"], horizontal=T
 
 if language == "English":
     st.title("Privacy Policy")
-    st.caption("Wearable Research Manager • Last updated 14 September 2026")
+    st.caption("Wearable Research Manager • Last updated 17 September 2026")
     st.info(
         "This policy supplements—and does not replace—the ethics-approved informed-consent "
         "documents for study 385/23."
@@ -71,7 +71,10 @@ for unrelated marketing, or use it to train general-purpose AI/ML models.
 Wearable Research Manager's use and transfer to any other app of information
 received from Google APIs adheres to the
 [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy),
-including its Limited Use requirements. Use of Google Health data also follows the
+including its Limited Use requirements. Use of information received from the
+Google Health API adheres to the
+[Google Health API Developer and User Data Policy](https://developers.google.com/health/policies/health-api-developer-user-data-policy),
+including its Limited Use requirements, and also follows the
 [Google Health API User Data and Health Research Policy](https://developers.google.com/health/policies/health-api-user-data-and-research-policy).
 Human access is limited to authorized people with a genuine research, security,
 support, or legal need consistent with the approved consent.
@@ -122,7 +125,7 @@ ethics review and renewed disclosure/consent when required.
     )
 else:
     st.title("מדיניות פרטיות")
-    st.caption("Wearable Research Manager • עודכן לאחרונה: 14 בספטמבר 2026")
+    st.caption("Wearable Research Manager • עודכן לאחרונה: 17 בספטמבר 2026")
     st.info("מדיניות זו משלימה ואינה מחליפה את מסמכי ההסכמה שאושרו למחקר 385/23.")
     st.markdown(
         f"""
@@ -165,6 +168,8 @@ else:
 
 השימוש והעברת המידע שהתקבל מ-Google APIs עומדים
 [במדיניות נתוני המשתמש של Google API Services](https://developers.google.com/terms/api-services-user-data-policy),
+לרבות דרישות Limited Use. השימוש במידע שהתקבל מ-Google Health API עומד גם
+[במדיניות המפתחים ונתוני המשתמש של Google Health API](https://developers.google.com/health/policies/health-api-developer-user-data-policy),
 לרבות דרישות Limited Use, וכן
 [במדיניות Google Health למחקר ולנתוני משתמש](https://developers.google.com/health/policies/health-api-user-data-and-research-policy).
 גישה אנושית מוגבלת לבעלי צורך מחקרי, אבטחתי, תמיכתי או משפטי אמיתי ובהתאם להסכמה.

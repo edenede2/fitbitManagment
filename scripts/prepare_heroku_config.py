@@ -172,6 +172,9 @@ def build_config_vars(
         "CLOCK_RUN_JOBS": "false",
         "CLOCK_CATCH_UP_ON_START": "true",
         "ARCHIVE_SHADOW_MODE": "true",
+        # Google Health collection stays disabled until its ethics-approved
+        # participant disclosure is deployed and enforced.
+        "ARCHIVE_ENABLED_PROVIDERS": "fitbit",
         "GOOGLE_DRIVE_ARCHIVE_SUBFOLDER": "AdmonTracker Raw Archive",
     }
     if streamlit_secret_ref:

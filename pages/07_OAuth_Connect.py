@@ -42,6 +42,7 @@ from utils.health_oauth_clients import (
     load_active_oauth_clients,
     make_default_client_key,
     parse_google_oauth_client_json,
+    production_google_health_redirect_uri,
     scopes_to_string,
     suggest_google_health_redirect_uri,
     upsert_oauth_client_config,
@@ -188,7 +189,7 @@ if is_admin:
                 raw_json = uploaded_client.getvalue().decode("utf-8")
                 parsed_client = parse_google_oauth_client_json(raw_json)
                 redirect_uris = parsed_client.get("redirect_uris") or []
-                default_env = "staging"
+                default_env = "production"
                 default_client_key = make_default_client_key(parsed_client, default_env)
 
                 st.write(f"Client ID: `{parsed_client['client_id']}`")
@@ -201,16 +202,30 @@ if is_admin:
                 else:
                     redirect_uri = ""
                 suggested_redirect_uri = suggest_google_health_redirect_uri(redirect_uri)
-                if redirect_uri != suggested_redirect_uri:
+                production_redirect_uri = production_google_health_redirect_uri()
+                if production_redirect_uri not in redirect_uris:
                     st.warning(
-                        "The JSON redirect URI is Streamlit's internal login callback. "
-                        "Google Health OAuth must use the app callback URI below, and that exact URI must be added in Google Cloud."
+                        "Before saving a production configuration, add the exact callback "
+                        f"`{production_redirect_uri}` to this OAuth client's Authorized redirect "
+                        "URIs in Google Cloud. Keep the existing staging URI there as well."
+                    )
+                elif redirect_uri != suggested_redirect_uri:
+                    st.info(
+                        "The uploaded client contains multiple callbacks. The production "
+                        "Google Health callback is selected below."
                     )
 
                 with st.form("save_google_oauth_client_form"):
                     client_key = st.text_input("Client key", value=default_client_key)
-                    enviroment = st.selectbox("Environment", options=["dev", "staging", "production"], index=1)
-                    redirect_uri = st.text_input("Redirect URI to save", value=suggested_redirect_uri)
+                    enviroment = st.selectbox(
+                        "Environment",
+                        options=["production", "staging", "dev"],
+                        index=0,
+                    )
+                    redirect_uri = st.text_input(
+                        "Redirect URI to save",
+                        value=production_redirect_uri,
+                    )
                     scopes = st.text_area(
                         "Scopes",
                         value=scopes_to_string(DEFAULT_GOOGLE_HEALTH_SCOPES),
@@ -218,6 +233,10 @@ if is_admin:
                     )
                     status = st.selectbox("Status", options=["active", "disabled", "rotated"])
                     notes = st.text_input("Notes", value=parsed_client.get("project_id", ""))
+                    st.caption(
+                        "Saving a new client key adds a production row; it does not overwrite "
+                        "the existing staging configuration."
+                    )
                     save_client = st.form_submit_button("Save OAuth client")
 
                 if save_client:

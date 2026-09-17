@@ -5,7 +5,8 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 from zoneinfo import ZoneInfo
 
-from run_drive_archive_collection import _zip_tree, period_windows
+from firbitfilesOrgenizer import _resolve_watch_access_token
+from run_drive_archive_collection import _zip_tree, enabled_archive_providers, period_windows
 from services.drive_archive import safe_drive_segment
 from services.google_health_client import GoogleHealthClient
 from utils.compliance import (
@@ -14,6 +15,11 @@ from utils.compliance import (
     research_documents,
 )
 from utils.health_connect_links import create_health_connect_link
+from utils.health_oauth_clients import (
+    DEFAULT_GOOGLE_HEALTH_SCOPES,
+    production_google_health_redirect_uri,
+    validate_google_health_client_config,
+)
 from utils.health_token_store import (
     acknowledge_oauth_state,
     assert_state_authorized_for_callback,
@@ -158,8 +164,61 @@ class SecretStorageTests(unittest.TestCase):
         self.assertEqual(captured["access_token"], "")
         self.assertEqual(captured["refresh_token"], "")
 
+    def test_archive_resolves_legacy_fitbit_token_from_secret_reference(self):
+        spreadsheet = Mock()
+        with patch(
+            "firbitfilesOrgenizer.get_latest_tokens",
+            return_value=None,
+        ), patch(
+            "firbitfilesOrgenizer.get_legacy_fitbit_token",
+            return_value="protected-access-token",
+        ) as get_legacy:
+            token = _resolve_watch_access_token(
+                {"name": "P-001", "token": ""},
+                spreadsheet,
+            )
+        self.assertEqual(token, "protected-access-token")
+        get_legacy.assert_called_once_with(spreadsheet, "P-001")
+
+    def test_production_google_health_client_requires_exact_redirect_and_scopes(self):
+        with patch.dict(
+            "os.environ",
+            {"APP_BASE_URL": "https://app.admontracker.online"},
+            clear=True,
+        ):
+            self.assertEqual(
+                production_google_health_redirect_uri(),
+                "https://app.admontracker.online/?google_health_callback=1",
+            )
+            validate_google_health_client_config(
+                enviroment="production",
+                redirect_uri="https://app.admontracker.online/?google_health_callback=1",
+                scopes=DEFAULT_GOOGLE_HEALTH_SCOPES,
+            )
+            with self.assertRaisesRegex(ValueError, "redirect URI"):
+                validate_google_health_client_config(
+                    enviroment="production",
+                    redirect_uri="https://fitbitmanagment.streamlit.app/?google_health_callback=1",
+                    scopes=DEFAULT_GOOGLE_HEALTH_SCOPES,
+                )
+            with self.assertRaisesRegex(ValueError, "three approved read-only scopes"):
+                validate_google_health_client_config(
+                    enviroment="production",
+                    redirect_uri="https://app.admontracker.online/?google_health_callback=1",
+                    scopes=DEFAULT_GOOGLE_HEALTH_SCOPES[:2],
+                )
+
 
 class ArchiveBehaviorTests(unittest.TestCase):
+    def test_archive_provider_gate_can_hold_google_health_until_ethics_approval(self):
+        self.assertEqual(enabled_archive_providers("fitbit"), {"fitbit"})
+        self.assertEqual(
+            enabled_archive_providers("fitbit,google_health"),
+            {"fitbit", "google_health"},
+        )
+        with self.assertRaisesRegex(ValueError, "unsupported"):
+            enabled_archive_providers("fitbit,unknown-provider")
+
     def test_drive_segments_reject_traversal_and_remove_slashes(self):
         self.assertEqual(safe_drive_segment("Study / A"), "Study - A")
         with self.assertRaises(ValueError):

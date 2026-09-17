@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, List
@@ -28,6 +29,7 @@ DEFAULT_GOOGLE_HEALTH_SCOPES = [
     "https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly",
     "https://www.googleapis.com/auth/googlehealth.sleep.readonly",
 ]
+DEFAULT_PRODUCTION_BASE_URL = "https://app.admontracker.online"
 
 
 @dataclass
@@ -126,6 +128,37 @@ def suggest_google_health_redirect_uri(redirect_uri: str) -> str:
     return urlunsplit((parsed.scheme, parsed.netloc, "/", "google_health_callback=1", ""))
 
 
+def production_google_health_redirect_uri(base_url: str | None = None) -> str:
+    parsed = urlsplit(
+        str(base_url or os.getenv("APP_BASE_URL") or DEFAULT_PRODUCTION_BASE_URL).strip()
+    )
+    if parsed.scheme != "https" or not parsed.netloc:
+        raise ValueError("Production Google Health OAuth requires an HTTPS APP_BASE_URL")
+    return urlunsplit((parsed.scheme, parsed.netloc, "/", "google_health_callback=1", ""))
+
+
+def validate_google_health_client_config(
+    *,
+    enviroment: str,
+    redirect_uri: str,
+    scopes: str | list[str],
+) -> None:
+    """Fail closed for production rows while leaving existing staging rows intact."""
+    if str(enviroment or "").strip().casefold() != "production":
+        return
+    expected_redirect = production_google_health_redirect_uri()
+    if str(redirect_uri or "").strip() != expected_redirect:
+        raise ValueError(
+            "Production Google Health redirect URI must be exactly " + expected_redirect
+        )
+    configured_scopes = set(parse_scopes(scopes))
+    required_scopes = set(DEFAULT_GOOGLE_HEALTH_SCOPES)
+    if configured_scopes != required_scopes:
+        raise ValueError(
+            "Production Google Health OAuth must use exactly the three approved read-only scopes"
+        )
+
+
 def _worksheet(spreadsheet: Spreadsheet, tab: str):
     return spreadsheet.get_gspread_connection().worksheet(tab)
 
@@ -167,6 +200,11 @@ def upsert_oauth_client_config(
             "Do not use Streamlit's /oauth2callback redirect URI for Google Health OAuth. "
             f"Use {suggested} and add it to Google Cloud Authorized redirect URIs."
         )
+    validate_google_health_client_config(
+        enviroment=enviroment,
+        redirect_uri=redirect_uri,
+        scopes=scopes,
+    )
 
     now = utc_now_iso()
     client_secret_ref = store_json_secret(

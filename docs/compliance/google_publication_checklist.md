@@ -14,6 +14,8 @@ Do not submit until every checkbox in this section is complete.
       and `ALLOW_PLAINTEXT_SECRET_FALLBACK=false`.
 - [ ] Drive permissions were manually matched to the authorized study-team list.
 - [ ] Homepage, Privacy, Terms, and Research Ethics pages work while signed out.
+- [ ] Privacy includes the affirmative Google Health API Developer and User Data
+      Policy Limited Use statement.
 
 ## Google Auth Platform
 
@@ -49,6 +51,9 @@ Do not submit until every checkbox in this section is complete.
 
 ## Reviewer video (English, unlisted)
 
+Follow `google_reviewer_video_and_submission.md` so the recording and submitted
+evidence use the same production configuration.
+
 - [ ] Use a dedicated test participant with no real research data.
 - [ ] Start signed out on the public homepage and open Privacy, Terms, and Ethics documents.
 - [ ] Show staff creation of a link with adult and consent attestations.
@@ -59,9 +64,10 @@ Do not submit until every checkbox in this section is complete.
 - [ ] Show the private management link, provider revocation, and deletion-request workflow.
 - [ ] Show that no token or client secret appears in Sheets, UI errors, or logs.
 
-## Post-submission and operations
+## Submission and operations
 
-- [ ] Keep the OAuth app in testing until Google accepts the production submission.
+- [ ] Keep the OAuth app in testing until all internal release gates pass; then use
+      **Publish App** and **Prepare for Verification** in Google Auth Platform.
 - [ ] Preserve the exact production UI and scope list shown in the video during review.
 - [ ] Monitor Google verification email, token refresh, `job_runs`, `clock_status`,
       `archive_manifest`, and provider errors.

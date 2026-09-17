@@ -33,8 +33,7 @@ The API being enabled is not sufficient. The production service account needs:
 
 Prefer a custom least-privilege role. If an administrator creates every secret in
 advance, omit `secrets.create` and grant version-adder/accessor access only on those
-secrets. The current connectivity check returned a 403 for `secrets.create`, so do
-not run the token migration until IAM is corrected.
+secrets. Verify create/add/read access before running the token migration.
 
 After IAM is ready:
 
@@ -60,11 +59,17 @@ python3 scripts/migrate_oauth_secrets.py --apply
 python3 scripts/migrate_oauth_secrets.py --apply --clear-plaintext
 ```
 
+For append-only token tables, the migration creates one secret for the latest
+active participant/provider group instead of one version for every historical row.
 The apply phase writes each secret, reads it back, and only then writes its
-reference to Sheets. The final phase blanks plaintext client JSON, client secrets,
-and access/refresh token cells. After live OAuth and refresh tests pass, set
-`ALLOW_PLAINTEXT_SECRET_FALLBACK=false`. Rotate the old OAuth client secret and
-service-account key only after explicit operator approval.
+reference to the latest active row. The final phase blanks plaintext from all
+identified history rows. Unidentified rows are reported and left unchanged for
+manual review. After live OAuth and refresh tests pass, set
+`ALLOW_PLAINTEXT_SECRET_FALLBACK=false`.
+
+Do not apply the migration while an exposed or superseded service-account key can
+still read Secret Manager. Replace the Heroku bootstrap key, verify the new key,
+and delete the old key first.
 
 The current branch no longer contains Fitbit bearer-token values in its tracked
 working tree, but historical commits contain old notebook output and a legacy code
@@ -102,9 +107,15 @@ Set a documented new-data-only cutoff and start in shadow mode:
 ```text
 ARCHIVE_CUTOVER_AT=<approved RFC3339 timestamp in Asia/Jerusalem>
 ARCHIVE_SHADOW_MODE=true
+ARCHIVE_ENABLED_PROVIDERS=fitbit
 CLOCK_RUN_JOBS=false
 GOOGLE_DRIVE_ARCHIVE_SUBFOLDER=AdmonTracker Raw Archive
 ```
+
+Keep `ARCHIVE_ENABLED_PROVIDERS=fitbit` while the Google Health addendum is
+unapproved. After the approved addendum is deployed, disclosure enforcement is
+enabled, and a live authorization/refresh test passes, change it to
+`fitbit,google_health`.
 
 Scale exactly one clock dyno. Set `CLOCK_RUN_JOBS=true` while leaving archive
 shadow mode on; compare the manifest and monitoring outputs with the old lab cron.

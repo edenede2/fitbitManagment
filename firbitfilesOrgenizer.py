@@ -28,7 +28,11 @@ if project_root not in sys.path:
 
 # Import entity components directly
 from entity.Sheet import Spreadsheet, GoogleSheetsAdapter
-from utils.fitbit_token_store import get_latest_tokens, get_valid_access_token
+from utils.fitbit_token_store import (
+    get_latest_tokens,
+    get_legacy_fitbit_token,
+    get_valid_access_token,
+)
 
 # Configuration
 FITBIT_ZIP_SAVE_PATH = Path("/media/psylab-6028/DATA1/FitbitData")
@@ -895,6 +899,11 @@ def _resolve_watch_access_token(watch_row, spreadsheet=None):
 
         if oauth_tokens:
             return get_valid_access_token(spreadsheet, watch_name)
+
+        try:
+            return get_legacy_fitbit_token(spreadsheet, watch_name)
+        except ValueError:
+            pass
 
     return legacy_token
 

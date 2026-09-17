@@ -152,6 +152,7 @@ class PrepareHerokuConfigTests(unittest.TestCase):
         self.assertEqual(config["CLOCK_RUN_JOBS"], "false")
         self.assertEqual(config["CLOCK_CATCH_UP_ON_START"], "true")
         self.assertEqual(config["ARCHIVE_SHADOW_MODE"], "true")
+        self.assertEqual(config["ARCHIVE_ENABLED_PROVIDERS"], "fitbit")
 
 
 if __name__ == "__main__":

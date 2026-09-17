@@ -52,6 +52,7 @@ GOOGLE_DATA_TYPES = {
     "temperature": ("daily-sleep-temperature-derivations", "daily"),
     "breathing_rate": ("daily-respiratory-rate", "daily"),
 }
+SUPPORTED_ARCHIVE_PROVIDERS = {"fitbit", "google_health"}
 
 
 @dataclass(frozen=True)
@@ -73,6 +74,26 @@ def parse_cutover(value: str) -> datetime:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=LOCAL_TZ)
     return parsed.astimezone(LOCAL_TZ)
+
+
+def enabled_archive_providers(value: str | None = None) -> set[str]:
+    raw = value if value is not None else os.getenv(
+        "ARCHIVE_ENABLED_PROVIDERS", "fitbit,google_health"
+    )
+    providers = {
+        item.strip().casefold()
+        for item in str(raw or "").split(",")
+        if item.strip()
+    }
+    unsupported = providers - SUPPORTED_ARCHIVE_PROVIDERS
+    if unsupported:
+        raise ValueError(
+            "ARCHIVE_ENABLED_PROVIDERS contains unsupported values: "
+            + ", ".join(sorted(unsupported))
+        )
+    if not providers:
+        raise ValueError("ARCHIVE_ENABLED_PROVIDERS must enable at least one provider")
+    return providers
 
 
 def period_windows(now: datetime, cadence: str, cutover: datetime) -> list[PeriodWindow]:
@@ -223,6 +244,7 @@ def collect_drive_archives(*, now: datetime | None = None, shadow: bool | None =
         shadow = os.getenv("ARCHIVE_SHADOW_MODE", "true").strip().casefold() in {"1", "true", "yes", "on"}
     cutover_raw = os.getenv("ARCHIVE_CUTOVER_AT", "")
     cutover = parse_cutover(cutover_raw) if cutover_raw else now
+    enabled_providers = enabled_archive_providers()
     if not shadow and not cutover_raw:
         raise RuntimeError("ARCHIVE_CUTOVER_AT must be set before disabling shadow mode")
 
@@ -230,7 +252,14 @@ def collect_drive_archives(*, now: datetime | None = None, shadow: bool | None =
     if spreadsheet is None:
         raise RuntimeError("Could not connect to the production spreadsheet")
     drive = None if shadow else SharedDriveArchive.from_environment()
-    counts = {"uploaded": 0, "unchanged": 0, "shadow": 0, "empty": 0, "failed": 0}
+    counts = {
+        "uploaded": 0,
+        "unchanged": 0,
+        "shadow": 0,
+        "empty": 0,
+        "failed": 0,
+        "provider_skipped": 0,
+    }
 
     for row in watches.iter_rows(named=True):
         watch_name = str(row.get("name") or row.get("watchName") or "").strip()
@@ -238,6 +267,9 @@ def collect_drive_archives(*, now: datetime | None = None, shadow: bool | None =
         provider_value = str(row.get("provider") or row.get("oauth_type") or "fitbit").casefold()
         provider = "google_health" if "google" in provider_value or provider_value == "health" else "fitbit"
         if not watch_name:
+            continue
+        if provider not in enabled_providers:
+            counts["provider_skipped"] += 1
             continue
         for data_type, cadence in CADENCE.items():
             for window in period_windows(now, cadence, cutover):
