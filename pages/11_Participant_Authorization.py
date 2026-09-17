@@ -6,6 +6,9 @@ from entity.Sheet import Spreadsheet
 from utils.branding import render_app_logo
 from utils.compliance import (
     PI_EMAIL,
+    PUBLIC_ETHICS_URL,
+    PUBLIC_PRIVACY_URL,
+    PUBLIC_TERMS_URL,
     research_documents,
     assert_disclosure_can_be_enforced,
     disclosure_version,
@@ -40,7 +43,7 @@ if not participant_disclosure_enforced():
         if is_hebrew
         else "Participant authorization is available through a personal link from the study team."
     )
-    st.page_link("pages/10_Research_Ethics.py", label="Ethics documents / מסמכי אתיקה")
+    st.page_link(PUBLIC_ETHICS_URL, label="Ethics documents / מסמכי אתיקה")
     st.stop()
 
 try:
@@ -182,8 +185,8 @@ st.divider()
 st.write(("לשאלות או לפרישה: " if is_hebrew else "Questions or withdrawal: ") + PI_EMAIL)
 cols = st.columns(3)
 with cols[0]:
-    st.page_link("pages/08_Privacy_Policy.py", label="Privacy / פרטיות")
+    st.page_link(PUBLIC_PRIVACY_URL, label="Privacy / פרטיות")
 with cols[1]:
-    st.page_link("pages/09_Terms_of_Service.py", label="Terms / תנאים")
+    st.page_link(PUBLIC_TERMS_URL, label="Terms / תנאים")
 with cols[2]:
-    st.page_link("pages/10_Research_Ethics.py", label="Ethics / אתיקה")
+    st.page_link(PUBLIC_ETHICS_URL, label="Ethics / אתיקה")

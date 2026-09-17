@@ -4,7 +4,7 @@ import streamlit as st
 
 from entity.Sheet import Spreadsheet
 from utils.branding import render_app_logo
-from utils.compliance import PI_EMAIL, deletion_text
+from utils.compliance import PI_EMAIL, PUBLIC_PRIVACY_URL, deletion_text
 from utils.connection_management import (
     disconnect_connection,
     record_deletion_request,
@@ -114,4 +114,4 @@ elif policy and st.button("רישום בקשת מחיקה" if is_hebrew else "Re
         st.error("לא ניתן לרשום את הבקשה." if is_hebrew else "The request could not be recorded.")
 
 st.write(("יצירת קשר: " if is_hebrew else "Contact: ") + PI_EMAIL)
-st.page_link("pages/08_Privacy_Policy.py", label="Privacy / פרטיות")
+st.page_link(PUBLIC_PRIVACY_URL, label="Privacy / פרטיות")

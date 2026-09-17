@@ -8,6 +8,12 @@ from typing import Callable, Literal, Optional
 
 import streamlit as st
 
+from utils.compliance import (
+    PUBLIC_ETHICS_URL,
+    PUBLIC_PRIVACY_URL,
+    PUBLIC_TERMS_URL,
+)
+
 
 AccessMode = Literal["anonymous", "guest", "authenticated"]
 AUTHORIZED_ROLES = {"Admin", "Manager", "Student"}
@@ -294,6 +300,6 @@ def render_demo_banner(*, include_sidebar: bool = False) -> None:
 
 def render_legal_links() -> None:
     """Render public policy links in the current container."""
-    st.page_link("pages/08_Privacy_Policy.py", label="Privacy Policy", icon="🔒")
-    st.page_link("pages/09_Terms_of_Service.py", label="Terms of Use", icon="📄")
-    st.page_link("pages/10_Research_Ethics.py", label="Research ethics & documents", icon="🏛️")
+    st.page_link(PUBLIC_PRIVACY_URL, label="Privacy Policy", icon="🔒")
+    st.page_link(PUBLIC_TERMS_URL, label="Terms of Use", icon="📄")
+    st.page_link(PUBLIC_ETHICS_URL, label="Research ethics & documents", icon="🏛️")

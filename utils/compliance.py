@@ -16,6 +16,11 @@ PI_EMAIL = "radmon@psy.haifa.ac.il"
 PI_PHONE = "+972-4-824-0964"
 STUDY_NUMBER = "385/23"
 DEFAULT_BASE_URL = "https://app.admontracker.online"
+PUBLIC_SITE_BASE_URL = "https://admontracker.online"
+PUBLIC_HOME_URL = f"{PUBLIC_SITE_BASE_URL}/"
+PUBLIC_PRIVACY_URL = f"{PUBLIC_SITE_BASE_URL}/privacy.html"
+PUBLIC_TERMS_URL = f"{PUBLIC_SITE_BASE_URL}/terms.html"
+PUBLIC_ETHICS_URL = f"{PUBLIC_SITE_BASE_URL}/research-ethics.html"
 DRAFT_DISCLOSURE_VERSION = "DRAFT-NOT-ETHICS-APPROVED"
 
 

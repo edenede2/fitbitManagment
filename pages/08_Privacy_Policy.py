@@ -1,6 +1,12 @@
 import streamlit as st
 
-from utils.compliance import PI_EMAIL, PI_NAME
+from utils.compliance import (
+    PI_EMAIL,
+    PI_NAME,
+    PUBLIC_ETHICS_URL,
+    PUBLIC_HOME_URL,
+    PUBLIC_TERMS_URL,
+)
 from utils.branding import render_app_logo
 
 
@@ -208,8 +214,8 @@ else:
 st.divider()
 cols = st.columns(3)
 with cols[0]:
-    st.page_link("app.py", label="Home / דף הבית", icon="🏠")
+    st.page_link(PUBLIC_HOME_URL, label="Home / דף הבית", icon="🏠")
 with cols[1]:
-    st.page_link("pages/09_Terms_of_Service.py", label="Terms / תנאי שימוש", icon="📄")
+    st.page_link(PUBLIC_TERMS_URL, label="Terms / תנאי שימוש", icon="📄")
 with cols[2]:
-    st.page_link("pages/10_Research_Ethics.py", label="Ethics / אתיקה", icon="🏛️")
+    st.page_link(PUBLIC_ETHICS_URL, label="Ethics / אתיקה", icon="🏛️")

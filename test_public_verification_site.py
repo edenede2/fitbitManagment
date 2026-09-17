@@ -1,6 +1,13 @@
 from html.parser import HTMLParser
 from pathlib import Path
 
+from utils.compliance import (
+    PUBLIC_ETHICS_URL,
+    PUBLIC_HOME_URL,
+    PUBLIC_PRIVACY_URL,
+    PUBLIC_TERMS_URL,
+)
+
 
 ROOT = Path(__file__).resolve().parent
 SITE = ROOT / "public_site"
@@ -63,3 +70,10 @@ def test_public_site_internal_links_have_targets():
             if target.startswith("assets/"):
                 continue  # Copied into the Pages artifact by the deployment workflow.
             assert (SITE / target).is_file(), f"Missing {href} linked from {name}"
+
+
+def test_canonical_production_urls_point_to_public_static_site():
+    assert PUBLIC_HOME_URL == "https://admontracker.online/"
+    assert PUBLIC_PRIVACY_URL == "https://admontracker.online/privacy.html"
+    assert PUBLIC_TERMS_URL == "https://admontracker.online/terms.html"
+    assert PUBLIC_ETHICS_URL == "https://admontracker.online/research-ethics.html"
