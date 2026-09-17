@@ -108,6 +108,21 @@ class ComplianceGateTests(unittest.TestCase):
         )
         save_state.assert_called_once()
 
+    def test_google_health_link_is_blocked_until_disclosure_is_enforced(self):
+        with patch.dict("os.environ", {}, clear=True), patch(
+            "utils.health_connect_links.save_oauth_state"
+        ) as save_state:
+            with self.assertRaisesRegex(RuntimeError, "authorization is unavailable"):
+                create_health_connect_link(
+                    Mock(),
+                    watchName="P-001",
+                    project="study-a",
+                    provider="google_health",
+                    oauth_client_key="prod-health",
+                    created_by="staff@example.invalid",
+                )
+        save_state.assert_not_called()
+
     def test_acknowledgement_is_append_only_and_pseudonymous(self):
         state = {
             "state": "state-1",

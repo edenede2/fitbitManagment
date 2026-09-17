@@ -3,7 +3,6 @@ import streamlit as st
 from controllers.auth_controller import AuthenticationController
 from utils.access_control import require_device_management, require_write_access
 from utils.demo_ui import render_demo_page
-from utils.compliance import participant_disclosure_enforced
 
 
 st.set_page_config(page_title="Participant Connect - Wearable Research Manager", page_icon="🔗", layout="wide")
@@ -29,10 +28,6 @@ spreadsheet = auth_controller.get_spreadsheet()
 from utils.health_connect_links import create_health_connect_link
 
 st.title("Connect Participant")
-if not participant_disclosure_enforced():
-    st.warning(
-        "Participant disclosure enforcement is OFF. Do not use this flow for Google verification."
-    )
 participant = st.text_input("Participant pseudonymous ID")
 staff_consent_verified = st.checkbox(
     "I verified the participant completed the current ethics-approved study consent"

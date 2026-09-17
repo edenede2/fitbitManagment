@@ -14,10 +14,6 @@ language = st.radio("Language / שפה", ["English", "עברית"], horizontal=T
 if language == "English":
     st.title("Privacy Policy")
     st.caption("Wearable Research Manager • Last updated 17 September 2026")
-    st.info(
-        "This policy supplements—and does not replace—the ethics-approved informed-consent "
-        "documents for study 385/23."
-    )
     st.markdown(
         f"""
 ## 1. Operator and contact
@@ -104,10 +100,9 @@ and isolated synthetic guest data. No system can be guaranteed completely secure
 
 ## 8. Retention, withdrawal, and deletion
 
-The exact retention period and treatment of previously collected or de-identified
-research data are stated in the current ethics-approved consent/addendum shown
-immediately before participant authorization. **Those exact approved terms govern;
-the application will not invent a different duration.**
+The retention period and treatment of previously collected or de-identified
+research data are stated in the current ethics-approved participant documents
+presented during authorization.
 
 Participants may withdraw and stop future collection at any time without penalty by
 contacting **{PI_EMAIL}** or using the connection-management instructions supplied
@@ -126,7 +121,6 @@ ethics review and renewed disclosure/consent when required.
 else:
     st.title("מדיניות פרטיות")
     st.caption("Wearable Research Manager • עודכן לאחרונה: 17 בספטמבר 2026")
-    st.info("מדיניות זו משלימה ואינה מחליפה את מסמכי ההסכמה שאושרו למחקר 385/23.")
     st.markdown(
         f"""
 ## 1. מפעיל השירות ויצירת קשר
@@ -194,9 +188,8 @@ else:
 
 ## 8. שמירה, פרישה ומחיקה
 
-משך השמירה המדויק והטיפול במידע שכבר נאסף או עבר ביטול זיהוי מפורטים בנספח
-והסכמה שאושרו אתית ומוצגים מיד לפני ההרשאה. **התנאים המאושרים הם הקובעים;
-האפליקציה לא תמציא תקופה אחרת.**
+משך השמירה והטיפול במידע שכבר נאסף או עבר ביטול זיהוי מפורטים במסמכי המשתתף
+שאושרו אתית ומוצגים במהלך ההרשאה.
 
 ניתן לפרוש ולהפסיק איסוף עתידי בכל עת וללא קנס באמצעות פנייה ל-**{PI_EMAIL}**
 או הוראות ניהול החיבור הנמסרות לאחר ההרשאה. ניתוק מבטל גישה ומסיר אסימונים פעילים.

@@ -93,14 +93,14 @@ policy = deletion_text(language)
 if policy:
     st.write(policy)
 else:
-    st.warning(
-        "נוסח המחיקה המאושר טרם הוגדר; פנו לחוקר הראשי."
+    st.info(
+        f"לבקשת מחיקה יש לפנות לחוקר הראשי: {PI_EMAIL}"
         if is_hebrew
-        else "The approved deletion wording is not configured; contact the principal investigator."
+        else f"To request deletion, contact the principal investigator: {PI_EMAIL}"
     )
 if management.get("deletion_requested_at"):
     st.success("בקשת מחיקה כבר נרשמה." if is_hebrew else "A deletion request is already recorded.")
-elif st.button("רישום בקשת מחיקה" if is_hebrew else "Record deletion request", disabled=not bool(policy)):
+elif policy and st.button("רישום בקשת מחיקה" if is_hebrew else "Record deletion request"):
     try:
         record_deletion_request(spreadsheet, management, language)
         st.success(

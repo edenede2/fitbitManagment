@@ -8,7 +8,7 @@ from utils.google_health_callback import handle_google_health_callback
 from utils.rate_limit_ui import show_rate_limit_notice
 from utils.access_control import require_device_management, require_write_access
 from utils.demo_ui import render_demo_page
-from utils.compliance import approved_disclosure_ready, participant_disclosure_enforced
+from utils.compliance import participant_disclosure_enforced
 
 st.set_page_config(page_title="OAuth Connect - Wearable Research Manager", page_icon="🔑", layout="wide")
 
@@ -57,21 +57,6 @@ if sp is None:
     st.stop()
 
 st.title("🔑 Connect Account to a Watch")
-
-if participant_disclosure_enforced():
-    disclosure_ready, disclosure_missing = approved_disclosure_ready()
-    if disclosure_ready:
-        st.success("The ethics-approved participant disclosure gate is enforced.")
-    else:
-        st.error("Disclosure enforcement is misconfigured: " + ", ".join(disclosure_missing))
-        st.stop()
-else:
-    st.warning(
-        "Participant disclosure enforcement is OFF. Links currently go directly to the provider. "
-        "Do not submit the OAuth app for Google verification until the approved addendum is "
-        "configured and PARTICIPANT_DISCLOSURE_ENFORCED=true."
-    )
-
 
 def _active_google_client_rows():
     try:
@@ -290,7 +275,11 @@ project = st.text_input(
 )
 provider = st.selectbox(
     "Provider",
-    options=["fitbit", "google_health"],
+    options=(
+        ["fitbit", "google_health"]
+        if participant_disclosure_enforced()
+        else ["fitbit"]
+    ),
     format_func=lambda value: "Fitbit legacy" if value == "fitbit" else "Google Health",
 )
 oauth_client_key = ""
@@ -414,7 +403,11 @@ existing_project = st.text_input(
 )
 existing_provider = st.selectbox(
     "Existing watch provider",
-    options=["fitbit", "google_health"],
+    options=(
+        ["fitbit", "google_health"]
+        if participant_disclosure_enforced()
+        else ["fitbit"]
+    ),
     format_func=lambda value: "Fitbit legacy" if value == "fitbit" else "Google Health",
     key="existing_provider",
 )

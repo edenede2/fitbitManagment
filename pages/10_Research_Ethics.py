@@ -18,23 +18,19 @@ st.caption(
     if is_hebrew
     else f"Study {STUDY_NUMBER} • Principal investigator: {PI_NAME}"
 )
-st.info(
-    "המסמכים מפורסמים לשקיפות. פרסומם אינו מהווה אישור של Google, Fitbit או NIH למחקר."
+st.write(
+    "בעמוד זה ניתן לעיין במסמכי המחקר הזמינים ולהוריד עותק."
     if is_hebrew
-    else (
-        "These documents are provided for transparency. Publication does not imply that "
-        "Google, Fitbit, or NIH endorses or has approved the study."
-    )
+    else "Review the available study documents below or download a copy."
 )
 
 for document in research_documents():
-    title = document.title_he if is_hebrew else document.title_en
-    status = document.status_he if is_hebrew else document.status_en
-    st.subheader(title)
-    st.write(status)
+    # Only published documents belong on the participant-facing page. Release
+    # readiness and missing-asset diagnostics remain internal to staff tooling.
     if not document.exists:
-        st.warning("המסמך אינו זמין בפריסה זו." if is_hebrew else "Document unavailable in this deployment.")
         continue
+    title = document.title_he if is_hebrew else document.title_en
+    st.subheader(title)
 
     data = document.path.read_bytes()
     if document.mime_type == "application/pdf" and hasattr(st, "pdf"):
@@ -54,17 +50,7 @@ for document in research_documents():
         mime=document.mime_type,
         key=f"download_{document.key}_{language}",
     )
-    st.caption(f"SHA-256: `{document.sha256()}`")
 
-st.warning(
-    "הטופס הקיים אינו כולל הרשאת Google Health. נספח דו-לשוני נמצא בהכנה ויפורסם "
-    "כמסמך מאושר רק לאחר אישור החוקר הראשי וועדת האתיקה."
-    if is_hebrew
-    else (
-        "The existing pilot consent does not cover Google Health authorization. A bilingual "
-        "addendum is being prepared and will be presented as approved only after PI and ethics review."
-    )
-)
 st.write(("יצירת קשר: " if is_hebrew else "Contact: ") + PI_EMAIL)
 
 st.divider()

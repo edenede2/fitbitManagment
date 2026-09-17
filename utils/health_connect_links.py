@@ -54,6 +54,8 @@ def create_health_connect_link(
         raise ValueError(f"Unsupported provider: {provider}")
     if provider == "google_health" and not oauth_client_key:
         raise ValueError("oauth_client_key is required for Google Health links")
+    if provider == "google_health" and not participant_disclosure_enforced():
+        raise RuntimeError("Google Health participant authorization is unavailable")
     if participant_disclosure_enforced():
         assert_disclosure_can_be_enforced()
         if not staff_consent_verified or not adult_verified:

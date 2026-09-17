@@ -61,32 +61,20 @@ RESEARCH_DOCUMENTS = (
         path=COMPLIANCE_ASSETS / "institutional-ethics-governance-he.pdf",
         download_name="institutional-ethics-governance-he.pdf",
         mime_type="application/pdf",
-        title_en="Institutional ethics governance/accreditation evidence (Hebrew)",
-        title_he="אסמכתה מוסדית להסדרת ועדות האתיקה (עברית)",
-        status_en=(
-            "The document describes the University ethics-committee framework and references "
-            "registration in the U.S. NIH committee registry. It does not display the registry identifier."
-        ),
-        status_he=(
-            "המסמך מתאר את מסגרת ועדות האתיקה של האוניברסיטה ומפנה לרישום במאגר ועדות "
-            "של NIH בארה״ב. מספר הרישום עצמו אינו מופיע במסמך."
-        ),
+        title_en="University ethics committee framework (Hebrew)",
+        title_he="מסגרת ועדות האתיקה של האוניברסיטה (עברית)",
+        status_en="University of Haifa ethics committee framework.",
+        status_he="מסגרת ועדות האתיקה של אוניברסיטת חיפה.",
     ),
     ResearchDocument(
         key="pilot_consent",
         path=COMPLIANCE_ASSETS / "pilot-consent-baseline-he.pdf",
-        download_name="pilot-consent-baseline-he.pdf",
+        download_name="participant-informed-consent-385-23-he.pdf",
         mime_type="application/pdf",
-        title_en="Pilot informed-consent baseline (Hebrew)",
-        title_he="טופס הסכמה מדעת לפיילוט (עברית)",
-        status_en=(
-            "Baseline study consent. It mentions Fitbit and AppSheet, but it does not authorize "
-            "Google Health/OAuth and is not the Google Health addendum."
-        ),
-        status_he=(
-            "טופס הסכמה בסיסי למחקר. הוא מזכיר Fitbit ו-AppSheet, אך אינו מהווה אישור "
-            "ל-Google Health/OAuth ואינו הנספח הנדרש עבורם."
-        ),
+        title_en="Participant informed-consent form (Hebrew)",
+        title_he="טופס הסכמה מדעת למשתתף (עברית)",
+        status_en="Participant information and informed-consent form for the study.",
+        status_he="דף מידע וטופס הסכמה מדעת למשתתפי המחקר.",
     ),
     ResearchDocument(
         key="google_health_addendum",
@@ -95,14 +83,8 @@ RESEARCH_DOCUMENTS = (
         mime_type="application/pdf",
         title_en="Google Health participant addendum",
         title_he="נספח משתתף עבור Google Health",
-        status_en=(
-            "This document becomes authoritative only when the deployed file and version are "
-            "the PI/ethics-approved final. A draft is never presented as approved."
-        ),
-        status_he=(
-            "מסמך זה יהיה מחייב רק כאשר הקובץ והגרסה בפריסה הם הנוסח הסופי שאושר "
-            "על-ידי החוקר הראשי וועדת האתיקה. טיוטה לעולם לא תוצג כמאושרת."
-        ),
+        status_en="Participant information for Google Health authorization.",
+        status_he="מידע למשתתף לצורך הרשאת Google Health.",
     ),
 )
 

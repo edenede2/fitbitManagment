@@ -33,13 +33,10 @@ st.title("הרשאת משתתף" if is_hebrew else "Participant Authorization")
 st.caption("University of Haifa • Study 385/23")
 
 if not participant_disclosure_enforced():
-    st.warning(
-        "זרימת ההסכמה של Google Health טרם הופעלה. יש לפנות לצוות המחקר לקבלת קישור עדכני."
+    st.info(
+        "הרשאת משתתפים זמינה באמצעות קישור אישי מצוות המחקר."
         if is_hebrew
-        else (
-            "The ethics-approved Google Health disclosure flow is not active yet. "
-            "Contact the study team for a current authorization link."
-        )
+        else "Participant authorization is available through a personal link from the study team."
     )
     st.page_link("pages/10_Research_Ethics.py", label="Ethics documents / מסמכי אתיקה")
     st.stop()
@@ -48,9 +45,9 @@ try:
     assert_disclosure_can_be_enforced()
 except RuntimeError:
     st.error(
-        "ההרשאה אינה זמינה משום שמסמכי האתיקה טרם הוגדרו במלואם."
+        "שירות ההרשאה אינו זמין כעת. יש לפנות לצוות המחקר."
         if is_hebrew
-        else "Authorization is unavailable because the approved ethics wording is incomplete."
+        else "The authorization service is currently unavailable. Contact the study team."
     )
     st.stop()
 
