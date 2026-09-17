@@ -21,7 +21,7 @@ from utils.health_token_store import (
 
 
 st.set_page_config(
-    page_title="Participant Authorization - Wearable Research Manager",
+    page_title="Participant Authorization - AdmonTracker",
     page_icon="🔗",
     layout="centered",
 )

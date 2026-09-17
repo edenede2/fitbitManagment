@@ -67,7 +67,7 @@ def display_homepage(user_email, user_role, user_project, spreadsheet: Spreadshe
     else:
         st.title(congrats(user_name=user_email.split('@')[0], user_role=user_role))
         
-        st.write("Welcome to the Wearable Research Manager dashboard.")
+        st.write("Welcome to the AdmonTracker dashboard.")
         
         # Display role-specific information
         if user_role == "Admin":

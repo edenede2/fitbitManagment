@@ -13,7 +13,7 @@ from utils.connection_management import (
 
 
 st.set_page_config(
-    page_title="Manage Connection - Wearable Research Manager",
+    page_title="Manage Connection - AdmonTracker",
     page_icon="🛡️",
     layout="centered",
 )

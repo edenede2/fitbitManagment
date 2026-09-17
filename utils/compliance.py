@@ -9,7 +9,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 
-APP_NAME = "Wearable Research Manager"
+APP_NAME = "AdmonTracker"
 OPERATOR = "Stress & Psychopathology Lab, School of Psychological Sciences, University of Haifa"
 PI_NAME = "Prof. Roee Admon"
 PI_EMAIL = "radmon@psy.haifa.ac.il"

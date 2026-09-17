@@ -21,7 +21,10 @@ Do not submit until every checkbox in this section is complete.
 
 - [ ] Use the canonical production project and an External audience.
 - [ ] Verify the `admontracker.online` Search Console domain with a project owner/editor.
-- [ ] App name: `Wearable Research Manager`.
+- [ ] App name: `AdmonTracker` everywhere, including Google Auth Platform branding.
+- [ ] Google Auth Platform homepage is `https://admontracker.online/`.
+- [ ] Google Auth Platform privacy URL is `https://admontracker.online/privacy.html`.
+- [ ] Google Auth Platform terms URL is `https://admontracker.online/terms.html`.
 - [ ] Support/developer contact: `radmon@psy.haifa.ac.il`; keep technical contacts
       in project notification settings.
 - [ ] Register homepage, Privacy Policy, and Terms of Use URLs on the production domain.

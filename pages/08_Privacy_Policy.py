@@ -5,7 +5,7 @@ from utils.branding import render_app_logo
 
 
 st.set_page_config(
-    page_title="Privacy Policy - Wearable Research Manager",
+    page_title="Privacy Policy - AdmonTracker",
     page_icon="🔒",
     layout="wide",
 )
@@ -15,12 +15,12 @@ language = st.radio("Language / שפה", ["English", "עברית"], horizontal=T
 
 if language == "English":
     st.title("Privacy Policy")
-    st.caption("Wearable Research Manager • Last updated 17 September 2026")
+    st.caption("AdmonTracker • Last updated 17 September 2026")
     st.markdown(
         f"""
 ## 1. Operator and contact
 
-Wearable Research Manager is operated for research by **{PI_NAME}'s Stress &
+AdmonTracker is operated for research by **{PI_NAME}'s Stress &
 Psychopathology Lab, School of Psychological Sciences, University of Haifa**.
 The public contact for privacy, participation, withdrawal, and deletion requests is
 **{PI_EMAIL}**. Please identify the study and your pseudonymous study code, but do
@@ -66,7 +66,7 @@ for unrelated marketing, or use it to train general-purpose AI/ML models.
 
 ## 5. Google API Limited Use
 
-Wearable Research Manager's use and transfer to any other app of information
+AdmonTracker's use and transfer to any other app of information
 received from Google APIs adheres to the
 [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy),
 including its Limited Use requirements. Use of information received from the
@@ -122,7 +122,7 @@ ethics review and renewed disclosure/consent when required.
     )
 else:
     st.title("מדיניות פרטיות")
-    st.caption("Wearable Research Manager • עודכן לאחרונה: 17 בספטמבר 2026")
+    st.caption("AdmonTracker • עודכן לאחרונה: 17 בספטמבר 2026")
     st.markdown(
         f"""
 ## 1. מפעיל השירות ויצירת קשר

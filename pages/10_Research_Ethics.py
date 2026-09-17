@@ -5,7 +5,7 @@ from utils.branding import render_app_logo
 
 
 st.set_page_config(
-    page_title="Research Ethics - Wearable Research Manager",
+    page_title="Research Ethics - AdmonTracker",
     page_icon="🏛️",
     layout="wide",
 )

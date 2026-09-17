@@ -132,9 +132,10 @@ writes a heartbeat every five minutes in `Asia/Jerusalem`. Check `job_runs`,
 - Google Health redirect: `https://app.admontracker.online/?google_health_callback=1`
 - Fitbit redirect: `https://app.admontracker.online/?fitbit_callback=1`
 - Authorized domain: `admontracker.online`
-- Homepage: `https://app.admontracker.online/`
-- Privacy: `https://app.admontracker.online/Privacy_Policy`
-- Terms: `https://app.admontracker.online/Terms_of_Service`
+- Public homepage: `https://admontracker.online/`
+- Privacy: `https://admontracker.online/privacy.html`
+- Terms: `https://admontracker.online/terms.html`
+- Staff application: `https://app.admontracker.online/`
 
 Use separate production web clients for staff OIDC and participant health scopes.
 See `docs/compliance/google_publication_checklist.md` before publishing the external

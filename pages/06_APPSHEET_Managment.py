@@ -5,7 +5,7 @@ from controllers.auth_controller import AuthenticationController
 from utils.demo_ui import render_demo_page
 
 
-st.set_page_config(page_title="FIBRO AppSheet - Wearable Research Manager", page_icon="📋", layout="wide")
+st.set_page_config(page_title="FIBRO AppSheet - AdmonTracker", page_icon="📋", layout="wide")
 render_app_logo()
 
 auth_controller = AuthenticationController()

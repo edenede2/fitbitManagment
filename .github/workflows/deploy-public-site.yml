@@ -1,0 +1,47 @@
+name: Deploy public verification site
+
+on:
+  push:
+    branches: [heroku]
+    paths:
+      - "public_site/**"
+      - "logo_10.jpg"
+      - "assets/compliance/**"
+      - ".github/workflows/deploy-public-site.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Assemble public site
+        run: |
+          mkdir -p _site/assets
+          cp -R public_site/. _site/
+          cp logo_10.jpg _site/assets/logo.jpg
+          cp assets/compliance/ethics-approval-385-23-en.pdf _site/assets/
+          cp assets/compliance/institutional-ethics-governance-he.pdf _site/assets/
+          cp assets/compliance/pilot-consent-baseline-he.pdf _site/assets/participant-informed-consent-385-23-he.pdf
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

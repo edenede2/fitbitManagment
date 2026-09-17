@@ -392,7 +392,7 @@ class PageBoundaryAndLegalTests(unittest.TestCase):
     def test_production_brand_name_replaces_old_visible_name(self):
         tracked_ui_files = [PROJECT_ROOT / "app.py", *sorted((PROJECT_ROOT / "pages").glob("*.py"))]
         combined = "\n".join(path.read_text() for path in tracked_ui_files)
-        self.assertIn("Wearable Research Manager", combined)
+        self.assertIn("AdmonTracker", combined)
         self.assertNotIn("Fitbit Management System", combined)
 
 

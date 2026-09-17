@@ -14,7 +14,7 @@ def _disabled_action(label: str, *, key: str) -> None:
 
 
 def _home() -> None:
-    st.title("Wearable Research Manager")
+    st.title("AdmonTracker")
     st.caption("Synthetic operations overview")
     devices = demo_dataframe("fitbit")
     logs = demo_dataframe("FitbitLog")

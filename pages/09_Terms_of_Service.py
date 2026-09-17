@@ -5,7 +5,7 @@ from utils.branding import render_app_logo
 
 
 st.set_page_config(
-    page_title="Terms of Use - Wearable Research Manager",
+    page_title="Terms of Use - AdmonTracker",
     page_icon="📄",
     layout="wide",
 )
@@ -15,12 +15,12 @@ language = st.radio("Language / שפה", ["English", "עברית"], horizontal=T
 
 if language == "English":
     st.title("Terms of Use")
-    st.caption("Wearable Research Manager • Last updated 14 September 2026")
+    st.caption("AdmonTracker • Last updated 17 September 2026")
     st.markdown(
         f"""
 ## Research service and eligibility
 
-Wearable Research Manager is operated by the Stress & Psychopathology Lab,
+AdmonTracker is operated by the Stress & Psychopathology Lab,
 School of Psychological Sciences, University of Haifa. Authenticated functions are
 for invited research personnel. Participant authorization is for **adults aged 18
 or older** who were invited to an approved study and completed the required consent.
@@ -86,7 +86,7 @@ in unencrypted email.
     )
 else:
     st.title("תנאי שימוש")
-    st.caption("Wearable Research Manager • עודכן לאחרונה: 14 בספטמבר 2026")
+    st.caption("AdmonTracker • עודכן לאחרונה: 17 בספטמבר 2026")
     st.markdown(
         f"""
 ## שירות מחקר וזכאות

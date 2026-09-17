@@ -10,7 +10,7 @@ from utils.branding import render_app_logo
 
 # Set up app configuration
 st.set_page_config(
-    page_title="Wearable Research Manager",
+    page_title="AdmonTracker",
     page_icon="💡",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -45,7 +45,7 @@ def main():
         st.sidebar.markdown("### Need Help?")
         st.sidebar.markdown("Contact: radmon@psy.haifa.ac.il")
 
-        st.title("Welcome to Wearable Research Manager")
+        st.title("Welcome to AdmonTracker")
         st.write(f"You are logged in as: **{context.email}**")
         st.write(f"Your role is: **{context.role}**")
         st.write(f"Your project is: **{context.project}**")
@@ -53,7 +53,7 @@ def main():
         st.write("Use the sidebar to navigate through the app.")
     elif context.is_guest:
         render_demo_banner()
-        st.title("Welcome to Wearable Research Manager")
+        st.title("Welcome to AdmonTracker")
         st.write("You are exploring the complete product interface with bundled synthetic examples.")
         st.write("Use the sidebar to open any feature page. Write and external-service actions are disabled.")
         st.subheader("Guest demo guarantees")
@@ -63,7 +63,7 @@ def main():
         - No changes can be saved locally or remotely.
         """)
     else:
-        st.title("Welcome to Wearable Research Manager")
+        st.title("Welcome to AdmonTracker")
         st.caption("Stress & Psychopathology Lab • University of Haifa")
         english, hebrew = st.tabs(["English", "עברית"])
         with english:

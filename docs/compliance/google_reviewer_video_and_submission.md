@@ -7,7 +7,7 @@ contents, Secret Manager payloads, Heroku config values, or real health data.
 
 ## Before recording
 
-- Confirm the production app name is **Wearable Research Manager** everywhere.
+- Confirm the production app name is **AdmonTracker** everywhere.
 - Confirm the External audience, support email, developer contacts, authorized
   domain, homepage, Privacy Policy, and Terms URLs in Google Auth Platform.
 - Confirm both callbacks are registered on their respective web clients:
@@ -20,7 +20,7 @@ contents, Secret Manager payloads, Heroku config values, or real health data.
 
 ## Recording sequence
 
-1. Start signed out at `https://app.admontracker.online/`. Show the app identity,
+1. Start signed out at `https://admontracker.online/`. Show the app identity,
    University of Haifa, research purpose, and public legal links.
 2. Open Privacy Policy, Terms of Use, and Research Ethics. Show the Limited Use
    statement and preview/download controls for the approval, accreditation evidence,
