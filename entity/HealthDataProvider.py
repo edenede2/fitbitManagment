@@ -647,24 +647,33 @@ def google_health_snapshot(spreadsheet, row: Dict[str, Any], context: SnapshotCo
         hr = client.get_current_hourly_hr()
         steps = client.get_current_hourly_steps()
         try:
+            device = client.get_device_details()
+        except Exception as device_exc:
+            print(f"Google Health device fetch failed for {row.get('name', '')}: {device_exc}")
+            device = {}
+        try:
             sleep_start, sleep_end = client.get_last_sleep_start_end()
             sleep_duration = client.get_last_sleep_duration()
         except Exception as sleep_exc:
             print(f"Google Health sleep fetch failed for {row.get('name', '')}: {sleep_exc}")
             sleep_start, sleep_end, sleep_duration = None, None, None
 
-        # Google Health does not expose Fitbit-style device battery or sync metadata.
-        # A successful feature read marks the API observation time instead.
-        sync_date = sleep_end or sleep_start
+        sync_date = device.get("lastSyncTime") or sleep_end or sleep_start
         if not sync_date and any(value not in (None, "") for value in (hr, steps, sleep_duration)):
             sync_date = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        battery = device.get("batteryLevel")
+        battery_supported = battery not in (None, "")
 
         return {
             **row,
             "provider": "google_health",
             "syncDate": sync_date or "",
-            "battery": "",
-            "battery_supported": False,
+            "battery": battery if battery_supported else "",
+            "battery_supported": battery_supported,
+            "battery_status": device.get("batteryStatus") or "",
+            "device_version": device.get("deviceVersion") or "",
+            "device_type": device.get("deviceType") or "",
             "HR": hr if hr is not None else "",
             "steps": steps if steps is not None else "",
             "sleep_start": sleep_start or "",

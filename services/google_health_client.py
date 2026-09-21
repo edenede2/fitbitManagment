@@ -200,8 +200,65 @@ class GoogleHealthClient:
         except ValueError:
             return None
 
+    def list_paired_devices(self, *, page_size: int = 100) -> list[dict[str, Any]]:
+        """Return the user's paired Google Health trackers and other devices."""
+        params: dict[str, Any] = {"pageSize": min(max(int(page_size), 1), 100)}
+        devices: list[dict[str, Any]] = []
+        while True:
+            payload = self.request("GET", "users/me/pairedDevices", params=params)
+            devices.extend(payload.get("pairedDevices", []))
+            next_token = payload.get("nextPageToken")
+            if not next_token:
+                break
+            params = {**params, "pageToken": next_token}
+        return devices
+
+    @staticmethod
+    def _device_sync_timestamp(device: dict[str, Any]) -> datetime:
+        value = str(device.get("lastSyncTime") or "").strip()
+        if value:
+            try:
+                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                return parsed.astimezone(timezone.utc)
+            except ValueError:
+                pass
+        return datetime.min.replace(tzinfo=timezone.utc)
+
+    def get_device_details(self) -> dict[str, Any]:
+        """Return the most recently synced tracker without unrelated device identifiers."""
+        devices = self.list_paired_devices()
+        trackers = [
+            device
+            for device in devices
+            if str(device.get("deviceType") or "").strip().upper() == "TRACKER"
+        ]
+        candidates = trackers or devices
+        if not candidates:
+            return {}
+
+        device = max(candidates, key=self._device_sync_timestamp)
+        return {
+            key: device.get(key)
+            for key in (
+                "deviceType",
+                "deviceVersion",
+                "batteryLevel",
+                "batteryStatus",
+                "lastSyncTime",
+            )
+            if device.get(key) is not None
+        }
+
     def get_current_battery(self) -> int | None:
-        return None
+        value = self.get_device_details().get("batteryLevel")
+        if value in (None, ""):
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
 
     def fetch_raw(self, data_type: str, **kwargs: Any) -> dict:
         if data_type in {"Heart Rate Intraday", "Steps Intraday"}:

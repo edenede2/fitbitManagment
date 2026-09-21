@@ -546,6 +546,9 @@ class Watch:
     is_active: bool = True
     last_sync_time: Optional[datetime.datetime] = None
     battery_level: Optional[int] = None
+    battery_status: Optional[str] = None
+    device_version: Optional[str] = None
+    device_type: Optional[str] = None
     # Add data caching
     _cached_data: Dict[str, Dict] = field(default_factory=dict)
     
@@ -866,8 +869,26 @@ class Watch:
     def update_device_info(self, force_fetch: bool = False) -> None:
         """Update device information (battery, sync time, etc.)"""
         if self.health_client is not None:
-            self.battery_level = self.health_client.get_current_battery()
-            self.last_sync_time = datetime.datetime.now(datetime.timezone.utc)
+            get_details = getattr(self.health_client, "get_device_details", None)
+            if callable(get_details):
+                details = get_details() or {}
+                self.battery_level = details.get("batteryLevel")
+                self.battery_status = details.get("batteryStatus")
+                self.device_version = details.get("deviceVersion")
+                self.device_type = details.get("deviceType")
+                sync_time = details.get("lastSyncTime")
+                if sync_time:
+                    try:
+                        parsed = datetime.datetime.fromisoformat(
+                            str(sync_time).replace("Z", "+00:00")
+                        )
+                        if parsed.tzinfo is None:
+                            parsed = parsed.replace(tzinfo=datetime.timezone.utc)
+                        self.last_sync_time = parsed
+                    except ValueError:
+                        self.last_sync_time = None
+            else:
+                self.battery_level = self.health_client.get_current_battery()
             return
 
         data = self.fetch_data('device', force_fetch=force_fetch)
@@ -1173,8 +1194,13 @@ class WatchFactory:
         if 'isActive' in details:
             watch.is_active = details['isActive']
         
-        if 'batteryLevel' in details:
-            watch.battery_level = details['batteryLevel']
+        battery_level = details.get('batteryLevel', details.get('lastBatteryLevel'))
+        if battery_level not in (None, ''):
+            watch.battery_level = battery_level
+
+        watch.battery_status = details.get('batteryStatus') or details.get('lastBatteryStatus')
+        watch.device_version = details.get('deviceVersion')
+        watch.device_type = details.get('deviceType')
         
         if 'lastSyncTime' in details:
             try:

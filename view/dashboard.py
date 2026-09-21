@@ -393,17 +393,23 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
         if st.session_state.selected_watch not in st.session_state.watch_details:
             st.session_state.watch_details[st.session_state.selected_watch] = st.session_state.fitbit_watches[st.session_state.selected_watch]
 
-        st.write("Watch Details:")
-        st.json(st.session_state.watch_details[st.session_state.selected_watch])
-        if isinstance(st.session_state.watch_details[st.session_state.selected_watch].get('isActive'), str):
+        selected_details = st.session_state.watch_details[st.session_state.selected_watch]
+        selected_provider = str(
+            selected_details.get('provider') or selected_details.get('oauth_type') or 'fitbit'
+        ).strip().casefold()
+        provider_label = "Google Health" if selected_provider in {
+            "google", "google_health", "google health", "google_health_api", "health"
+        } else "Fitbit"
+
+        if isinstance(selected_details.get('isActive'), str):
             # Convert string to boolean
-            is_active = True if (st.session_state.watch_details[st.session_state.selected_watch].get('isActive', '')).lower() == 'true' else False
-        elif isinstance(st.session_state.watch_details[st.session_state.selected_watch].get('isActive'), bool):
-            is_active = st.session_state.watch_details[st.session_state.selected_watch].get('isActive')
+            is_active = selected_details.get('isActive', '').lower() == 'true'
+        elif isinstance(selected_details.get('isActive'), bool):
+            is_active = selected_details.get('isActive')
         else:
-            is_active = st.session_state.watch_details[st.session_state.selected_watch].get('isActive', False)
+            is_active = selected_details.get('isActive', False)
         active_status = "🟢 Active" if is_active else "🔴 Inactive"
-        st.info(f"Watch Status: {active_status}")
+        st.info(f"Watch Status: {active_status} · Provider: {provider_label}")
 
         # Display tabs for different views
         tab1, tab2 = st.tabs(["📊 Signal Data", "📱 Device Details"])
@@ -777,12 +783,28 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                         # Only make API calls when refresh button is clicked
                         if refresh_device:
                             require_external_service_access()
-                            with st.spinner("Fetching latest data from Fitbit API...",show_time=True):
-                                # Force fetch fresh data from the API
-                                watch.update_device_info(force_fetch=True)
+                            with st.spinner(f"Fetching latest data from {provider_label}...",show_time=True):
+                                # Device metadata uses a separate Google Health scope. If it
+                                # is unavailable, keep loading the participant's other metrics.
+                                try:
+                                    watch.update_device_info(force_fetch=True)
+                                except Exception as device_error:
+                                    if not show_rate_limit_notice(
+                                        device_error,
+                                        key=f"device_details_{st.session_state.selected_watch}",
+                                        context="fetching device details",
+                                    ):
+                                        st.warning(
+                                            "Device model, battery, and synchronization details "
+                                            "could not be refreshed. Other health metrics will "
+                                            "still be loaded."
+                                        )
 
                                 # Update watch_details with fresh data from the API
                                 st.session_state.watch_details[st.session_state.selected_watch]['lastBatteryLevel'] = watch.battery_level
+                                st.session_state.watch_details[st.session_state.selected_watch]['lastBatteryStatus'] = watch.battery_status or ""
+                                st.session_state.watch_details[st.session_state.selected_watch]['deviceVersion'] = watch.device_version or ""
+                                st.session_state.watch_details[st.session_state.selected_watch]['deviceType'] = watch.device_type or ""
                                 st.session_state.watch_details[st.session_state.selected_watch]['lastSynced'] = watch.last_sync_time.isoformat() if watch.last_sync_time else ""
                                 st.session_state.watch_details[st.session_state.selected_watch]['lastHeartRate'] = watch.get_current_hourly_HR(force_fetch=True) or ""
                                 st.session_state.watch_details[st.session_state.selected_watch]['lastSteps'] = watch.get_current_hourly_steps(force_fetch=True) or ""
@@ -797,6 +819,12 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                             # If some values are missing in watch_details, initialize them without API calls
                             if 'lastBatteryLevel' not in st.session_state.watch_details[st.session_state.selected_watch]:
                                 st.session_state.watch_details[st.session_state.selected_watch]['lastBatteryLevel'] = watch.battery_level
+                            if 'lastBatteryStatus' not in st.session_state.watch_details[st.session_state.selected_watch]:
+                                st.session_state.watch_details[st.session_state.selected_watch]['lastBatteryStatus'] = watch.battery_status or ""
+                            if 'deviceVersion' not in st.session_state.watch_details[st.session_state.selected_watch]:
+                                st.session_state.watch_details[st.session_state.selected_watch]['deviceVersion'] = watch.device_version or ""
+                            if 'deviceType' not in st.session_state.watch_details[st.session_state.selected_watch]:
+                                st.session_state.watch_details[st.session_state.selected_watch]['deviceType'] = watch.device_type or ""
                             if 'lastSynced' not in st.session_state.watch_details[st.session_state.selected_watch] and watch.last_sync_time:
                                 st.session_state.watch_details[st.session_state.selected_watch]['lastSynced'] = watch.last_sync_time.isoformat()
 
@@ -820,7 +848,7 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                             st.error(f"Error with watch data: {e}")
 
                 if refresh_device:
-                    st.info("Using freshly fetched data from Fitbit API")
+                    st.info(f"Using freshly fetched data from {provider_label}")
                 else:
                     st.info("Using cached data. Click 'Refresh Device Data' for real-time information.")
 
@@ -832,40 +860,53 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                         st.markdown("### 📋 Basic Information")
                         st.info(f"**Name:** {st.session_state.watch_details[st.session_state.selected_watch].get('name', '')}")
                         st.info(f"**Project:** {st.session_state.watch_details[st.session_state.selected_watch].get('project', '')}")
+                        st.info(f"**Provider:** {provider_label}")
                         st.info(f"**Status:** {active_status}")  # Added isActive status display
+                        device_version = st.session_state.watch_details[st.session_state.selected_watch].get('deviceVersion', '')
+                        device_type = st.session_state.watch_details[st.session_state.selected_watch].get('deviceType', '')
+                        if device_version:
+                            st.info(f"**Device model:** {device_version}")
+                        if device_type:
+                            st.info(f"**Device type:** {str(device_type).title()}")
 
                         # Battery level with gauge chart
-                        battery_level = st.session_state.watch_details[st.session_state.selected_watch].get('lastBatteryLevel', '0')
+                        raw_battery_level = st.session_state.watch_details[st.session_state.selected_watch].get('lastBatteryLevel')
                         try:
-                            battery_level = int(battery_level)
-                        except:
-                            battery_level = 0
+                            battery_level = int(raw_battery_level)
+                        except (TypeError, ValueError):
+                            battery_level = None
 
                         st.markdown("### 🔋 Battery Status")
 
-                        fig = go.Figure(go.Indicator(
-                            mode = "gauge+number",
-                            value = battery_level,
-                            domain = {'x': [0, 1], 'y': [0, 1]},
-                            title = {'text': "Battery Level (%)"},
-                            gauge = {
-                                'axis': {'range': [0, 100]},
-                                'bar': {'color': "darkgreen"},
-                                'steps': [
-                                    {'range': [0, 20], 'color': "red"},
-                                    {'range': [20, 50], 'color': "orange"},
-                                    {'range': [50, 100], 'color': "lightgreen"}
-                                ],
-                                'threshold': {
-                                    'line': {'color': "red", 'width': 4},
-                                    'thickness': 0.75,
-                                    'value': 20
+                        if battery_level is None:
+                            st.info("Battery information is not available.")
+                        else:
+                            fig = go.Figure(go.Indicator(
+                                mode = "gauge+number",
+                                value = battery_level,
+                                domain = {'x': [0, 1], 'y': [0, 1]},
+                                title = {'text': "Battery Level (%)"},
+                                gauge = {
+                                    'axis': {'range': [0, 100]},
+                                    'bar': {'color': "darkgreen"},
+                                    'steps': [
+                                        {'range': [0, 20], 'color': "red"},
+                                        {'range': [20, 50], 'color': "orange"},
+                                        {'range': [50, 100], 'color': "lightgreen"}
+                                    ],
+                                    'threshold': {
+                                        'line': {'color': "red", 'width': 4},
+                                        'thickness': 0.75,
+                                        'value': 20
+                                    }
                                 }
-                            }
-                        ))
+                            ))
 
-                        fig.update_layout(height=250, margin=dict(l=10, r=10, t=50, b=10))
-                        st.plotly_chart(fig, width="stretch")
+                            fig.update_layout(height=250, margin=dict(l=10, r=10, t=50, b=10))
+                            st.plotly_chart(fig, width="stretch")
+                        battery_status = st.session_state.watch_details[st.session_state.selected_watch].get('lastBatteryStatus', '')
+                        if battery_status:
+                            st.info(f"**Battery state:** {battery_status}")
 
                     with col2:
                         st.markdown("### 📊 Latest Metrics")
@@ -894,12 +935,15 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                     # Calculate time since last sync
                     if st.session_state.watch_details[st.session_state.selected_watch].get('lastSynced'):
                         try:
-                            last_sync = pd.to_datetime(st.session_state.watch_details[st.session_state.selected_watch].get('lastSynced'))
-                            time_since_sync = datetime.datetime.now() - last_sync
+                            last_sync = pd.to_datetime(
+                                st.session_state.watch_details[st.session_state.selected_watch].get('lastSynced'),
+                                utc=True,
+                            )
+                            time_since_sync = pd.Timestamp.now(tz='UTC') - last_sync
 
                             if time_since_sync.total_seconds() > 86400:  # More than 24 hours
                                 st.warning(f"⏰ Device hasn't synced in {time_since_sync.days} days and {time_since_sync.seconds//3600} hours. Please check connection.")
-                        except:
+                        except (TypeError, ValueError):
                             pass
 
                     # User assignment section (if Admin or Manager)

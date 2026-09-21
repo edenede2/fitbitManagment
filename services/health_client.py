@@ -21,6 +21,9 @@ class HealthClient(Protocol):
     def get_current_battery(self) -> int | None:
         ...
 
+    def get_device_details(self) -> dict[str, Any]:
+        ...
+
     def fetch_raw(self, data_type: str, **kwargs: Any) -> dict:
         ...
 

@@ -6,6 +6,7 @@ from unittest.mock import Mock, patch
 from zoneinfo import ZoneInfo
 
 from firbitfilesOrgenizer import _resolve_watch_access_token
+from entity.Watch import Watch
 from run_drive_archive_collection import _zip_tree, enabled_archive_providers, period_windows
 from services.drive_archive import safe_drive_segment
 from services.google_health_client import GoogleHealthClient
@@ -240,7 +241,7 @@ class SecretStorageTests(unittest.TestCase):
                     redirect_uri="https://fitbitmanagment.streamlit.app/?google_health_callback=1",
                     scopes=DEFAULT_GOOGLE_HEALTH_SCOPES,
                 )
-            with self.assertRaisesRegex(ValueError, "three approved read-only scopes"):
+            with self.assertRaisesRegex(ValueError, "four required read-only scopes"):
                 validate_google_health_client_config(
                     enviroment="production",
                     redirect_uri="https://app.admontracker.online/?google_health_callback=1",
@@ -285,6 +286,91 @@ class ArchiveBehaviorTests(unittest.TestCase):
         with patch.object(client, "request", return_value={"dataPoints": []}) as request:
             client.list_data_points("sleep", page_size=10000)
         self.assertEqual(request.call_args.kwargs["params"]["pageSize"], 25)
+
+    def test_google_health_scopes_include_device_settings(self):
+        self.assertIn(
+            "https://www.googleapis.com/auth/googlehealth.settings.readonly",
+            DEFAULT_GOOGLE_HEALTH_SCOPES,
+        )
+
+    def test_google_health_device_details_use_latest_tracker(self):
+        client = GoogleHealthClient(access_token_provider=lambda: "not-used")
+        devices = [
+            {
+                "name": "users/me/pairedDevices/scale",
+                "deviceType": "SCALE",
+                "deviceVersion": "Scale",
+                "batteryLevel": 99,
+                "lastSyncTime": "2026-09-21T12:00:00Z",
+            },
+            {
+                "name": "users/me/pairedDevices/old",
+                "deviceType": "TRACKER",
+                "deviceVersion": "Old Tracker",
+                "batteryLevel": 20,
+                "batteryStatus": "Low",
+                "lastSyncTime": "2026-09-20T12:00:00Z",
+            },
+            {
+                "name": "users/me/pairedDevices/current",
+                "deviceType": "TRACKER",
+                "deviceVersion": "Current Tracker",
+                "batteryLevel": 87,
+                "batteryStatus": "High",
+                "lastSyncTime": "2026-09-21T11:00:00Z",
+                "macAddress": "must-not-be-returned",
+            },
+        ]
+        with patch.object(client, "list_paired_devices", return_value=devices):
+            details = client.get_device_details()
+
+        self.assertEqual(details["deviceVersion"], "Current Tracker")
+        self.assertEqual(details["batteryLevel"], 87)
+        self.assertEqual(details["batteryStatus"], "High")
+        self.assertNotIn("macAddress", details)
+
+    def test_google_health_paired_devices_are_paginated(self):
+        client = GoogleHealthClient(access_token_provider=lambda: "not-used")
+        with patch.object(
+            client,
+            "request",
+            side_effect=[
+                {"pairedDevices": [{"name": "first"}], "nextPageToken": "next"},
+                {"pairedDevices": [{"name": "second"}]},
+            ],
+        ) as request:
+            devices = client.list_paired_devices(page_size=500)
+
+        self.assertEqual([device["name"] for device in devices], ["first", "second"])
+        self.assertEqual(request.call_args_list[0].kwargs["params"], {"pageSize": 100})
+        self.assertEqual(
+            request.call_args_list[1].kwargs["params"],
+            {"pageSize": 100, "pageToken": "next"},
+        )
+
+    def test_google_health_device_details_populate_watch(self):
+        health_client = Mock()
+        health_client.get_device_details.return_value = {
+            "deviceType": "TRACKER",
+            "deviceVersion": "Test Watch",
+            "batteryLevel": 73,
+            "batteryStatus": "High",
+            "lastSyncTime": "2026-09-21T14:00:00Z",
+        }
+        watch = Watch(
+            name="YN4",
+            project="Yoga",
+            token="",
+            health_client=health_client,
+        )
+
+        watch.update_device_info(force_fetch=True)
+
+        self.assertEqual(watch.battery_level, 73)
+        self.assertEqual(watch.battery_status, "High")
+        self.assertEqual(watch.device_version, "Test Watch")
+        self.assertEqual(watch.device_type, "TRACKER")
+        self.assertEqual(watch.last_sync_time.isoformat(), "2026-09-21T14:00:00+00:00")
 
 
 if __name__ == "__main__":

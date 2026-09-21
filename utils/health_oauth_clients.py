@@ -28,6 +28,7 @@ DEFAULT_GOOGLE_HEALTH_SCOPES = [
     "https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly",
     "https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly",
     "https://www.googleapis.com/auth/googlehealth.sleep.readonly",
+    "https://www.googleapis.com/auth/googlehealth.settings.readonly",
 ]
 DEFAULT_PRODUCTION_BASE_URL = "https://app.admontracker.online"
 
@@ -155,7 +156,7 @@ def validate_google_health_client_config(
     required_scopes = set(DEFAULT_GOOGLE_HEALTH_SCOPES)
     if configured_scopes != required_scopes:
         raise ValueError(
-            "Production Google Health OAuth must use exactly the three approved read-only scopes"
+            "Production Google Health OAuth must use exactly the four required read-only scopes"
         )
 
 
