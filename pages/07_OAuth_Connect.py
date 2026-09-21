@@ -302,7 +302,11 @@ overwrite_existing = st.checkbox(
     ),
 )
 staff_consent_verified = st.checkbox(
-    "I verified that the participant completed the current ethics-approved study consent",
+    (
+        "I verified that the participant completed the current ethics-approved study consent and Google Health addendum"
+        if provider == "google_health"
+        else "I verified that the participant completed the current ethics-approved study consent"
+    ),
     key="new_staff_consent_verified",
 )
 adult_verified = st.checkbox(
@@ -426,7 +430,11 @@ if existing_provider == "google_health":
         key="existing_purpose",
     )
 existing_staff_consent_verified = st.checkbox(
-    "I verified the existing participant's current ethics-approved consent",
+    (
+        "I verified the existing participant's current ethics-approved study consent and Google Health addendum"
+        if existing_provider == "google_health"
+        else "I verified the existing participant's current ethics-approved consent"
+    ),
     key="existing_staff_consent_verified",
 )
 existing_adult_verified = st.checkbox(

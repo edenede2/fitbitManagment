@@ -12,6 +12,7 @@ from services.google_health_client import GoogleHealthClient
 from utils.compliance import (
     approved_disclosure_ready,
     participant_authorization_url,
+    participant_disclosure_text,
     research_documents,
 )
 from utils.health_connect_links import create_health_connect_link
@@ -43,7 +44,13 @@ APPROVED_ENV = {
 class ComplianceGateTests(unittest.TestCase):
     def test_public_evidence_assets_are_deployment_safe_pdfs(self):
         documents = {document.key: document for document in research_documents()}
-        for key in ("study_approval", "institutional_accreditation", "pilot_consent"):
+        for key in (
+            "study_approval",
+            "institutional_accreditation",
+            "pilot_consent",
+            "google_health_addendum_en",
+            "google_health_addendum_he",
+        ):
             with self.subTest(key=key):
                 document = documents[key]
                 self.assertTrue(document.exists)
@@ -51,7 +58,11 @@ class ComplianceGateTests(unittest.TestCase):
                 self.assertTrue(document.path.read_bytes().startswith(b"%PDF"))
 
     def test_draft_cannot_be_marked_ready(self):
-        with patch.dict("os.environ", {}, clear=True):
+        with patch.dict(
+            "os.environ",
+            {"PARTICIPANT_DISCLOSURE_VERSION": "DRAFT-NOT-APPROVED"},
+            clear=True,
+        ):
             ready, missing = approved_disclosure_ready()
         self.assertFalse(ready)
         self.assertIn("an ethics-approved disclosure version", missing)
@@ -61,6 +72,19 @@ class ComplianceGateTests(unittest.TestCase):
             ready, missing = approved_disclosure_ready()
         self.assertTrue(ready)
         self.assertEqual(missing, [])
+
+    def test_google_health_disclosure_matches_approved_data_categories(self):
+        english = " ".join(participant_disclosure_text("en", "google_health").split())
+        hebrew = participant_disclosure_text("he", "google_health")
+        for phrase in (
+            "heart rate, steps, sleep data, physical activity, and respiratory rate",
+            "battery level and status",
+            "last synchronization time",
+        ):
+            self.assertIn(phrase, english)
+        for disallowed in ("calories", "heart-rate variability", "skin temperature"):
+            self.assertNotIn(disallowed, english)
+        self.assertIn("מצב ורמת הסוללה", hebrew)
 
     def test_public_participant_url_uses_production_domain(self):
         with patch.dict("os.environ", APPROVED_ENV, clear=True):

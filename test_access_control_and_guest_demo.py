@@ -354,14 +354,23 @@ class GoogleHealthOAuthStateTests(unittest.TestCase):
 
 
 class PageBoundaryAndLegalTests(unittest.TestCase):
+    def test_qualtrics_and_appsheet_pages_are_not_exposed(self):
+        pages = {path.name for path in (PROJECT_ROOT / "pages").glob("*.py")}
+        self.assertNotIn("05_NOVA_Qualtrics_Management.py", pages)
+        self.assertNotIn("06_APPSHEET_Managment.py", pages)
+        visible_ui = "\n".join(
+            path.read_text()
+            for path in [PROJECT_ROOT / "app.py", *sorted((PROJECT_ROOT / "pages").glob("*.py"))]
+        )
+        self.assertNotIn("Qualtrics", visible_ui)
+        self.assertNotIn("AppSheet", visible_ui)
+
     def test_every_functional_page_branches_guest_before_production_source(self):
         expected_pages = {
             "01_Home.py",
             "02_Dashboard.py",
             "03_Fitbit_Management.py",
             "04_Alerts_Configuration.py",
-            "05_NOVA_Qualtrics_Management.py",
-            "06_APPSHEET_Managment.py",
             "07_Connect_Participant.py",
             "07_OAuth_Connect.py",
         }
@@ -421,7 +430,6 @@ class StreamlitGuestSmokeTests(unittest.TestCase):
             "pages/02_Dashboard.py": {"Refresh from device", "Send message"},
             "pages/03_Fitbit_Management.py": {"Add new device", "Save changes"},
             "pages/04_Alerts_Configuration.py": {"Save configuration"},
-            "pages/05_NOVA_Qualtrics_Management.py": {"Save accepted numbers"},
             "pages/07_Connect_Participant.py": {"Generate connect link"},
             "pages/07_OAuth_Connect.py": {
                 "Add watch & generate link",
@@ -433,8 +441,6 @@ class StreamlitGuestSmokeTests(unittest.TestCase):
             "pages/02_Dashboard.py",
             "pages/03_Fitbit_Management.py",
             "pages/04_Alerts_Configuration.py",
-            "pages/05_NOVA_Qualtrics_Management.py",
-            "pages/06_APPSHEET_Managment.py",
             "pages/07_Connect_Participant.py",
             "pages/07_OAuth_Connect.py",
         ]

@@ -21,7 +21,37 @@ PUBLIC_HOME_URL = f"{PUBLIC_SITE_BASE_URL}/"
 PUBLIC_PRIVACY_URL = f"{PUBLIC_SITE_BASE_URL}/privacy.html"
 PUBLIC_TERMS_URL = f"{PUBLIC_SITE_BASE_URL}/terms.html"
 PUBLIC_ETHICS_URL = f"{PUBLIC_SITE_BASE_URL}/research-ethics.html"
-DRAFT_DISCLOSURE_VERSION = "DRAFT-NOT-ETHICS-APPROVED"
+APPROVED_DISCLOSURE_VERSION = "385-23-GOOGLE-HEALTH-v1.0"
+DEFAULT_RETENTION_TEXT = {
+    "en": (
+        "Measurement data will be retained during the one month collection period and for "
+        "one additional month for processing and quality checks. No later than one month "
+        "after measurement ends, Google Health data and the link to the participant's "
+        "identity will be permanently deleted. The signed consent form and administrative "
+        "records that do not contain the measurements will be retained according to "
+        "University and research requirements."
+    ),
+    "he": (
+        "נתוני המדידה יישמרו במהלך חודש האיסוף ולמשך חודש נוסף לצורך עיבוד ובדיקת "
+        "איכות. לא יאוחר מחודש לאחר סיום המדידה, נתוני Google Health והקישור לזהות "
+        "המשתתף/ת יימחקו לצמיתות. טופס ההסכמה ורישומים מנהליים שאינם כוללים את "
+        "נתוני המדידה יישמרו בהתאם לכללי האוניברסיטה והמחקר."
+    ),
+}
+DEFAULT_DELETION_TEXT = {
+    "en": (
+        "If a participant withdraws, collection will stop immediately and the application's "
+        "authorization in the demo account assigned to them will be canceled. All collected data "
+        "will be permanently deleted unless the participant gives separate and explicit "
+        "consent at that time to keep them. Summary results already published cannot be "
+        "removed from an existing publication."
+    ),
+    "he": (
+        "במקרה של פרישה, האיסוף ייפסק מיד והרשאת האפליקציה בחשבון הדמו שהוקצה לך "
+        "תבוטל. כל הנתונים שנאספו יימחקו לצמיתות, אלא אם תיתן/י באותו מועד הסכמה "
+        "נפרדת ומפורשת לשמור אותם. לא ניתן להסיר תוצאות מסכמות שכבר פורסמו."
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -49,7 +79,10 @@ class ResearchDocument:
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 COMPLIANCE_ASSETS = PROJECT_ROOT / "assets" / "compliance"
-DEFAULT_APPROVED_ADDENDUM_PATH = PROJECT_ROOT / "docs" / "compliance" / "google_health_addendum_approved.pdf"
+DEFAULT_APPROVED_ADDENDUM_PATHS = {
+    "en": COMPLIANCE_ASSETS / "google-health-addendum-385-23-en-approved-v1.0.pdf",
+    "he": COMPLIANCE_ASSETS / "google-health-addendum-385-23-he-approved-v1.0.pdf",
+}
 RESEARCH_DOCUMENTS = (
     ResearchDocument(
         key="study_approval",
@@ -82,24 +115,39 @@ RESEARCH_DOCUMENTS = (
         status_he="דף מידע וטופס הסכמה מדעת למשתתפי המחקר.",
     ),
     ResearchDocument(
-        key="google_health_addendum",
-        path=DEFAULT_APPROVED_ADDENDUM_PATH,
-        download_name="google-health-addendum-385-23-approved.pdf",
+        key="google_health_addendum_en",
+        path=DEFAULT_APPROVED_ADDENDUM_PATHS["en"],
+        download_name="google-health-addendum-385-23-en-approved-v1.0.pdf",
         mime_type="application/pdf",
-        title_en="Google Health participant addendum",
-        title_he="נספח משתתף עבור Google Health",
-        status_en="Participant information for Google Health authorization.",
-        status_he="מידע למשתתף לצורך הרשאת Google Health.",
+        title_en="Approved Google Health participant addendum (English)",
+        title_he="נספח Google Health המאושר למשתתף/ת (אנגלית)",
+        status_en="Ethics-approved Google Health addendum, final version 1.0.",
+        status_he="נספח Google Health שאושר על-ידי ועדת האתיקה, גרסה סופית 1.0.",
+    ),
+    ResearchDocument(
+        key="google_health_addendum_he",
+        path=DEFAULT_APPROVED_ADDENDUM_PATHS["he"],
+        download_name="google-health-addendum-385-23-he-approved-v1.0.pdf",
+        mime_type="application/pdf",
+        title_en="Approved Google Health participant addendum (Hebrew)",
+        title_he="נספח Google Health המאושר למשתתף/ת (עברית)",
+        status_en="Ethics-approved Google Health addendum, final version 1.0.",
+        status_he="נספח Google Health שאושר על-ידי ועדת האתיקה, גרסה סופית 1.0.",
     ),
 )
 
 
 def research_documents() -> tuple[ResearchDocument, ...]:
     """Return deployment-aware documents without mutating the stable metadata."""
-    approved_path = approved_addendum_path()
+    approved_paths = approved_addendum_paths()
     return tuple(
-        ResearchDocument(**{**document.__dict__, "path": approved_path})
-        if document.key == "google_health_addendum"
+        ResearchDocument(
+            **{
+                **document.__dict__,
+                "path": approved_paths["he" if document.key.endswith("_he") else "en"],
+            }
+        )
+        if document.key.startswith("google_health_addendum_")
         else document
         for document in RESEARCH_DOCUMENTS
     )
@@ -117,17 +165,21 @@ def participant_disclosure_enforced() -> bool:
 
 
 def disclosure_version() -> str:
-    return os.getenv("PARTICIPANT_DISCLOSURE_VERSION", DRAFT_DISCLOSURE_VERSION).strip()
+    return os.getenv("PARTICIPANT_DISCLOSURE_VERSION", APPROVED_DISCLOSURE_VERSION).strip()
 
 
 def retention_text(language: str) -> str:
     suffix = "HE" if language == "he" else "EN"
-    return os.getenv(f"RESEARCH_RETENTION_TEXT_{suffix}", "").strip()
+    return os.getenv(
+        f"RESEARCH_RETENTION_TEXT_{suffix}", DEFAULT_RETENTION_TEXT[language]
+    ).strip()
 
 
 def deletion_text(language: str) -> str:
     suffix = "HE" if language == "he" else "EN"
-    return os.getenv(f"RESEARCH_DELETION_TEXT_{suffix}", "").strip()
+    return os.getenv(
+        f"RESEARCH_DELETION_TEXT_{suffix}", DEFAULT_DELETION_TEXT[language]
+    ).strip()
 
 
 def approved_disclosure_ready() -> tuple[bool, list[str]]:
@@ -135,8 +187,9 @@ def approved_disclosure_ready() -> tuple[bool, list[str]]:
     version = disclosure_version()
     if not version or version.upper().startswith("DRAFT"):
         missing.append("an ethics-approved disclosure version")
-    if not approved_addendum_path().is_file():
-        missing.append("the deployed ethics-approved addendum PDF")
+    for language, path in approved_addendum_paths().items():
+        if not path.is_file():
+            missing.append(f"the deployed ethics-approved addendum PDF ({language})")
     for language in ("en", "he"):
         if not retention_text(language):
             missing.append(f"approved retention wording ({language})")
@@ -145,9 +198,22 @@ def approved_disclosure_ready() -> tuple[bool, list[str]]:
     return not missing, missing
 
 
-def approved_addendum_path() -> Path:
-    configured = os.getenv("APPROVED_GOOGLE_HEALTH_ADDENDUM_PATH", "").strip()
-    return Path(configured) if configured else DEFAULT_APPROVED_ADDENDUM_PATH
+def approved_addendum_paths() -> dict[str, Path]:
+    """Return the approved bilingual addenda, retaining the legacy override."""
+    legacy = os.getenv("APPROVED_GOOGLE_HEALTH_ADDENDUM_PATH", "").strip()
+    return {
+        language: Path(
+            os.getenv(f"APPROVED_GOOGLE_HEALTH_ADDENDUM_PATH_{language.upper()}", "").strip()
+            or legacy
+            or default_path
+        )
+        for language, default_path in DEFAULT_APPROVED_ADDENDUM_PATHS.items()
+    }
+
+
+def approved_addendum_path(language: str = "en") -> Path:
+    """Backward-compatible accessor for a single approved addendum."""
+    return approved_addendum_paths()["he" if language == "he" else "en"]
 
 
 def assert_disclosure_can_be_enforced() -> None:
@@ -177,64 +243,114 @@ def disclosure_document_hash() -> str:
         ]
     )
     digest = hashlib.sha256(material.encode("utf-8"))
-    path = approved_addendum_path()
-    if path.is_file():
-        digest.update(path.read_bytes())
+    for language, path in sorted(approved_addendum_paths().items()):
+        digest.update(language.encode("ascii"))
+        if path.is_file():
+            digest.update(path.read_bytes())
     return digest.hexdigest()
 
 
 def participant_disclosure_text(language: str, provider: str) -> str:
     provider_label = "Google Health" if provider == "google_health" else "Fitbit"
-    if language == "he":
-        return f"""הודעה למשתתף — {provider_label} — מחקר {STUDY_NUMBER}
+    if provider != "google_health":
+        if language == "he":
+            return f"""הודעה למשתתף — {provider_label} — מחקר {STUDY_NUMBER}
 גרסה: {disclosure_version()}
 
-מטרת הגישה: איסוף מדדים לבישים שאושרו לצורך בחינת הקשר בין חוויות ילדות,
-דפוסי שינה ותגובות רגשיות, קוגניטיביות והתנהגותיות בבגרות.
+החיבור מאפשר לצוות המחקר גישת קריאה בלבד למדדים הלבישים שאושרו במסמכי המחקר.
+ההשתתפות וההרשאה הן מרצון. ניתן לנתק את החיבור או לפרוש ללא קנס בהתאם לטופס
+ההסכמה המאושר. השירות אינו מערכת רפואית או מערכת חירום.
 
-המידע: צעדים ופעילות, קלוריות, דופק, שונות קצב לב, טמפרטורת עור, קצב נשימה,
-שינה וחותמות זמן, לפי זמינות המכשיר והפרוטוקול המאושר. הגישה היא לקריאה בלבד.
+לשאלות או לפרישה: {PI_NAME}, {PI_EMAIL}, {PI_PHONE}.
+"""
+        return f"""Participant disclosure — {provider_label} — study {STUDY_NUMBER}
+Version: {disclosure_version()}
 
-אחסון ואבטחה: מזהה מחקר בדוי; מטא-נתונים ב-Google Sheets; ארכיון גולמי
-ב-Shared Drive אוניברסיטאי מוגבל; סודות ואסימוני OAuth ב-Google Secret Manager;
-אירוח ב-Heroku. הגישה מוגבלת לצוות המחקר ולספקים מאושרים. המידע אינו נמכר,
-אינו משמש לפרסום ואינו משמש לאימון מודלי AI/ML כלליים.
+This connection gives the study team read-only access to the wearable measurements
+approved in the study documents. Participation and authorization are voluntary.
+You may disconnect or withdraw without penalty as described in the approved consent.
+This is not a medical or emergency system.
 
-סיכונים ותועלת: קיים סיכון קטן לפגיעה בפרטיות, לשגיאת חיבור או לאי-נוחות.
-לא מובטחת תועלת רפואית. השירות אינו מכשיר רפואי או מערכת חירום.
+Questions or withdrawal: {PI_NAME}, {PI_EMAIL}, {PI_PHONE}.
+"""
+
+    if language == "he":
+        return f"""הודעה למשתתף — Google Health — מחקר {STUDY_NUMBER}
+גרסה: {disclosure_version()}
+
+המחקר בוחן את השפעת דפוסי השינה על הקשר בין חוויות ילדות לבין תגובות רגשיות,
+התנהגותיות וקוגניטיביות בבגרות. החיבור מתבצע באמצעות חשבון Google ייעודי למחקר
+(חשבון דמו), ולא באמצעות חשבון Google האישי שלך.
+
+המידע שייאסף: דופק, צעדים, נתוני שינה, פעילות גופנית וקצב נשימה, בהתאם לזמינות
+במכשיר ולהרשאות שתאשר/י. הגישה היא לקריאה בלבד; AdmonTracker אינה יכולה לשנות
+או למחוק מידע בחשבון הדמו.
+
+לצורכי תפעול ובקרת איכות ייאסף גם מידע טכני על השעון שהוקצה למחקר: דגם השעון,
+מצב ורמת הסוללה ומועד הסנכרון האחרון. מידע זה ישמש לאיתור בעיות טעינה או סנכרון
+ולבדיקת שלמות איסוף הנתונים.
+
+הנתונים ייאספו במשך חודש אחד ממועד הפעלת החיבור. האיסוף ייפסק בתום החודש,
+בעת ניתוק החיבור או בעת פרישה, לפי המועד המוקדם. המידע ישמש רק למחקר זה ולבדיקות
+האיכות הנחוצות לביצועו.
+
+הנתונים יישמרו תחת קוד מחקר. הקישור לזהותך יישמר בנפרד במערכת מוגנת של
+אוניברסיטת חיפה. הגישה לנתוני המחקר מוגבלת לצוות מורשה; הגישה לקישור לזהות
+מוגבלת לחוקר הראשי, לראש המעבדה ולמתכנת המורשה. נעשה שימוש בשירותים מאובטחים
+של האוניברסיטה, Google ו-Heroku, בחיבור מוצפן ובהרשאות גישה.
+
+המידע לא יימכר ולא ישמש לפרסום, לשיווק, להחלטות אשראי, תעסוקה או ביטוח,
+לאימון מודלים כלליים של בינה מלאכותית או למטרה שאינה קשורה למחקר זה.
+
+הסיכונים האפשריים כוללים פגיעה בפרטיות במקרה של גישה לא מורשית, תקלות בחיבור
+או נתונים חלקיים. לא מובטחת תועלת רפואית ישירה. AdmonTracker אינה מערכת רפואית
+או מערכת חירום.
 
 משך ושמירה: {retention_text('he')}
 
 פרישה ומחיקה: {deletion_text('he')}
 
-ההשתתפות וההרשאה הן מרצון. ניתן לעצור איסוף עתידי ללא קנס. ליצירת קשר:
+ההשתתפות וההרשאה הן מרצון. ניתן לסרב, לנתק או לפרוש בכל עת ללא קנס. ליצירת קשר:
 {PI_NAME}, {PI_EMAIL}, {PI_PHONE}.
 """
-    return f"""Participant disclosure — {provider_label} — study {STUDY_NUMBER}
+    return f"""Participant disclosure — Google Health — study {STUDY_NUMBER}
 Version: {disclosure_version()}
 
-Purpose: collect ethics-approved wearable measurements to examine relationships
-between childhood experiences, sleep patterns, and emotional, cognitive, and
-behavioral responses in adulthood.
+This study examines the effect of sleep patterns on the association between childhood
+experiences and emotional, behavioral, and cognitive responses in adulthood. The
+connection uses a Google account designated for the study (a demo account), not your
+personal Google account.
 
-Data: steps/activity, calories, heart rate, heart-rate variability, skin
-temperature, respiratory rate, sleep, and timestamps, subject to device
-availability and the approved protocol. Access is read-only.
+Data collected: heart rate, steps, sleep data, physical activity, and respiratory
+rate, depending on device availability and the permissions you approve. Access is
+read-only; AdmonTracker cannot change or delete information in the demo account.
 
-Storage and security: a pseudonymous study ID is used; metadata is stored in
-Google Sheets; raw archives in a restricted University Shared Drive; OAuth
-secrets and tokens in Google Secret Manager; and the app is hosted on Heroku.
-Access is limited to the study team and approved processors. Data is not sold,
-used for advertising, or used to train general-purpose AI/ML models.
+The study will also collect the assigned watch's model, battery level and status,
+and last synchronization time to identify charging or synchronization problems and
+check data completeness.
 
-Risks and benefits: there is a small risk of privacy loss, connection errors, or
-discomfort. No direct medical benefit is promised. This is not a medical device
-or emergency-monitoring system.
+Data will be collected for one month after activation and will stop at the end of
+that month, on disconnection, or on withdrawal, whichever occurs first. It will be
+used only for this study and the quality checks necessary to conduct it.
+
+Data is stored under a study code. The identity link is kept separately in a
+protected University of Haifa system. Research-data access is limited to authorized
+study-team members; access to the identity link is limited to the Principal
+Investigator, laboratory head, and authorized programmer. Secure University, Google,
+and Heroku services, encrypted transfer, and access controls are used.
+
+The information will not be sold or used for advertising, marketing, credit,
+employment, insurance, training general artificial-intelligence models, or a purpose
+unrelated to this study.
+
+Possible risks include loss of privacy following unauthorized access, connection
+problems, or incomplete data. No direct medical benefit is promised. AdmonTracker
+is not a medical or emergency system.
 
 Duration and retention: {retention_text('en')}
 
 Withdrawal and deletion: {deletion_text('en')}
 
-Participation and authorization are voluntary. Future collection can be stopped
-without penalty. Contact: {PI_NAME}, {PI_EMAIL}, {PI_PHONE}.
+Participation and authorization are voluntary. You may refuse, disconnect, or
+withdraw at any time without penalty. Contact: {PI_NAME}, {PI_EMAIL}, {PI_PHONE}.
 """

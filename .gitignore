@@ -24,3 +24,7 @@ admontracker-*.json
 # versioned copies under assets/compliance/.
 /החלטות-נבחרות-תשפה.pdf
 /טופס הסכמה פיילוט .docx
+/Google_Health_Addendum_385-23_*
+/newConsents/
+/.codex-docx-extract/
+/.codex-newconsent-extract/

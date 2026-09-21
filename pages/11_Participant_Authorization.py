@@ -86,6 +86,12 @@ provider_label = "Google Health" if provider == "google_health" else "Fitbit"
 disclosure = participant_disclosure_text(language, provider)
 
 st.subheader(("חיבור אל " if is_hebrew else "Connect to ") + provider_label)
+if provider == "google_health":
+    st.warning(
+        "יש להתחבר רק באמצעות חשבון Google הייעודי למחקר (חשבון הדמו) שהוקצה לך, ולא באמצעות החשבון האישי שלך. אין למסור לצוות המחקר את פרטי הכניסה לחשבון האישי."
+        if is_hebrew
+        else "Use only the Google account designated for the study (the demo account) assigned to you, not your personal Google account. Never give the research team your personal account sign-in details."
+    )
 st.info(
     "ניתן לקרוא ולשמור את ההודעה לפני קבלת החלטה."
     if is_hebrew
@@ -103,6 +109,10 @@ with st.expander("מסמכי מחקר" if is_hebrew else "Study documents"):
     for document in research_documents():
         if not document.exists:
             continue
+        if provider == "google_health" and document.key.startswith("google_health_addendum_"):
+            selected_key = "google_health_addendum_he" if is_hebrew else "google_health_addendum_en"
+            if document.key != selected_key:
+                continue
         st.download_button(
             document.title_he if is_hebrew else document.title_en,
             data=document.path.read_bytes(),
@@ -114,34 +124,67 @@ with st.expander("מסמכי מחקר" if is_hebrew else "Study documents"):
 already_acknowledged = bool(str(state_row.get("participant_acknowledged_at") or "").strip())
 if not already_acknowledged:
     with st.form("participant_disclosure_confirmation"):
-        adult = st.checkbox(
-            "מלאו לי 18 שנים." if is_hebrew else "I am at least 18 years old."
-        )
-        consent = st.checkbox(
-            "קיבלתי והשלמתי את ההסכמה למחקר שאושרה אתית."
-            if is_hebrew
-            else "I received and completed the ethics-approved study consent."
-        )
-        reviewed = st.checkbox(
-            "קראתי את ההודעה, יכולתי לשמור עותק, ואני מאשר/ת מרצון את הגישה המפורטת."
-            if is_hebrew
-            else (
-                "I reviewed the disclosure, could save a copy, and voluntarily authorize "
-                "the listed read-only access."
-            )
-        )
-        understands = st.checkbox(
-            "ברור לי כיצד לפרוש, לנתק את החיבור ולבקש מחיקה."
-            if is_hebrew
-            else "I understand how to withdraw, disconnect, and request deletion."
-        )
+        if provider == "google_health":
+            confirmations = [
+                st.checkbox(
+                    "מלאו לי 18 שנים והשלמתי את טופס ההסכמה למחקר."
+                    if is_hebrew
+                    else "I am at least 18 years old and completed the study consent form."
+                ),
+                st.checkbox(
+                    "קראתי את הנספח וקיבלתי אפשרות לשאול שאלות ולקבל עותק."
+                    if is_hebrew
+                    else "I read this addendum and had an opportunity to ask questions and receive a copy."
+                ),
+                st.checkbox(
+                    "ברור לי שהחיבור מתבצע באמצעות חשבון Google ייעודי למחקר ולא באמצעות החשבון האישי שלי."
+                    if is_hebrew
+                    else "I understand that the connection uses a Google account designated for the study and not my personal account."
+                ),
+                st.checkbox(
+                    "אני מבין/ה אילו נתונים ייאספו, למה הם ישמשו, כיצד יישמרו ומי יוכל לגשת אליהם."
+                    if is_hebrew
+                    else "I understand what data will be collected, how they will be used and stored, and who may access them."
+                ),
+                st.checkbox(
+                    "אני מסכים/ה מרצון לגישת קריאה בלבד לנתונים המפורטים בנספח."
+                    if is_hebrew
+                    else "I voluntarily agree to read-only access to the data described in this addendum."
+                ),
+                st.checkbox(
+                    "אני מבין/ה שאפשר לנתק את החיבור או לפרוש, וכי הנתונים יימחקו אלא אם אסכים במפורש לשמור אותם."
+                    if is_hebrew
+                    else "I understand that I may disconnect or withdraw, and that my data will be deleted unless I explicitly agree to keep them."
+                ),
+            ]
+        else:
+            confirmations = [
+                st.checkbox(
+                    "מלאו לי 18 שנים." if is_hebrew else "I am at least 18 years old."
+                ),
+                st.checkbox(
+                    "קיבלתי והשלמתי את ההסכמה למחקר שאושרה אתית."
+                    if is_hebrew
+                    else "I received and completed the ethics-approved study consent."
+                ),
+                st.checkbox(
+                    "קראתי את ההודעה, יכולתי לשמור עותק, ואני מאשר/ת מרצון את הגישה המפורטת."
+                    if is_hebrew
+                    else "I reviewed the disclosure, could save a copy, and voluntarily authorize the listed read-only access."
+                ),
+                st.checkbox(
+                    "ברור לי כיצד לפרוש, לנתק את החיבור ולבקש מחיקה."
+                    if is_hebrew
+                    else "I understand how to withdraw, disconnect, and request deletion."
+                ),
+            ]
         submitted = st.form_submit_button(
             "אישור והמשך" if is_hebrew else "Acknowledge and continue",
             type="primary",
         )
 
     if submitted:
-        if not all((adult, consent, reviewed, understands)):
+        if not all(confirmations):
             st.error(
                 "יש לאשר את כל הסעיפים כדי להמשיך."
                 if is_hebrew

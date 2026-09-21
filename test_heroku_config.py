@@ -148,7 +148,11 @@ class PrepareHerokuConfigTests(unittest.TestCase):
             "projects/new-project/secrets/runtime",
         )
         self.assertEqual(config["GOOGLE_DRIVE_ARCHIVE_ROOT_ID"], "drive-folder")
-        self.assertEqual(config["PARTICIPANT_DISCLOSURE_ENFORCED"], "false")
+        self.assertEqual(config["PARTICIPANT_DISCLOSURE_ENFORCED"], "true")
+        self.assertEqual(
+            config["PARTICIPANT_DISCLOSURE_VERSION"],
+            "385-23-GOOGLE-HEALTH-v1.0",
+        )
         self.assertEqual(config["CLOCK_RUN_JOBS"], "false")
         self.assertEqual(config["CLOCK_CATCH_UP_ON_START"], "true")
         self.assertEqual(config["ARCHIVE_SHADOW_MODE"], "true")

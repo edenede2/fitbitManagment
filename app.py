@@ -37,9 +37,7 @@ def main():
         - **Homepage**: Overview of the active users and their projects
         - **Dashboard**: Overview of wearable activity and device stats
         - **Device Management**: Manage research wearable devices
-        - **Alerts Configuration**: Configure alerts for devices and EMA
-        - **NOVA Qualtrics Management**: Manage buldog and Qualtrics data
-        - **APPSHEET Management**: Manage AppSheet data
+        - **Alerts Configuration**: Configure wearable-device alerts
         """)
         st.sidebar.markdown("---")
         st.sidebar.markdown("### Need Help?")

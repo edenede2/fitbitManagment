@@ -78,46 +78,7 @@ def _alerts() -> None:
         st.text_input("Recipient email", value=str(config["email"]), disabled=True)
         st.form_submit_button("Save configuration", disabled=True)
     st.subheader("Synthetic alert examples")
-    st.dataframe(demo_dataframe("late_nums"), width="stretch", hide_index=True)
-
-
-def _nova() -> None:
-    st.title("NOVA Qualtrics Management")
-    st.subheader("Synthetic EMA responses")
-    ema = demo_dataframe("EMA")
-    statuses = st.multiselect("Filter by status", sorted(ema["status"].unique()), default=sorted(ema["status"].unique()))
-    st.dataframe(ema[ema["status"].isin(statuses)], width="stretch", hide_index=True)
-    st.subheader("Synthetic review queues")
-    st.dataframe(demo_dataframe("suspicious_nums"), width="stretch", hide_index=True)
-    st.checkbox("Select example record", disabled=True, key="demo_nova_select")
-    _disabled_action("Save accepted numbers", key="demo_nova_save")
-    st.download_button(
-        "Download synthetic CSV",
-        data=ema.to_csv(index=False).encode("utf-8"),
-        file_name="synthetic_ema_examples.csv",
-        mime="text/csv",
-    )
-
-
-def _appsheet() -> None:
-    st.title("FIBRO AppSheet Management")
-    frame = demo_dataframe("for_analysis")
-    participant = st.selectbox("Example participant", ["All examples"] + sorted(frame["User Id"].unique()))
-    filtered = frame if participant == "All examples" else frame[frame["User Id"] == participant]
-    st.dataframe(filtered, width="stretch", hide_index=True)
-    st.subheader("Synthetic pain-rating examples")
-    chart_frame = filtered.pivot(
-        index="Date Time",
-        columns="User Id",
-        values="Pain Level",
-    )
-    st.line_chart(chart_frame)
-    st.download_button(
-        "Download synthetic data",
-        data=filtered.to_csv(index=False).encode("utf-8"),
-        file_name="synthetic_appsheet_examples.csv",
-        mime="text/csv",
-    )
+    st.dataframe(demo_dataframe("FitbitLog"), width="stretch", hide_index=True)
 
 
 def _participant_connect() -> None:
@@ -144,8 +105,6 @@ _RENDERERS = {
     "dashboard": _dashboard,
     "devices": _devices,
     "alerts": _alerts,
-    "nova": _nova,
-    "appsheet": _appsheet,
     "participant_connect": _participant_connect,
     "oauth": _oauth,
 }

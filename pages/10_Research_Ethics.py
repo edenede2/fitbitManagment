@@ -41,6 +41,7 @@ for document in research_documents():
         continue
     title = document.title_he if is_hebrew else document.title_en
     st.subheader(title)
+    st.caption(document.status_he if is_hebrew else document.status_en)
 
     data = document.path.read_bytes()
     if document.mime_type == "application/pdf" and hasattr(st, "pdf"):

@@ -20,7 +20,6 @@ class AuthenticationController:
     def __init__(self):
         """Initialize authentication controller"""
         self.main_spreadsheet = None
-        self.fibro_spreadsheet = None
         
         # Initialize session state variables if they don't exist
         if 'user_email' not in st.session_state:
@@ -74,34 +73,6 @@ class AuthenticationController:
             st.divider()
             render_legal_links()
     
-
-    @sheets_cache(timeout=300)
-    def get_fibro_spreasheet(self):
-        """Get or create the Fibro spreadsheet connection"""
-        try:
-            require_real_data_access()
-            if not self.fibro_spreadsheet:
-                # Use st.secrets to get the spreadsheet key
-                spreadsheet_key = st.secrets.get("fibro_ema_sheet", "")
-                self.fibro_spreadsheet = Spreadsheet(name="Fibro EMA Database", api_key=spreadsheet_key)
-                GoogleSheetsAdapter.connect(self.fibro_spreadsheet)
-            return self.fibro_spreadsheet
-        except Exception as e:
-            if not show_rate_limit_notice(
-                e,
-                provider="google_sheets",
-                key="fibro_spreadsheet",
-                context="connecting to the Fibro spreadsheet",
-            ):
-                st.error(f"Error connecting to Fibro spreadsheet: {e}")
-            return None
-        
-    @sheets_cache(timeout=300)
-    def get_demo_ema_spreadsheet(self):
-        """Get or create the demo Fibro spreadsheet connection"""
-        return create_demo_spreadsheet()
-        
-
 
     @sheets_cache(timeout=300)
     def get_spreadsheet(self):

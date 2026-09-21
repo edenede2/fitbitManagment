@@ -167,13 +167,26 @@ def build_config_vars(
         "STREAMLIT_SERVER_HEADLESS": "true",
         "SECRET_MANAGER_ENABLED": "true",
         "ALLOW_PLAINTEXT_SECRET_FALLBACK": "true",
-        "PARTICIPANT_DISCLOSURE_ENFORCED": "false",
+        "PARTICIPANT_DISCLOSURE_ENFORCED": "true",
+        "PARTICIPANT_DISCLOSURE_VERSION": "385-23-GOOGLE-HEALTH-v1.0",
+        "RESEARCH_RETENTION_TEXT_EN": (
+            "Measurement data will be retained during the one month collection period and for one additional month for processing and quality checks. No later than one month after measurement ends, Google Health data and the link to the participant's identity will be permanently deleted. The signed consent form and administrative records that do not contain the measurements will be retained according to University and research requirements."
+        ),
+        "RESEARCH_RETENTION_TEXT_HE": (
+            "נתוני המדידה יישמרו במהלך חודש האיסוף ולמשך חודש נוסף לצורך עיבוד ובדיקת איכות. לא יאוחר מחודש לאחר סיום המדידה, נתוני Google Health והקישור לזהות המשתתף/ת יימחקו לצמיתות. טופס ההסכמה ורישומים מנהליים שאינם כוללים את נתוני המדידה יישמרו בהתאם לכללי האוניברסיטה והמחקר."
+        ),
+        "RESEARCH_DELETION_TEXT_EN": (
+            "If a participant withdraws, collection will stop immediately and the application's authorization in the demo account assigned to them will be canceled. All collected data will be permanently deleted unless the participant gives separate and explicit consent at that time to keep them. Summary results already published cannot be removed from an existing publication."
+        ),
+        "RESEARCH_DELETION_TEXT_HE": (
+            "במקרה של פרישה, האיסוף ייפסק מיד והרשאת האפליקציה בחשבון הדמו שהוקצה לך תבוטל. כל הנתונים שנאספו יימחקו לצמיתות, אלא אם תיתן/י באותו מועד הסכמה נפרדת ומפורשת לשמור אותם. לא ניתן להסיר תוצאות מסכמות שכבר פורסמו."
+        ),
         "SCHEDULER_TIMEZONE": "Asia/Jerusalem",
         "CLOCK_RUN_JOBS": "false",
         "CLOCK_CATCH_UP_ON_START": "true",
         "ARCHIVE_SHADOW_MODE": "true",
-        # Google Health collection stays disabled until its ethics-approved
-        # participant disclosure is deployed and enforced.
+        # Enable Google Health archive collection only after the reviewer flow and
+        # operational retention procedure have been smoke-tested in production.
         "ARCHIVE_ENABLED_PROVIDERS": "fitbit",
         "GOOGLE_DRIVE_ARCHIVE_SUBFOLDER": "AdmonTracker Raw Archive",
     }

@@ -38,6 +38,8 @@ jobs:
           cp assets/compliance/ethics-approval-385-23-en.pdf _site/assets/
           cp assets/compliance/institutional-ethics-governance-he.pdf _site/assets/
           cp assets/compliance/pilot-consent-baseline-he.pdf _site/assets/participant-informed-consent-385-23-he.pdf
+          cp assets/compliance/google-health-addendum-385-23-en-approved-v1.0.pdf _site/assets/
+          cp assets/compliance/google-health-addendum-385-23-he-approved-v1.0.pdf _site/assets/
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:

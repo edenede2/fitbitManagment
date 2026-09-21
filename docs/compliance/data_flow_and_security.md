@@ -4,8 +4,8 @@
 
 - Research staff authenticate with a basic OIDC client (`openid profile email`) and
   receive role/project authorization from the production access data.
-- Adult participants receive an opaque, expiring, single-use study link. When the
-  approved disclosure gate is enabled, provider OAuth is unavailable until staff
+- Adult participants receive an opaque, expiring, single-use study link. With the
+  approved disclosure gate enabled, provider OAuth is unavailable until staff
   consent/age attestation and participant acknowledgement are persisted.
 - Participant records use project and watch/study codes; consent audit records do
   not contain participant names, email addresses, or IP addresses.
@@ -41,10 +41,14 @@ lab-mounted archive remains read-only and is not migrated.
 - Provider error bodies and credential-bearing values are not displayed or logged.
 - Public management tokens are random; only their SHA-256 hashes are stored.
 
-## Remaining external approvals
+## Approved retention and withdrawal
 
-The final retention duration, handling of already collected/de-identified data,
-electronic acknowledgement method, and Google Health addendum must match the final
-PI/ethics approval. The institutional accreditation package also needs the actual
-registry identifier or official English confirmation. These are release gates, not
-values to be selected by the software.
+The final bilingual Google Health addendum requires one month of collection and up
+to one additional month for processing and quality checks. Google Health data and
+the identity link are then permanently deleted. On withdrawal, collection and
+authorization stop immediately and all collected data is deleted unless the
+participant gives separate, explicit retention consent at that time. The operational
+procedure is recorded in `retention_deletion_procedure.md`.
+
+The institutional accreditation package still needs the actual registry identifier
+or an official English confirmation if Google requests that evidence during review.

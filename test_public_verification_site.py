@@ -56,6 +56,8 @@ def test_static_privacy_policy_contains_google_required_topics():
     )
     for phrase in required:
         assert phrase in privacy
+    assert "battery level and status" in privacy
+    assert "heart rate, steps, sleep data, physical activity, and respiratory rate" in privacy
 
 
 def test_public_site_internal_links_have_targets():
@@ -70,6 +72,15 @@ def test_public_site_internal_links_have_targets():
             if target.startswith("assets/"):
                 continue  # Copied into the Pages artifact by the deployment workflow.
             assert (SITE / target).is_file(), f"Missing {href} linked from {name}"
+
+
+def test_public_ethics_page_links_both_approved_google_health_addenda():
+    ethics = _read("research-ethics.html")
+    for language in ("en", "he"):
+        filename = f"google-health-addendum-385-23-{language}-approved-v1.0.pdf"
+        assert f'assets/{filename}' in ethics
+        asset = ROOT / "assets" / "compliance" / filename
+        assert asset.read_bytes().startswith(b"%PDF")
 
 
 def test_canonical_production_urls_point_to_public_static_site():

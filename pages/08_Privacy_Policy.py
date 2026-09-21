@@ -1,213 +1,233 @@
 import streamlit as st
 
+from utils.branding import render_app_logo
 from utils.compliance import (
     PI_EMAIL,
     PI_NAME,
+    PI_PHONE,
     PUBLIC_ETHICS_URL,
     PUBLIC_HOME_URL,
     PUBLIC_TERMS_URL,
 )
-from utils.branding import render_app_logo
 
 
-st.set_page_config(
-    page_title="Privacy Policy - AdmonTracker",
-    page_icon="🔒",
-    layout="wide",
-)
+st.set_page_config(page_title="Privacy Policy - AdmonTracker", page_icon="🔒", layout="wide")
 render_app_logo()
 
 language = st.radio("Language / שפה", ["English", "עברית"], horizontal=True)
 
 if language == "English":
     st.title("Privacy Policy")
-    st.caption("AdmonTracker • Last updated 17 September 2026")
+    st.caption("AdmonTracker • Last updated 21 September 2026")
     st.markdown(
         f"""
-## 1. Operator and contact
+## 1. Operator, study, and contact
 
-AdmonTracker is operated for research by **{PI_NAME}'s Stress &
-Psychopathology Lab, School of Psychological Sciences, University of Haifa**.
-The public contact for privacy, participation, withdrawal, and deletion requests is
-**{PI_EMAIL}**. Please identify the study and your pseudonymous study code, but do
-not email account tokens or health measurements.
+AdmonTracker is operated for University of Haifa Study 385/23 by **{PI_NAME}'s
+Stress & Psychopathology Lab, School of Psychological Sciences, University of
+Haifa**. The study examines the effect of sleep patterns on the association between
+childhood experiences and emotional responses to different situations. Questions
+about privacy, participation, withdrawal, or deletion may be sent to **{PI_EMAIL}**
+or **{PI_PHONE}**. Include only the study or watch code; do not send passwords,
+access tokens, or health measurements by email.
 
-## 2. People covered
+## 2. Who and what this policy covers
 
 This policy covers invited adult research participants, authorized University
 research personnel, and visitors to the synthetic guest demonstration. Participation
-is voluntary. Study-specific ethics approval and informed consent control where they
-provide more specific protections.
+is voluntary. The ethics-approved consent and Google Health addendum apply together
+with this policy. The guest demonstration contains fictional examples only and does
+not access production participant data or external research services.
 
-## 3. Information and sources
+## 3. Information accessed and collected
 
-Depending on the approved protocol, we process Google-authenticated staff name,
-email, role, project and session information; pseudonymous study and watch IDs;
-OAuth connection status and protected tokens; device status and logs; approved
-questionnaire responses; and authorized wearable measurements.
+For staff authentication, AdmonTracker processes the Google OpenID account
+identifier, name, email address, authentication status, assigned role, project, and
+session information.
 
-Wearable measurements can include **steps and activity, calories, heart rate,
-heart-rate variability, skin temperature, respiratory rate, sleep, and associated
-timestamps**. They come from Fitbit or Google Health only after authorization.
-Google Health access is limited to read-only activity/fitness, health
-measurements, and sleep scopes. The authorization screen identifies the actual
-scopes requested.
+For Google Health participants, the connection uses only the **Google account
+designated for the study (the demo account)**, not a personal Google account. After
+affirmative authorization, AdmonTracker requests read-only access to **heart rate,
+steps, sleep data, physical activity, and respiratory rate**, depending on device
+availability and the permissions approved by the participant. It cannot change or
+delete information in the demo account. Fitbit data is collected only where the
+applicable approved participant documents authorize it.
 
-The guest demonstration contains fictional examples only. It does not access
-production Sheets, participant records, watches, Google Health, Fitbit, email, or
-other external services. Hosting infrastructure can still process ordinary security
-and delivery data such as IP address, browser details, session cookies, timestamps,
-and diagnostic logs.
+For operations and quality control, the study also collects the assigned watch's
+model, battery level and status, and last synchronization time to identify charging
+or synchronization problems and check data completeness.
 
-## 4. Purposes and prohibited uses
+AdmonTracker also processes pseudonymous study and watch codes, provider and scope
+selection, authorization status, token expiry, protected OAuth tokens, collection
+and audit logs, device status, support records, and ordinary website security data
+such as timestamps, browser information, session cookies, IP address, and diagnostic
+logs.
 
-We use information only to operate ethics-approved research, connect accounts,
-collect approved measurements, monitor completeness and device status, notify the
-study team of operational problems, support participants, secure the service, and
-produce research outputs permitted by the approved protocol.
+## 4. Purpose and prohibited uses
 
-We do **not** sell participant or Google user data, use it for advertising or data
-brokerage, make credit, insurance, employment, or lending decisions from it, use it
-for unrelated marketing, or use it to train general-purpose AI/ML models.
+Google Health information is used only for Study 385/23 and the quality checks
+needed to conduct it. It is not used for diagnosis, treatment, medical decisions,
+or emergency monitoring, and will not be used for a new study or another purpose
+without separate consent unless the Ethics Committee approves an exception.
+
+AdmonTracker does not sell the information or use it for advertising, marketing,
+credit, employment, insurance, training general artificial-intelligence models, or
+any purpose unrelated to this study. Published research results are summaries that
+do not contain names or information that identifies an individual participant.
 
 ## 5. Google API Limited Use
 
-AdmonTracker's use and transfer to any other app of information
-received from Google APIs adheres to the
-[Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy),
-including its Limited Use requirements. Use of information received from the
-Google Health API adheres to the
-[Google Health API Developer and User Data Policy](https://developers.google.com/health/policies/health-api-developer-user-data-policy),
-including its Limited Use requirements, and also follows the
-[Google Health API User Data and Health Research Policy](https://developers.google.com/health/policies/health-api-user-data-and-research-policy).
-Human access is limited to authorized people with a genuine research, security,
-support, or legal need consistent with the approved consent.
+AdmonTracker's use and transfer of information received from Google APIs adheres to
+the [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy),
+including the Limited Use requirements. Use of Google Health information adheres to
+the [Google Health API Developer and User Data Policy](https://developers.google.com/health/policies/health-api-developer-user-data-policy)
+and the [Google Health API User Data and Health Research Policy](https://developers.google.com/health/policies/health-api-user-data-and-research-policy),
+including the Limited Use requirements.
 
-## 6. Storage, processors, and sharing
+## 6. Storage, security, access, and sharing
 
-The service runs at **https://app.admontracker.online** on Heroku. Operational and
-research metadata is stored in access-controlled Google Sheets. Raw wearable
-archives are stored in a restricted Google Workspace Shared Drive. OAuth client
-secrets and participant access/refresh tokens are stored in Google Secret Manager.
-Temporary processing files on Heroku are deleted after upload. Approved AppSheet,
-Qualtrics, email, Fitbit, Google Sign-In, Google Cloud, Google Workspace, and Google
-Health services may process data when needed for the study.
+Google Health data is stored under a study code without a name or direct identifier.
+The link between the code and identity is stored separately in a protected University
+of Haifa system. While that link exists, the data is coded and not fully anonymous.
+Only authorized University of Haifa research-team members may access research data.
+Access to the identity link is limited to the Principal Investigator, laboratory
+head, and authorized programmer.
 
-Data is available only to the relevant study team, authorized University personnel,
-approved processors, and collaborators whose access is permitted by consent,
-ethics approval, contract, platform policy, and law. Providers may process data
-outside Israel under applicable safeguards. We may disclose information when law
-requires it or to investigate a security incident.
+Secure University, Google, and Heroku services provide the technical infrastructure.
+Operational metadata is held in access-controlled Google Sheets, wearable archives
+in a restricted University Google Workspace Shared Drive, and OAuth secrets and
+tokens in Google Secret Manager. Data is transferred over encrypted connections and
+protected by role-based access controls, restricted service accounts, secret
+management, OAuth expiry and replay controls, and audit records.
 
-## 7. Security
+Information about an individual participant is not shared outside the research team
+without new explicit consent and any required approvals. Technical providers process
+data only to operate the approved service. Information may be disclosed where the
+law requires it or to address a security incident.
 
-We use HTTPS, access controls by role and project, least-privilege service accounts,
-restricted Shared Drive membership, protected secrets, encryption offered by the
-hosting and cloud providers, OAuth state expiry and replay controls, audit records,
-and isolated synthetic guest data. No system can be guaranteed completely secure.
+## 7. Collection period and retention
 
-## 8. Retention, withdrawal, and deletion
+Google Health data is collected for **one month after the connection is activated**.
+Collection stops when that month ends, on disconnection, or on withdrawal, whichever
+occurs first. Measurement data is retained during that collection month and for one
+additional month for processing and quality checks. No later than one month after
+measurement ends, Google Health data and the identity link are permanently deleted.
+The application authorization is canceled at collection end, disconnection, or
+withdrawal, whichever occurs first. Signed consent and administrative records that
+do not contain measurements are retained according to University and research
+requirements.
 
-The retention period and treatment of previously collected or de-identified
-research data are stated in the current ethics-approved participant documents
-presented during authorization.
+## 8. Withdrawal, disconnection, and deletion
 
-Participants may withdraw and stop future collection at any time without penalty by
-contacting **{PI_EMAIL}** or using the connection-management instructions supplied
-after authorization. Disconnecting revokes access and removes active tokens.
-Requests concerning already collected data are handled under the approved consent,
-ethics requirements, scientific-integrity duties, and applicable law. Google or
-Fitbit access can also be revoked in the participant's provider account settings.
+Participants may refuse, disconnect, or withdraw at any time without penalty or loss
+of benefits. Contact **{PI_EMAIL}** or **{PI_PHONE}** and provide the study or watch
+code. On withdrawal, collection stops immediately and the application authorization
+in the assigned demo account is canceled. All collected data is permanently deleted
+unless the participant gives separate, explicit consent at that time to keep it.
+Summary results already published cannot be removed from an existing publication.
 
 ## 9. Changes
 
-We update this notice when the service, approved protocol, processors, or applicable
-requirements change. Material changes affecting participation are referred for
-ethics review and renewed disclosure/consent when required.
+This policy is updated when the service, approved protocol, providers, or applicable
+requirements change. Material changes affecting participation follow the applicable
+ethics-review and participant-consent process.
 """
     )
 else:
     st.title("מדיניות פרטיות")
-    st.caption("AdmonTracker • עודכן לאחרונה: 17 בספטמבר 2026")
+    st.caption("AdmonTracker • עודכן לאחרונה: 21 בספטמבר 2026")
     st.markdown(
         f"""
-## 1. מפעיל השירות ויצירת קשר
+## 1. מפעיל השירות, המחקר ויצירת קשר
 
-השירות מופעל לצורכי מחקר על-ידי המעבדה ללחץ ופסיכופתולוגיה של **פרופ׳ רועי אדמון,
-בית הספר למדעי הפסיכולוגיה, אוניברסיטת חיפה**. לפניות בנושאי פרטיות, השתתפות,
-פרישה או מחיקה: **{PI_EMAIL}**. יש לציין את מספר המחקר ואת קוד המחקר הבדוי,
-אך אין לשלוח בדוא״ל אסימוני גישה או מדדי בריאות.
+AdmonTracker מופעלת עבור מחקר 385/23 של אוניברסיטת חיפה על-ידי המעבדה ללחץ
+ופסיכופתולוגיה של **פרופ׳ רועי אדמון, בית הספר למדעי הפסיכולוגיה, אוניברסיטת
+חיפה**. המחקר בוחן את השפעת דפוסי השינה על הקשר בין חוויות ילדות לבין תגובות
+רגשיות למצבים שונים. לפניות בנושא פרטיות, השתתפות, פרישה או מחיקה: **{PI_EMAIL}**
+או **{PI_PHONE}**. יש לציין רק את קוד המחקר או השעון ואין לשלוח סיסמה, אסימון גישה
+או נתוני בריאות בדוא״ל.
 
-## 2. על מי חלה המדיניות
+## 2. על מי ועל מה חלה המדיניות
 
-המדיניות חלה על משתתפים בגירים שהוזמנו למחקר, אנשי צוות מורשים ומבקרי סביבת
-ההדגמה הסינתטית. ההשתתפות התנדבותית. במקרה שמסמכי המחקר המאושרים מעניקים
-הגנה מפורטת יותר, הם הקובעים.
+המדיניות חלה על משתתפים בגירים שהוזמנו למחקר, אנשי אוניברסיטה מורשים ומבקרי
+סביבת ההדגמה הסינתטית. ההשתתפות התנדבותית. טופס ההסכמה והנספח ל-Google Health
+שאושרו על-ידי ועדת האתיקה חלים יחד עם מדיניות זו.
 
-## 3. מידע ומקורות
+## 3. מידע שנקרא ונאסף
 
-בהתאם לפרוטוקול המאושר אנו עשויים לעבד פרטי חשבון של אנשי צוות, תפקיד ופרויקט;
-מזהי מחקר ושעון בדויים; מצב חיבור ואסימוני OAuth מוגנים; נתוני תפעול ולוגים;
-תשובות לשאלונים מאושרים; ומדדי לביש שאושרו.
+לצורך כניסת אנשי צוות, המערכת מעבדת מזהה OpenID של Google, שם, כתובת דוא״ל,
+מצב אימות, תפקיד, פרויקט ופרטי הפעלה.
 
-המדדים עשויים לכלול **צעדים ופעילות, קלוריות, דופק, שונות קצב לב, טמפרטורת עור,
-קצב נשימה, שינה וחותמות זמן**. מקורם ב-Fitbit או Google Health לאחר הרשאה בלבד.
-הגישה ל-Google Health מוגבלת להרשאות קריאה בלבד של פעילות וכושר, מדדי בריאות
-ושינה. מסך ההרשאה מציג את ההרשאות המבוקשות בפועל.
+עבור משתתפי Google Health החיבור נעשה רק באמצעות **חשבון Google ייעודי למחקר
+(חשבון הדמו)** ולא באמצעות חשבון אישי. לאחר הרשאה מפורשת AdmonTracker מבקשת
+גישת קריאה בלבד ל-**דופק, צעדים, נתוני שינה, פעילות גופנית וקצב נשימה**, בהתאם
+לזמינות במכשיר ולהרשאות שאושרו. המערכת אינה יכולה לשנות או למחוק מידע בחשבון
+הדמו. נתוני Fitbit נאספים רק כאשר מסמכי המשתתף המאושרים החלים מתירים זאת.
 
-סביבת ההדגמה כוללת נתונים בדויים בלבד ואינה ניגשת למערכות הייצור. תשתית האירוח
-עשויה לעבד נתונים טכניים רגילים הדרושים לאבטחה ולאספקת האתר.
+לצורכי תפעול ובקרת איכות נאספים גם דגם השעון שהוקצה למחקר, מצב ורמת הסוללה ומועד
+הסנכרון האחרון, לצורך איתור בעיות טעינה או סנכרון ובדיקת שלמות איסוף הנתונים.
+
+המערכת מעבדת גם קוד מחקר ושעון, ספק והרשאות שנבחרו, מצב החיבור, תפוגת אסימונים,
+אסימוני OAuth מוגנים, לוגים של איסוף וביקורת, מצב מכשיר, רישומי תמיכה ונתוני אבטחת
+אתר רגילים כגון חותמות זמן, פרטי דפדפן, עוגיות הפעלה, כתובת IP ולוגים טכניים.
 
 ## 4. מטרות ושימושים אסורים
 
-המידע משמש אך ורק להפעלת מחקר שאושר אתית, חיבור חשבונות, איסוף המדדים שאושרו,
-בקרת שלמות ותקינות, תמיכה ואבטחה, והפקת תוצרי מחקר שהפרוטוקול מתיר.
+מידע מ-Google Health משמש רק למחקר 385/23 ולבדיקות האיכות הנחוצות לביצועו.
+הוא אינו משמש לאבחון, טיפול, החלטות רפואיות או מעקב חירום. הוא לא ישמש למחקר
+חדש או למטרה אחרת ללא הסכמה נפרדת, אלא אם ועדת האתיקה תאשר חריג.
 
-איננו מוכרים מידע; איננו משתמשים בו לפרסום, תיווך נתונים, החלטות אשראי, ביטוח
-או תעסוקה, שיווק שאינו קשור למחקר, או אימון מודלי AI/ML כלליים.
+המידע לא יימכר ולא ישמש לפרסום, שיווק, החלטות אשראי, תעסוקה או ביטוח, לאימון
+מודלים כלליים של בינה מלאכותית או לכל מטרה שאינה קשורה למחקר. תוצאות יפורסמו
+בצורה מסכמת בלבד, ללא שם או מידע שמזהה משתתף מסוים.
 
 ## 5. כללי השימוש המוגבל של Google
 
 השימוש והעברת המידע שהתקבל מ-Google APIs עומדים
 [במדיניות נתוני המשתמש של Google API Services](https://developers.google.com/terms/api-services-user-data-policy),
-לרבות דרישות Limited Use. השימוש במידע שהתקבל מ-Google Health API עומד גם
-[במדיניות המפתחים ונתוני המשתמש של Google Health API](https://developers.google.com/health/policies/health-api-developer-user-data-policy),
-לרבות דרישות Limited Use, וכן
-[במדיניות Google Health למחקר ולנתוני משתמש](https://developers.google.com/health/policies/health-api-user-data-and-research-policy).
-גישה אנושית מוגבלת לבעלי צורך מחקרי, אבטחתי, תמיכתי או משפטי אמיתי ובהתאם להסכמה.
+לרבות דרישות Limited Use. השימוש בנתוני Google Health עומד גם
+[במדיניות המפתחים ונתוני המשתמש של Google Health API](https://developers.google.com/health/policies/health-api-developer-user-data-policy)
+וב-[מדיניות Google Health לנתוני משתמש ולמחקר בריאות](https://developers.google.com/health/policies/health-api-user-data-and-research-policy),
+לרבות דרישות Limited Use.
 
-## 6. אחסון, ספקים ושיתוף
+## 6. אחסון, אבטחה, גישה ושיתוף
 
-השירות פועל ב-**https://app.admontracker.online** על Heroku. מטא-נתונים נשמרים
-ב-Google Sheets מוגנים; ארכיוני מדדים גולמיים נשמרים ב-Shared Drive מוגבל;
-וסודות OAuth ואסימוני גישה נשמרים ב-Google Secret Manager. קבצים זמניים ב-Heroku
-נמחקים לאחר העלאה. שירותים מאושרים של AppSheet, Qualtrics, דוא״ל, Fitbit ו-Google
-עשויים לעבד מידע ככל שנדרש למחקר.
+נתוני Google Health נשמרים תחת קוד מחקר, ללא שם או מזהה ישיר. הקישור בין הקוד
+לזהות נשמר בנפרד במערכת מוגנת של אוניברסיטת חיפה. כל עוד הקישור קיים, המידע
+מקודד ואינו אנונימי לחלוטין. רק חברי צוות מורשים באוניברסיטת חיפה רשאים לגשת
+לנתוני המחקר. הגישה לקישור לזהות מוגבלת לחוקר הראשי, לראש המעבדה ולמתכנת המורשה.
 
-הגישה ניתנת רק לצוות המחקר הרלוונטי, גורמי אוניברסיטה מורשים, מעבדים מאושרים
-ושותפים שהגישה אליהם מותרת לפי ההסכמה, אישור האתיקה, ההסכם והדין.
+שירותים מאובטחים של האוניברסיטה, Google ו-Heroku מספקים את התשתית הטכנית.
+מטא-נתונים תפעוליים נשמרים ב-Google Sheets מוגנים, ארכיוני מדדים ב-Shared Drive
+אוניברסיטאי מוגבל, וסודות ואסימוני OAuth ב-Google Secret Manager. המידע מועבר
+בחיבור מוצפן ומוגן בבקרת גישה לפי תפקיד, חשבונות שירות מוגבלים, ניהול סודות,
+תפוגה ומניעת שימוש חוזר ב-OAuth ורישומי ביקורת.
 
-## 7. אבטחה
+מידע על משתתף מסוים לא יועבר מחוץ לצוות המחקר ללא הסכמה מפורשת חדשה והאישורים
+הנדרשים. ספקי התשתית מעבדים מידע רק לצורך הפעלת השירות המאושר. מידע עשוי להימסר
+כאשר הדין מחייב או לצורך טיפול באירוע אבטחה.
 
-אנו משתמשים ב-HTTPS, בקרת גישה לפי תפקיד ופרויקט, חשבונות שירות בהרשאה מזערית,
-חברות מוגבלת ב-Shared Drive, ניהול סודות, הצפנה המסופקת על-ידי שירותי הענן,
-תפוגה ומניעת שימוש חוזר ב-OAuth state, רישומי ביקורת והפרדת נתוני הדגמה. אין
-מערכת שניתן להבטיח שהיא מאובטחת לחלוטין.
+## 7. משך האיסוף והשמירה
 
-## 8. שמירה, פרישה ומחיקה
+נתוני Google Health נאספים במשך **חודש אחד ממועד הפעלת החיבור**. האיסוף נפסק
+בתום החודש, בעת ניתוק או בעת פרישה, לפי המועד המוקדם. נתוני המדידה נשמרים במהלך
+חודש האיסוף ולמשך חודש נוסף לצורך עיבוד ובדיקת איכות. לא יאוחר מחודש לאחר סיום
+המדידה, נתוני Google Health והקישור לזהות נמחקים לצמיתות. הרשאת האפליקציה מבוטלת
+בתום האיסוף, בעת ניתוק או בעת פרישה, לפי המועד המוקדם. טופס ההסכמה ורישומים
+מנהליים שאינם כוללים את המדידות נשמרים לפי כללי האוניברסיטה והמחקר.
 
-משך השמירה והטיפול במידע שכבר נאסף או עבר ביטול זיהוי מפורטים במסמכי המשתתף
-שאושרו אתית ומוצגים במהלך ההרשאה.
+## 8. פרישה, ניתוק ומחיקה
 
-ניתן לפרוש ולהפסיק איסוף עתידי בכל עת וללא קנס באמצעות פנייה ל-**{PI_EMAIL}**
-או הוראות ניהול החיבור הנמסרות לאחר ההרשאה. ניתוק מבטל גישה ומסיר אסימונים פעילים.
-בקשות לגבי מידע שכבר נאסף מטופלות לפי ההסכמה המאושרת, דרישות האתיקה, שלמות
-מדעית והדין. ניתן גם לבטל גישה בהגדרות חשבון Google או Fitbit.
+ניתן לסרב, לנתק או לפרוש בכל עת ללא קנס או אובדן זכויות. יש לפנות ל-**{PI_EMAIL}**
+או **{PI_PHONE}** ולציין את קוד המחקר או השעון. בעת פרישה האיסוף נפסק מיד והרשאת
+האפליקציה בחשבון הדמו מבוטלת. כל הנתונים שנאספו נמחקים לצמיתות, אלא אם המשתתף/ת
+נותן/ת באותו מועד הסכמה נפרדת ומפורשת לשמור אותם. לא ניתן להסיר מפרסום קיים
+תוצאות מסכמות שכבר פורסמו.
 
 ## 9. שינויים
 
-נעדכן הודעה זו עם שינוי בשירות, בפרוטוקול, בספקים או בדרישות. שינוי מהותי
-להשתתפות יועבר לבחינת ועדת האתיקה ולהסכמה מחודשת כאשר הדבר נדרש.
+המדיניות תעודכן עם שינוי בשירות, בפרוטוקול המאושר, בספקים או בדרישות. שינויים
+מהותיים להשתתפות יטופלו בהליך האתיקה והסכמת המשתתפים המתאים.
 """
     )
 

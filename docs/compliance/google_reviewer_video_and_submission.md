@@ -37,9 +37,9 @@ contents, Secret Manager payloads, Heroku config values, or real health data.
    - sleep, read-only.
 6. Complete authorization. Show the successful connection and the private
    connection-management link without exposing its token in the video.
-7. Show the application features that use each scope: activity/calories, physiology,
-   and sleep. Explain that data is used for the approved research and completeness
-   monitoring, not diagnosis or emergency monitoring.
+7. Show the application features that use each scope: steps/physical activity,
+   heart rate/respiratory rate, and sleep. Explain that data is used for the approved
+   research and completeness monitoring, not diagnosis or emergency monitoring.
 8. Open connection management. Demonstrate disconnect/revocation and record a
    deletion request. Explain how already collected data is handled using the exact
    ethics-approved wording.

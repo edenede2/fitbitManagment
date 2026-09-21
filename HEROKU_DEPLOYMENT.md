@@ -82,7 +82,8 @@ not performed by this implementation.
 Leave `PARTICIPANT_DISCLOSURE_ENFORCED=false` until all of these exist:
 
 1. The PI/ethics-approved bilingual addendum is deployed at
-   `docs/compliance/google_health_addendum_approved.pdf`.
+   `assets/compliance/google-health-addendum-385-23-en-approved-v1.0.pdf` and
+   `assets/compliance/google-health-addendum-385-23-he-approved-v1.0.pdf`.
 2. `PARTICIPANT_DISCLOSURE_VERSION` is the approved version, not `DRAFT-*`.
 3. `RESEARCH_RETENTION_TEXT_EN`, `RESEARCH_RETENTION_TEXT_HE`,
    `RESEARCH_DELETION_TEXT_EN`, and `RESEARCH_DELETION_TEXT_HE` contain the exact

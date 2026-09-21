@@ -4,9 +4,9 @@
 
 Do not submit until every checkbox in this section is complete.
 
-- [ ] PI and ethics committee approved the bilingual Google Health addendum and
+- [x] PI and ethics committee approved the bilingual Google Health addendum and
       its method of consent.
-- [ ] Exact approved retention and deletion wording is deployed in both languages.
+- [x] Exact approved retention and deletion wording is deployed in both languages.
 - [ ] The final addendum PDF is deployed and its version/hash appears in a test
       `health_oauth_consents` record.
 - [ ] `PARTICIPANT_DISCLOSURE_ENFORCED=true` and direct provider-link bypass tests fail.
@@ -45,8 +45,7 @@ Do not submit until every checkbox in this section is complete.
 - [ ] `data_flow_and_security.md` reviewed against actual production configuration.
 - [ ] `google_scope_justification.md` was checked against participant-visible
       features, exact data types, final consent, and the reviewer video.
-- [ ] `retention_deletion_procedure_draft.md` was completed with verbatim approved
-      policy text and reviewed by the responsible institutional roles.
+- [x] `retention_deletion_procedure.md` reflects the approved final addendum.
 - [ ] Retention, withdrawal, disconnect, deletion-request, incident-response, and
       service-account/key-rotation procedures.
 - [ ] If Google classifies the storage pattern as requiring a security assessment,

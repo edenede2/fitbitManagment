@@ -145,76 +145,6 @@ DEMO_SHEETS: dict[str, list[dict[str, Any]]] = {
             "endDate": "2026-12-31",
         }
     ],
-    "qualtrics_alerts_config": [
-        {"hoursThr": "48", "project": DEMO_PROJECT, "manager": "demo-manager@example.invalid"}
-    ],
-    "appsheet_alerts_config": [
-        {"email": "demo-manager@example.invalid", "user": "DEMO-PARTICIPANT-001", "missingThr": "3"}
-    ],
-    "EMA": [
-        {
-            "num": "DEMO-NUMBER-001",
-            "currentDate": "2026-08-15",
-            "startDate": "2026-08-15 08:00:00",
-            "endDate": "2026-08-15 08:06:00",
-            "status": "Complete",
-            "finished": "TRUE",
-        },
-        {
-            "num": "DEMO-NUMBER-002",
-            "currentDate": "2026-08-15",
-            "startDate": "2026-08-15 09:00:00",
-            "endDate": "2026-08-15 09:03:00",
-            "status": "Pending",
-            "finished": "FALSE",
-        },
-    ],
-    "late_nums": [
-        {
-            "nums": "DEMO-NUMBER-002",
-            "sentTime": "2026-08-13 09:00:00",
-            "hoursLate": "48",
-            "lastUpdated": "2026-08-15 09:00:00",
-            "accepted": "FALSE",
-        }
-    ],
-    "suspicious_nums": [
-        {
-            "nums": "DEMO-NUMBER-003",
-            "filledTime": "2026-08-15 03:15:00",
-            "lastUpdated": "2026-08-15 09:00:00",
-            "accepted": "FALSE",
-        }
-    ],
-    "for_analysis": [
-        {
-            "User Id": "DEMO-PARTICIPANT-001",
-            "KEY": "DEMO-EMA-001",
-            "Date Time": "2026-08-13 08:00:00",
-            "Pain Level": 4,
-            "Fatigue Level": 5,
-            "Mood": 7,
-            "Sleep Quality": 6,
-        },
-        {
-            "User Id": "DEMO-PARTICIPANT-001",
-            "KEY": "DEMO-EMA-002",
-            "Date Time": "2026-08-14 08:00:00",
-            "Pain Level": 3,
-            "Fatigue Level": 4,
-            "Mood": 8,
-            "Sleep Quality": 7,
-        },
-        {
-            "User Id": "DEMO-PARTICIPANT-002",
-            "KEY": "DEMO-EMA-003",
-            "Date Time": "2026-08-15 08:00:00",
-            "Pain Level": 6,
-            "Fatigue Level": 7,
-            "Mood": 5,
-            "Sleep Quality": 4,
-        },
-    ],
     "chats": [
         {
             "watchName": "DEMO-WATCH-001",
@@ -245,11 +175,6 @@ _SHEET_TYPES = {
     "FitbitLog": "log",
     "log": "log",
     "fitbit_alerts_config": "fitbit_alerts_config",
-    "qualtrics_alerts_config": "qualtrics_alerts_config",
-    "EMA": "EMA",
-    "late_nums": "late_nums",
-    "suspicious_nums": "suspicious_nums",
-    "for_analysis": "for_analysis",
     "chats": "chats",
 }
 
