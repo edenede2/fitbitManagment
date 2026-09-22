@@ -292,6 +292,24 @@ class Spreadsheet:
     source_kind: str = "production"
     _gspread_connection = None
 
+    def __post_init__(self) -> None:
+        """Select Firestore only for the configured primary operational store."""
+        if self.source_kind != "production":
+            return
+        try:
+            from utils.data_backend import DataBackendConfig
+
+            config = DataBackendConfig.from_environment()
+            if config.backend != "firestore":
+                return
+            primary_key = str(get_secrets().get("spreadsheet_key") or "").strip()
+            if not primary_key or self.api_key == primary_key:
+                self.source_kind = "firestore"
+        except Exception:
+            # Cutover validation is explicit; incomplete local configuration
+            # must preserve the existing Sheets behavior.
+            return
+
     def assert_writable(self) -> None:
         if self.read_only:
             raise PermissionError("The synthetic guest data source is read-only.")
@@ -302,6 +320,11 @@ class Spreadsheet:
 
     def get_sheet(self, name: str, sheet_type: str = 'generic', refresh = False) -> Sheet:
         """Get a sheet by name, creating it if it doesn't exist"""
+        if self.source_kind == "firestore" and (refresh or name not in self.sheets):
+            sheet = SheetFactory.create_sheet(sheet_type, name)
+            sheet.data = GoogleSheetsAdapter.get_all_reords(self, name)
+            self.sheets[name] = sheet
+            return sheet
         if refresh:
             GoogleSheetsAdapter.connect(self)
         if name not in self.sheets:
@@ -341,6 +364,10 @@ class Spreadsheet:
     def get_gspread_connection(self):
         """Get the gspread connection for this spreadsheet"""
         self.assert_external_connection_allowed()
+        if self.source_kind == "firestore":
+            raise RuntimeError(
+                "Direct Google Sheets access is unavailable when DATA_BACKEND=firestore"
+            )
         if not self._gspread_connection:
             # Initialize connection
             sheets_api = SheetsAPI.get_instance()
@@ -420,6 +447,76 @@ class GoogleSheetsAdapter:
         return getattr(spreadsheet, "source_kind", "production") == "demo"
 
     @staticmethod
+    def _is_firestore(spreadsheet: Spreadsheet) -> bool:
+        return getattr(spreadsheet, "source_kind", "production") == "firestore"
+
+    @staticmethod
+    def _is_firestore_sheet(spreadsheet: Spreadsheet, sheet_name: str) -> bool:
+        """Return true only for tabs covered by the Firestore schema.
+
+        The primary workbook still contains a few legacy/secondary tabs.  They
+        must continue using Sheets during the staged cutover instead of being
+        silently treated as successful no-op Firestore writes.
+        """
+        if not GoogleSheetsAdapter._is_firestore(spreadsheet):
+            return False
+        from utils.firestore_schema import spec_for_source_sheet
+
+        return spec_for_source_sheet(sheet_name) is not None
+
+    @staticmethod
+    def _firestore_store():
+        from utils.firestore_store import GoogleFirestoreStore
+
+        return GoogleFirestoreStore.from_environment()
+
+    @staticmethod
+    def _shadow_firestore(method: str, *args, **kwargs) -> None:
+        """Mirror a Sheets write without allowing shadow failure to break it."""
+        try:
+            from utils.data_backend import DataBackendConfig
+
+            if not DataBackendConfig.from_environment().firestore_shadow_write:
+                return
+            getattr(GoogleSheetsAdapter._firestore_store(), method)(*args, **kwargs)
+        except Exception as exc:
+            print(f"Firestore shadow write failed for {method}: {type(exc).__name__}")
+
+    @staticmethod
+    def _sheets_read_fallback_allowed() -> bool:
+        from utils.data_backend import DataBackendConfig
+
+        return DataBackendConfig.from_environment().sheets_read_fallback
+
+    @staticmethod
+    def _sheets_shadow(spreadsheet: Spreadsheet, operation: str, *args, **kwargs) -> None:
+        """Best-effort mirror from a Firestore primary back to Sheets."""
+        try:
+            from utils.data_backend import DataBackendConfig
+
+            if not DataBackendConfig.from_environment().sheets_shadow_write:
+                return
+            mirror = Spreadsheet(
+                name=spreadsheet.name,
+                api_key=spreadsheet.api_key,
+                source_kind="sheets_shadow",
+            )
+            if operation == "append":
+                GoogleSheetsAdapter.append_rows(mirror, *args, **kwargs)
+            elif operation == "update":
+                GoogleSheetsAdapter.update_matching_rows(mirror, *args, **kwargs)
+            elif operation == "delete":
+                GoogleSheetsAdapter.delete_row(mirror, *args, **kwargs)
+            elif operation == "save":
+                name, rows, mode = args
+                sheet = SheetFactory.create_sheet("generic", name)
+                sheet.data = rows
+                mirror.sheets[name] = sheet
+                GoogleSheetsAdapter.save(mirror, name, mode=mode)
+        except Exception as exc:
+            print(f"Sheets shadow write failed for {operation}: {type(exc).__name__}")
+
+    @staticmethod
     def _records_from_values(values: List[List[Any]]) -> List[dict]:
         """Build records manually for sheets with duplicate or blank headers."""
         if not values:
@@ -460,6 +557,14 @@ class GoogleSheetsAdapter:
         """Get a sheet by name from the entity layer"""
         if GoogleSheetsAdapter._is_local_demo(spreadsheet):
             return spreadsheet.get_sheet(name).data
+        if GoogleSheetsAdapter._is_firestore_sheet(spreadsheet, name):
+            try:
+                records = GoogleSheetsAdapter._firestore_store().read_sheet_rows(name)
+                if records or not GoogleSheetsAdapter._sheets_read_fallback_allowed():
+                    return records
+            except Exception:
+                if not GoogleSheetsAdapter._sheets_read_fallback_allowed():
+                    raise
         sheets_api = SheetsAPI.get_instance()
         google_spreadsheet = sheets_api.open_spreadsheet(spreadsheet.api_key)
         try:
@@ -479,6 +584,18 @@ class GoogleSheetsAdapter:
                 (record for record in records if all(record.get(key) == row[key] for key in keys)),
                 None,
             )
+        if GoogleSheetsAdapter._is_firestore_sheet(spreadsheet, name):
+            try:
+                records = GoogleSheetsAdapter._firestore_store().read_sheet_rows(name)
+                match = next(
+                    (record for record in records if all(record.get(key) == row[key] for key in keys)),
+                    None,
+                )
+                if match is not None or not GoogleSheetsAdapter._sheets_read_fallback_allowed():
+                    return match
+            except Exception:
+                if not GoogleSheetsAdapter._sheets_read_fallback_allowed():
+                    raise
         sheet_api = SheetsAPI.get_instance()
         google_spreadsheet = sheet_api.open_spreadsheet(spreadsheet.api_key)
         try:
@@ -499,6 +616,18 @@ class GoogleSheetsAdapter:
                 record for record in records
                 if all(record.get(key) == row[key] for key in keys)
             ]
+        if GoogleSheetsAdapter._is_firestore_sheet(spreadsheet, sheet_name):
+            try:
+                records = GoogleSheetsAdapter._firestore_store().read_sheet_rows(sheet_name)
+                matches = [
+                    record for record in records
+                    if all(record.get(key) == row[key] for key in keys)
+                ]
+                if matches or not GoogleSheetsAdapter._sheets_read_fallback_allowed():
+                    return matches
+            except Exception:
+                if not GoogleSheetsAdapter._sheets_read_fallback_allowed():
+                    raise
         sheet_api = SheetsAPI.get_instance()
         google_spreadsheet = sheet_api.open_spreadsheet(spreadsheet.api_key)
         try:
@@ -560,6 +689,10 @@ class GoogleSheetsAdapter:
     def append_rows(spreadsheet: Spreadsheet, name: str, data: List[dict]) -> bool:
         """Append rows to a sheet"""
         GoogleSheetsAdapter._assert_writable(spreadsheet)
+        if GoogleSheetsAdapter._is_firestore_sheet(spreadsheet, name):
+            GoogleSheetsAdapter._firestore_store().upsert_sheet_rows(name, data)
+            GoogleSheetsAdapter._sheets_shadow(spreadsheet, "append", name, data)
+            return True
         sheet_api = SheetsAPI.get_instance()
         google_spreadsheet = sheet_api.open_spreadsheet(spreadsheet.api_key)
         try:
@@ -593,13 +726,104 @@ class GoogleSheetsAdapter:
                     worksheet.append_row(record)
         except Exception as e:
             raise RuntimeError(f"Error appending rows to {name}: {e}") from e
+        if getattr(spreadsheet, "source_kind", "production") == "production":
+            GoogleSheetsAdapter._shadow_firestore("upsert_sheet_rows", name, data)
         return True
+
+    @staticmethod
+    def update_matching_rows(
+        spreadsheet: Spreadsheet,
+        name: str,
+        *,
+        keys: Dict[str, Any],
+        updates: Dict[str, Any],
+        latest_only: bool = True,
+    ) -> int:
+        """Update rows selected by business keys across either backend."""
+        GoogleSheetsAdapter._assert_writable(spreadsheet)
+        if GoogleSheetsAdapter._is_firestore_sheet(spreadsheet, name):
+            updated = GoogleSheetsAdapter._firestore_store().update_sheet_rows(
+                name,
+                keys=keys,
+                updates=updates,
+                latest_only=latest_only,
+            )
+            GoogleSheetsAdapter._sheets_shadow(
+                spreadsheet,
+                "update",
+                name,
+                keys=keys,
+                updates=updates,
+                latest_only=latest_only,
+            )
+            return updated
+
+        google_spreadsheet = SheetsAPI.get_instance().open_spreadsheet(spreadsheet.api_key)
+        try:
+            worksheet = google_spreadsheet.worksheet(name)
+        except gspread.exceptions.WorksheetNotFound:
+            return 0
+        headers = [str(item or "").strip() for item in worksheet.row_values(1)]
+        missing = [field for field in updates if field not in headers]
+        if missing:
+            headers += missing
+            worksheet.resize(cols=len(headers))
+            worksheet.update("1:1", [headers])
+        records = GoogleSheetsAdapter._get_all_records_safe(worksheet)
+
+        def equal(left: Any, right: Any) -> bool:
+            if isinstance(left, bool):
+                left = "TRUE" if left else "FALSE"
+            if isinstance(right, bool):
+                right = "TRUE" if right else "FALSE"
+            return str(left or "").strip() == str(right or "").strip()
+
+        row_numbers = [
+            index
+            for index, record in enumerate(records, start=2)
+            if all(equal(record.get(key), value) for key, value in keys.items())
+        ]
+        if latest_only and row_numbers:
+            row_numbers = row_numbers[-1:]
+        changes = [
+            {
+                "range": (
+                    f"{worksheet.title}!"
+                    f"{GoogleSheetsAdapter._col_num_to_letter(headers.index(field) + 1)}"
+                    f"{row_number}"
+                ),
+                "values": [["" if value is None else value]],
+            }
+            for row_number in row_numbers
+            for field, value in updates.items()
+        ]
+        if changes:
+            google_spreadsheet.values_batch_update(
+                {"data": changes, "valueInputOption": "RAW"}
+            )
+            if getattr(spreadsheet, "source_kind", "production") == "production":
+                GoogleSheetsAdapter._shadow_firestore(
+                    "update_sheet_rows",
+                    name,
+                    keys=keys,
+                    updates=updates,
+                    latest_only=latest_only,
+                )
+        return len(row_numbers)
 
 
     @staticmethod
     def delete_row(spreadsheet: Spreadsheet, name: str, **on) -> None:
         """Delete a row in a sheet by ID. on is a dictionary of column names and values"""
         GoogleSheetsAdapter._assert_writable(spreadsheet)
+        if GoogleSheetsAdapter._is_firestore_sheet(spreadsheet, name):
+            GoogleSheetsAdapter._firestore_store().delete_sheet_rows(
+                name,
+                keys=on,
+                latest_only=True,
+            )
+            GoogleSheetsAdapter._sheets_shadow(spreadsheet, "delete", name, **on)
+            return None
         sheet_api = SheetsAPI.get_instance()
         google_spreadsheet = sheet_api.open_spreadsheet(spreadsheet.api_key)
         try:
@@ -609,6 +833,13 @@ class GoogleSheetsAdapter:
                 if all(record.get(key) == on[key] for key in on):
                     # Delete the row
                     worksheet.delete_rows(record['row'])
+                    if getattr(spreadsheet, "source_kind", "production") == "production":
+                        GoogleSheetsAdapter._shadow_firestore(
+                            "delete_sheet_rows",
+                            name,
+                            keys=on,
+                            latest_only=True,
+                        )
                     break
         except gspread.exceptions.WorksheetNotFound:
             print(f"Worksheet {name} not found in spreadsheet {spreadsheet.name}")
@@ -626,6 +857,10 @@ class GoogleSheetsAdapter:
     def connect(spreadsheet: Spreadsheet) -> Spreadsheet:
         """Connect the entity Spreadsheet with the actual Google Sheets API"""
         spreadsheet.assert_external_connection_allowed()
+        if GoogleSheetsAdapter._is_firestore(spreadsheet):
+            # Collections are loaded lazily by Spreadsheet.get_sheet so page
+            # navigation does not read every Firestore document.
+            return spreadsheet
         # Get API instance
         sheets_api = SheetsAPI.get_instance()
 
@@ -814,6 +1049,38 @@ class GoogleSheetsAdapter:
                  'rewrite' (clear and rewrite), 'update' (update existing + append new)
         """
         GoogleSheetsAdapter._assert_writable(spreadsheet)
+        if GoogleSheetsAdapter._is_firestore(spreadsheet):
+            store = GoogleSheetsAdapter._firestore_store()
+            names = [sheet_name] if sheet_name else list(spreadsheet.sheets)
+            saved = False
+            for name in names:
+                if not name or name not in spreadsheet.sheets:
+                    continue
+                rows = spreadsheet.sheets[name].data
+                if not isinstance(rows, list):
+                    rows = [rows] if rows else []
+                if not GoogleSheetsAdapter._is_firestore_sheet(spreadsheet, name):
+                    mirror = Spreadsheet(
+                        name=spreadsheet.name,
+                        api_key=spreadsheet.api_key,
+                        source_kind="sheets_fallback",
+                    )
+                    mirror.sheets[name] = spreadsheet.sheets[name]
+                    saved = bool(GoogleSheetsAdapter.save(mirror, name, mode=mode)) or saved
+                    continue
+                if mode == "rewrite":
+                    store.replace_sheet_rows(name, rows)
+                else:
+                    store.upsert_sheet_rows(name, rows)
+                GoogleSheetsAdapter._sheets_shadow(
+                    spreadsheet,
+                    "save",
+                    name,
+                    rows,
+                    mode,
+                )
+                saved = True
+            return saved
         # Get the Google Sheets connection
         google_spreadsheet = spreadsheet.get_gspread_connection()
 
@@ -1146,6 +1413,12 @@ class GoogleSheetsAdapter:
                         print(f"Retry also failed for sheet {sheet_name}: {retry_error}")
                         print(f"Retry error details: {traceback.format_exc()}")
                         return False
+                if getattr(spreadsheet, "source_kind", "production") == "production":
+                    GoogleSheetsAdapter._shadow_firestore(
+                        "replace_sheet_rows" if mode == "rewrite" else "upsert_sheet_rows",
+                        sheet_name,
+                        sheet.data,
+                    )
                 return True
             return False
         else:

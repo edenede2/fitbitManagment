@@ -34,25 +34,17 @@ def _update_fitbit_token(sp: Spreadsheet, watch_name: str, access_token: str) ->
     for partial-column updates.
     """
     try:
-        gspread_wb = sp.get_gspread_connection()
-        ws = gspread_wb.worksheet(FITBIT_SHEET)
-        headers = ws.row_values(1)  # row 1 is the header row
-        try:
-            name_col = headers.index("name") + 1   # 1-based column index
-            token_col = headers.index("token") + 1  # 1-based column index
-        except ValueError as e:
-            print(f"[fitbit_token_store] Column not found in fitbit sheet: {e}")
-            return
-        name_values = ws.col_values(name_col)  # all values in the "name" column (1-indexed rows)
-        for i, cell_val in enumerate(name_values):
-            if i == 0:
-                continue  # skip header row
-            if cell_val == watch_name:
-                ws.update_cell(i + 1, token_col, access_token)  # i+1 because row is 1-based
-                return
-        print(f"[fitbit_token_store] Watch '{watch_name}' not found in fitbit sheet — token not updated.")
+        updated = GoogleSheetsAdapter.update_matching_rows(
+            sp,
+            FITBIT_SHEET,
+            keys={"name": watch_name},
+            updates={"token": access_token},
+            latest_only=True,
+        )
+        if not updated:
+            print(f"[fitbit_token_store] Watch '{watch_name}' not found — token not updated.")
     except Exception as e:
-        print(f"[fitbit_token_store] Failed to update fitbit sheet token: {e}")
+        print(f"[fitbit_token_store] Failed to update Fitbit token metadata: {type(e).__name__}")
 
 def save_state(
     sp: Spreadsheet,

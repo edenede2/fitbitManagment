@@ -7,8 +7,6 @@ from datetime import datetime, timezone
 from typing import Any, List
 from urllib.parse import urlsplit, urlunsplit
 
-import gspread
-
 from entity.Sheet import GoogleSheetsAdapter, Spreadsheet
 from utils.secret_store import (
     load_json_secret,
@@ -160,21 +158,6 @@ def validate_google_health_client_config(
         )
 
 
-def _worksheet(spreadsheet: Spreadsheet, tab: str):
-    return spreadsheet.get_gspread_connection().worksheet(tab)
-
-
-def _find_row_by_client_key(worksheet, client_key: str) -> tuple[int | None, list[str]]:
-    headers = worksheet.row_values(1)
-    if not headers:
-        return None, []
-    records = worksheet.get_all_records()
-    for offset, record in enumerate(records, start=2):
-        if str(record.get("client_key", "")).strip() == client_key:
-            return offset, headers
-    return None, headers
-
-
 def _ordered_client_row(values: dict[str, Any]) -> dict[str, Any]:
     return {column: values.get(column, "") for column in CLIENT_COLUMNS}
 
@@ -239,34 +222,24 @@ def upsert_oauth_client_config(
     # Support both the current sheet typo and the correctly spelled variant.
     values["environment"] = enviroment
 
-    try:
-        ws = _worksheet(spreadsheet, CLIENTS_TAB)
-        row_number, headers = _find_row_by_client_key(ws, client_key)
-    except gspread.exceptions.WorksheetNotFound:
-        workbook = spreadsheet.get_gspread_connection()
-        ws = workbook.add_worksheet(title=CLIENTS_TAB, rows=1000, cols=len(CLIENT_COLUMNS))
-        ws.append_row(CLIENT_COLUMNS)
-        ws.append_row([values.get(header, "") for header in CLIENT_COLUMNS])
+    existing = GoogleSheetsAdapter.get_rows(
+        spreadsheet,
+        CLIENTS_TAB,
+        "client_key",
+        client_key=client_key,
+    )
+    if existing:
+        values["created_at"] = existing[-1].get("created_at") or values["created_at"]
+        GoogleSheetsAdapter.update_matching_rows(
+            spreadsheet,
+            CLIENTS_TAB,
+            keys={"client_key": client_key},
+            updates=values,
+            latest_only=True,
+        )
         return
-
-    if not row_number:
-        headers = headers or CLIENT_COLUMNS
-        missing_headers = [column for column in CLIENT_COLUMNS if column not in headers]
-        if missing_headers:
-            headers = headers + missing_headers
-            ws.resize(cols=len(headers))
-            ws.update("1:1", [headers])
-        ws.append_row([values.get(header, "") for header in headers])
-        return
-
-    if "created_at" in headers:
-        existing_created_at = ws.cell(row_number, headers.index("created_at") + 1).value
-        if existing_created_at:
-            values["created_at"] = existing_created_at
-
-    for key, value in values.items():
-        if key in headers:
-            ws.update_cell(row_number, headers.index(key) + 1, "" if value is None else str(value))
+    if not GoogleSheetsAdapter.append_rows(spreadsheet, CLIENTS_TAB, [values]):
+        raise RuntimeError("Could not persist the OAuth client configuration")
 
 
 def get_oauth_client_config(spreadsheet: Spreadsheet, client_key: str) -> OAuthClientConfig:

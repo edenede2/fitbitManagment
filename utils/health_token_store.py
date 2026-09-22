@@ -6,8 +6,6 @@ from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-import gspread
-
 from entity.Sheet import GoogleSheetsAdapter, Spreadsheet
 from utils.compliance import (
     disclosure_document_hash,
@@ -91,40 +89,6 @@ def _ordered_row(columns: list[str], values: dict[str, Any]) -> OrderedDict:
     return OrderedDict((column, values.get(column, "")) for column in columns)
 
 
-def _worksheet(spreadsheet: Spreadsheet, tab: str):
-    return spreadsheet.get_gspread_connection().worksheet(tab)
-
-
-def _find_row_number(
-    worksheet,
-    *,
-    keys: dict[str, Any],
-    require_latest: bool = True,
-) -> tuple[int | None, list[str]]:
-    headers = worksheet.row_values(1)
-    if not headers:
-        return None, []
-
-    records = worksheet.get_all_records()
-    matched_rows: list[int] = []
-    for offset, record in enumerate(records, start=2):
-        if all(_values_equal(record.get(key, ""), value) for key, value in keys.items()):
-            matched_rows.append(offset)
-
-    if not matched_rows:
-        return None, headers
-    return (matched_rows[-1] if require_latest else matched_rows[0]), headers
-
-
-def _values_equal(left: Any, right: Any) -> bool:
-    def normalize(value: Any) -> str:
-        if isinstance(value, bool):
-            return "TRUE" if value else "FALSE"
-        return str(value or "").strip()
-
-    return normalize(left) == normalize(right)
-
-
 def _update_row_by_keys(
     spreadsheet: Spreadsheet,
     tab: str,
@@ -132,43 +96,21 @@ def _update_row_by_keys(
     keys: dict[str, Any],
     updates: dict[str, Any],
 ) -> bool:
-    try:
-        ws = _worksheet(spreadsheet, tab)
-    except gspread.exceptions.WorksheetNotFound:
-        return False
-
-    row_number, headers = _find_row_number(ws, keys=keys)
-    if not row_number:
-        return False
-
-    for key, value in updates.items():
-        if key not in headers:
-            continue
-        ws.update_cell(row_number, headers.index(key) + 1, "" if value is None else str(value))
-    return True
+    return bool(
+        GoogleSheetsAdapter.update_matching_rows(
+            spreadsheet,
+            tab,
+            keys=keys,
+            updates=updates,
+            latest_only=True,
+        )
+    )
 
 
 def _append(spreadsheet: Spreadsheet, tab: str, columns: list[str], values: dict[str, Any]) -> None:
     row = _ordered_row(columns, values)
-    workbook = spreadsheet.get_gspread_connection()
-    try:
-        ws = workbook.worksheet(tab)
-    except gspread.exceptions.WorksheetNotFound:
-        ws = workbook.add_worksheet(title=tab, rows=1000, cols=max(len(columns), 1))
-        ws.append_row(columns)
-
-    headers = ws.row_values(1)
-    if not headers:
-        headers = columns
-        ws.append_row(headers)
-
-    missing_headers = [column for column in columns if column not in headers]
-    if missing_headers:
-        headers = headers + missing_headers
-        ws.resize(cols=len(headers))
-        ws.update("1:1", [headers])
-
-    ws.append_row([row.get(header, "") for header in headers])
+    if not GoogleSheetsAdapter.append_rows(spreadsheet, tab, [row]):
+        raise RuntimeError(f"Could not persist operational data in {tab}")
 
 
 def save_oauth_state(

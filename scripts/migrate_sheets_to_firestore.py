@@ -123,7 +123,11 @@ def main(argv: list[str] | None = None) -> int:
     spreadsheet_key = str(secrets.get("spreadsheet_key") or "").strip()
     if not spreadsheet_key:
         raise SystemExit("Missing spreadsheet_key")
-    spreadsheet = Spreadsheet(name="Fitbit Database", api_key=spreadsheet_key)
+    spreadsheet = Spreadsheet(
+        name="Fitbit Database",
+        api_key=spreadsheet_key,
+        source_kind="sheets_migration",
+    )
     workbook = spreadsheet.get_gspread_connection()
     only = {item.strip() for item in args.only.split(",") if item.strip()} or None
     specs = specs_for_profile(args.profile, only=only)

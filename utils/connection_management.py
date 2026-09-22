@@ -81,49 +81,43 @@ def resolve_management_token(spreadsheet: Spreadsheet, token: str) -> dict[str, 
 
 
 def _deactivate_fitbit_token(spreadsheet: Spreadsheet, watch_name: str) -> None:
-    ws = spreadsheet.get_gspread_connection().worksheet("fitbit_oauth_tokens")
-    headers = [str(item or "").strip() for item in ws.row_values(1)]
-    for required in ("status", "revoked_at"):
-        if required not in headers:
-            headers.append(required)
-    ws.resize(cols=len(headers))
-    ws.update("1:1", [headers])
-    matches = [
-        (index, row)
-        for index, row in enumerate(ws.get_all_records(), start=2)
-        if str(row.get("watchName") or "") == watch_name
-    ]
-    if matches:
-        row_number, _ = matches[-1]
-        for field, value in {
+    GoogleSheetsAdapter.update_matching_rows(
+        spreadsheet,
+        "fitbit_oauth_tokens",
+        keys={"watchName": watch_name},
+        updates={
             "status": "disconnected",
             "revoked_at": utc_now_iso(),
             "access_token": "",
             "refresh_token": "",
-        }.items():
-            ws.update_cell(row_number, headers.index(field) + 1, value)
+        },
+        latest_only=True,
+    )
 
 
 def _clear_legacy_fitbit_tokens(spreadsheet: Spreadsheet, watch_name: str) -> list[str]:
     """Remove every legacy plaintext/ref token for a disconnected watch."""
     warnings: list[str] = []
-    ws = spreadsheet.get_gspread_connection().worksheet("fitbit")
-    headers = [str(item or "").strip() for item in ws.row_values(1)]
-    if "name" not in headers:
-        return warnings
-    records = ws.get_all_records()
-    for row_number, row in enumerate(records, start=2):
-        if str(row.get("name") or "") != watch_name:
-            continue
-        for field in ("token", "token_secret_ref"):
-            if field in headers:
-                ws.update_cell(row_number, headers.index(field) + 1, "")
+    records = GoogleSheetsAdapter.get_rows(
+        spreadsheet,
+        "fitbit",
+        "name",
+        name=watch_name,
+    )
+    for row in records:
         secret_ref = str(row.get("token_secret_ref") or "")
         if secret_ref:
             try:
                 destroy_secret_versions(secret_ref)
             except Exception:
                 warnings.append("A legacy Secret Manager version could not be destroyed")
+    GoogleSheetsAdapter.update_matching_rows(
+        spreadsheet,
+        "fitbit",
+        keys={"name": watch_name},
+        updates={"token": "", "token_secret_ref": ""},
+        latest_only=False,
+    )
     return warnings
 
 

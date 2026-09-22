@@ -119,10 +119,47 @@ the latest operational record. The existing Sheet remains the read-only history
 during rollout. Do not run `--profile all` until the write count and retention
 decision for historical API/webhook logs have been reviewed.
 
-Do not set `DATA_BACKEND=firestore` merely because the import verifies. First
-deploy live repository routing and shadow-write integration, compare every
-operational path, and complete the documented smoke tests. No current release
-automatically cuts production reads over to Firestore.
+The migration is intentionally not a copy of every worksheet. Staff roles and
+project access remain authoritative in `st.secrets`; the redundant `project`
+worksheet and unused `student_fitbit` worksheet are excluded. Device records keep
+their own `project` value, so a device remains valid even when no matching row
+exists in the project worksheet. The `user` collection contains only the
+participant-assignment fields used by device management and alert delivery
+(`name`, `email`, and `project`), not staff authorization fields. Qualtrics,
+AppSheet, Bulldog, and other unrelated tabs are outside the Firestore cutover.
+
+After deploying the live repository routing, prove that the application can read
+Firestore directly without silently falling back to Sheets:
+
+```bash
+heroku run --app admontracker \
+  'python3 scripts/render_streamlit_secrets.py && python3 scripts/smoke_firestore_backend.py --watch YN4'
+```
+
+Keep Sheets authoritative while observing mirrored writes:
+
+```text
+DATA_BACKEND=sheets
+FIRESTORE_SHADOW_WRITE=true
+SHEETS_READ_FALLBACK=true
+SHEETS_SHADOW_WRITE=false
+```
+
+Re-run the migration verification after the shadow period and smoke-test staff
+login, the dashboard, device refresh, both OAuth callbacks, token refresh,
+disconnect, and deletion requests. Only then make Firestore authoritative:
+
+```text
+DATA_BACKEND=firestore
+FIRESTORE_SHADOW_WRITE=false
+SHEETS_READ_FALLBACK=true
+SHEETS_SHADOW_WRITE=true
+```
+
+The Sheets fallback and reverse shadow write provide the rollback window. Disable
+them only after production observation confirms all operational paths. Legacy tabs
+without a Firestore schema continue using Sheets and are never treated as
+successful Firestore no-op writes.
 
 ## 4. Participant disclosure gate
 

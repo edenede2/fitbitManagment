@@ -502,7 +502,11 @@ def main() -> int:
     key = _text(secrets.get("spreadsheet_key"))
     if not key:
         raise SystemExit("Missing spreadsheet_key")
-    workbook = Spreadsheet(name="Fitbit Database", api_key=key).get_gspread_connection()
+    workbook = Spreadsheet(
+        name="Fitbit Database",
+        api_key=key,
+        source_kind="sheets_migration",
+    ).get_gspread_connection()
     active_fitbit_watches = _active_fitbit_registry_names(workbook)
 
     results = {

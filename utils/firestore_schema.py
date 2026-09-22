@@ -58,14 +58,35 @@ class SheetMigrationSpec:
     identity_fields: tuple[str, ...]
     include: Callable[[dict[str, Any]], bool] = field(default=_all, compare=False, repr=False)
     sensitive_fields: frozenset[str] = GLOBAL_SECRET_FIELDS
+    allowed_fields: frozenset[str] | None = None
     profile: str = "core"
 
 
 MIGRATION_SPECS: tuple[SheetMigrationSpec, ...] = (
-    SheetMigrationSpec("user", "users", ("email",)),
-    SheetMigrationSpec("project", "projects", ("id", "name")),
-    SheetMigrationSpec("fitbit", "devices", ("project", "name")),
-    SheetMigrationSpec("student_fitbit", "student_device_assignments", ("email", "watch")),
+    # Staff role/project authorization is authoritative in st.secrets.  The
+    # user tab is retained only for participant/device assignment and alerts.
+    SheetMigrationSpec(
+        "user",
+        "users",
+        ("email",),
+        allowed_fields=frozenset({"name", "email", "project"}),
+    ),
+    # Device.project is authoritative for grouping devices.  It intentionally
+    # does not depend on a separate project-tab record.
+    SheetMigrationSpec(
+        "fitbit",
+        "devices",
+        ("project", "name"),
+        allowed_fields=frozenset(
+            {
+                "project", "name", "token_secret_ref", "oauth_type", "provider",
+                "oauth_client_key", "auth_status", "health_user_id",
+                "legacy_fitbit_user_id", "last_successful_fetch_at",
+                "last_data_timestamp", "last_auth_error", "reauth_link",
+                "reauth_link_created_at", "user", "isActive", "currentStudent",
+            }
+        ),
+    ),
     SheetMigrationSpec("fitbit_alerts_config", "alert_configurations", ("project", "manager", "watch")),
     SheetMigrationSpec(
         "health_oauth_clients",
@@ -178,6 +199,11 @@ def sanitize_record(
     sanitized: dict[str, Any] = {}
     redacted = 0
     sensitive = {field.casefold() for field in spec.sensitive_fields}
+    allowed = (
+        {field.casefold() for field in spec.allowed_fields}
+        if spec.allowed_fields is not None
+        else None
+    )
     for raw_key, value in row.items():
         key = str(raw_key or "").strip()
         if not key:
@@ -185,6 +211,8 @@ def sanitize_record(
         if key.casefold() in sensitive:
             if _text(value):
                 redacted += 1
+            continue
+        if allowed is not None and key.casefold() not in allowed:
             continue
         sanitized[key] = value
     return sanitized, redacted
@@ -266,3 +294,10 @@ def specs_for_profile(profile: str, only: set[str] | None = None) -> list[SheetM
             raise ValueError("Unknown source sheets: " + ", ".join(unknown))
         specs = [spec for spec in specs if spec.source_sheet in only]
     return specs
+
+
+def spec_for_source_sheet(source_sheet: str) -> SheetMigrationSpec | None:
+    return next(
+        (spec for spec in MIGRATION_SPECS if spec.source_sheet == source_sheet),
+        None,
+    )

@@ -127,37 +127,16 @@ def _upsert_fitbit_watch_row(
         GoogleSheetsAdapter.append_rows(spreadsheet, "fitbit", [row])
         return "added"
 
-    workbook = spreadsheet.get_gspread_connection()
-    ws = workbook.worksheet("fitbit")
-    headers = [str(header or "").strip() for header in ws.row_values(1)]
-    missing_headers = [key for key in row.keys() if key not in headers]
-    if missing_headers:
-        headers = headers + missing_headers
-        ws.resize(cols=len(headers))
-        ws.update("1:1", [headers])
-
-    name_col = headers.index("name") + 1
-    row_number = None
-    for idx, value in enumerate(ws.col_values(name_col), start=1):
-        if idx == 1:
-            continue
-        if str(value).strip() == watch_name:
-            row_number = idx
-            break
-
-    if row_number is None:
+    updated = GoogleSheetsAdapter.update_matching_rows(
+        spreadsheet,
+        "fitbit",
+        keys={"name": watch_name},
+        updates=row,
+        latest_only=True,
+    )
+    if not updated:
         GoogleSheetsAdapter.append_rows(spreadsheet, "fitbit", [row])
         return "added"
-
-    updates = []
-    for col_idx, header in enumerate(headers, start=1):
-        if header in row:
-            updates.append({
-                "range": f"fitbit!{GoogleSheetsAdapter._col_num_to_letter(col_idx)}{row_number}",
-                "values": [[row.get(header, "")]],
-            })
-    if updates:
-        workbook.values_batch_update({"data": updates, "valueInputOption": "RAW"})
     return "overwritten"
 
 

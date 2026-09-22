@@ -26,14 +26,21 @@ class HealthClientFactory:
             provider = "google_health"
             oauth_client_key = row.get("oauth_client_key") or "google_health_staging"
             cfg = get_oauth_client_config(spreadsheet, oauth_client_key)
+            cached_access_token: str | None = None
 
             def access_token_provider() -> str:
-                return get_valid_access_token(
-                    spreadsheet,
-                    watchName=watch_name,
-                    provider=provider,
-                    oauth_client_config=cfg,
-                )
+                # A dashboard refresh performs several Google Health requests.
+                # Resolve/refresh the participant token once for this client
+                # instead of rereading operational storage for every endpoint.
+                nonlocal cached_access_token
+                if cached_access_token is None:
+                    cached_access_token = get_valid_access_token(
+                        spreadsheet,
+                        watchName=watch_name,
+                        provider=provider,
+                        oauth_client_config=cfg,
+                    )
+                return cached_access_token
 
             return GoogleHealthClient(access_token_provider=access_token_provider)
 
