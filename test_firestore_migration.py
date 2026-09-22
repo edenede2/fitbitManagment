@@ -77,6 +77,31 @@ class FirestoreMigrationTests(unittest.TestCase):
         self.assertNotIn("participant", document_id)
         self.assertNotIn("@", document_id)
 
+    def test_reauth_queue_compacts_repeated_alerts_per_watch(self):
+        plan = build_migration_plan(
+            spec_for("health_reauth_queue"),
+            [
+                {
+                    "queue_id": "first",
+                    "watchName": "YN4",
+                    "provider": "google_health",
+                    "detected_at": "old",
+                    "status": "open",
+                },
+                {
+                    "queue_id": "second",
+                    "watchName": "YN4",
+                    "provider": "google_health",
+                    "detected_at": "new",
+                    "status": "open",
+                },
+            ],
+            migrated_at="2026-09-22T00:00:00+00:00",
+        )
+        self.assertEqual(len(plan.documents), 1)
+        self.assertEqual(plan.compacted_rows, 1)
+        self.assertEqual(next(iter(plan.documents.values()))["queue_id"], "second")
+
     def test_hash_ignores_migration_timestamp(self):
         spec = spec_for("project")
         first = build_migration_plan(

@@ -92,7 +92,11 @@ MIGRATION_SPECS: tuple[SheetMigrationSpec, ...] = (
     SheetMigrationSpec("oauth_states", "fitbit_oauth_states", ("state",)),
     SheetMigrationSpec("oauth_state_used", "fitbit_oauth_state_usage", ("state", "used_at")),
     SheetMigrationSpec("health_oauth_consents", "oauth_consents", ("consent_id",)),
-    SheetMigrationSpec("health_reauth_queue", "reauth_queue", ("queue_id",)),
+    SheetMigrationSpec(
+        "health_reauth_queue",
+        "reauth_queue",
+        ("watchName", "provider"),
+    ),
     SheetMigrationSpec(
         "health_connection_management",
         "connection_management",
