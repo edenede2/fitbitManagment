@@ -47,6 +47,14 @@ def test_public_homepage_is_crawler_readable_and_explains_purpose():
     ):
         assert scope_description in homepage
     assert "battery level and status" in homepage
+    for scope in (
+        "googlehealth.activity_and_fitness.readonly",
+        "googlehealth.health_metrics_and_measurements.readonly",
+        "googlehealth.sleep.readonly",
+        "googlehealth.settings.readonly",
+    ):
+        assert scope in homepage
+    assert "Google Health write" not in homepage
 
 
 def test_static_privacy_policy_contains_google_required_topics():
@@ -66,6 +74,8 @@ def test_static_privacy_policy_contains_google_required_topics():
         assert phrase in privacy
     assert "battery level and status" in privacy
     assert "heart rate, steps, sleep data, physical activity, and respiratory rate" in privacy
+    assert "Google Cloud Firestore" in privacy
+    assert "Google Sheets recovery" in privacy
 
 
 def test_public_site_internal_links_have_targets():

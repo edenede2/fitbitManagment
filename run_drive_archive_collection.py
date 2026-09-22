@@ -34,7 +34,7 @@ from services.health_client_factory import HealthClientFactory
 
 
 LOCAL_TZ = ZoneInfo(os.getenv("SCHEDULER_TIMEZONE", "Asia/Jerusalem"))
-CADENCE = {
+FITBIT_ARCHIVE_CADENCE = {
     "heart_rate": "daily",
     "hrv": "daily",
     "calories": "daily",
@@ -43,13 +43,22 @@ CADENCE = {
     "temperature": "monthly",
     "breathing_rate": "monthly",
 }
+GOOGLE_HEALTH_ARCHIVE_CADENCE = {
+    # Keep the production Google Health archive aligned with the data categories
+    # named in the final ethics-approved addendum for Study 385/23.
+    "heart_rate": "daily",
+    "steps": "monthly",
+    "sleep": "monthly",
+    "breathing_rate": "monthly",
+}
+ARCHIVE_CADENCE_BY_PROVIDER = {
+    "fitbit": FITBIT_ARCHIVE_CADENCE,
+    "google_health": GOOGLE_HEALTH_ARCHIVE_CADENCE,
+}
 GOOGLE_DATA_TYPES = {
     "heart_rate": ("heart-rate", "rollup"),
-    "hrv": ("daily-heart-rate-variability", "daily"),
-    "calories": ("calories", "interval"),
     "steps": ("steps", "rollup"),
     "sleep": ("sleep", "sleep"),
-    "temperature": ("daily-sleep-temperature-derivations", "daily"),
     "breathing_rate": ("daily-respiratory-rate", "daily"),
 }
 SUPPORTED_ARCHIVE_PROVIDERS = {"fitbit", "google_health"}
@@ -271,7 +280,7 @@ def collect_drive_archives(*, now: datetime | None = None, shadow: bool | None =
         if provider not in enabled_providers:
             counts["provider_skipped"] += 1
             continue
-        for data_type, cadence in CADENCE.items():
+        for data_type, cadence in ARCHIVE_CADENCE_BY_PROVIDER[provider].items():
             for window in period_windows(now, cadence, cutover):
                 logical_key = archive_logical_key(project, watch_name, provider, data_type, window.period)
                 base_record = {

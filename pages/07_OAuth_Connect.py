@@ -96,6 +96,17 @@ def _select_google_client_key(label: str, *, key: str) -> str:
     return str(selected.get("client_key") or "")
 
 
+def _render_private_authorization_link(url: str) -> None:
+    """Keep one-time state out of normal screen recordings while retaining copy access."""
+    st.link_button("Open authorization", url)
+    with st.expander("Copy private authorization link", expanded=False):
+        st.caption(
+            "This single-use link contains a private authorization state. Share it only "
+            "with the intended participant through the approved study channel."
+        )
+        st.code(url)
+
+
 def _upsert_fitbit_watch_row(
     spreadsheet,
     row: OrderedDict,
@@ -266,6 +277,19 @@ provider = st.selectbox(
 oauth_client_key = ""
 purpose = "connect"
 if provider == "google_health":
+    st.markdown("#### Google Health permissions used by this connection")
+    st.markdown(
+        """
+| Read-only scope | Approved use |
+| --- | --- |
+| `activity_and_fitness.readonly` | Steps and physical activity |
+| `health_metrics_and_measurements.readonly` | Heart rate and respiratory rate |
+| `sleep.readonly` | Sleep sessions, timing, duration, and stages when available |
+| `settings.readonly` | Assigned watch model, battery level/status, and last synchronization time |
+
+The production participant client requests these four read-only permissions only.
+"""
+    )
     oauth_client_key = _select_google_client_key(
         "Google Cloud project / OAuth client",
         key="new_google_oauth_client_key",
@@ -375,8 +399,7 @@ if st.button("Add watch & generate link"):
             f"Watch **{watch_name}** registered! Open the link below in an "
             "**incognito** window while logged into the participant account."
         )
-    st.code(url)
-    st.link_button("Open authorization", url)
+    _render_private_authorization_link(url)
 
 st.subheader("Generate a new link for an existing watch")
 existing_watch = st.text_input("Existing watch name", key="existing_watch_name")
@@ -465,5 +488,4 @@ if st.button("Generate link for existing watch"):
         st.stop()
 
     st.success(f"Authorization link generated for **{existing_watch.strip()}**.")
-    st.code(url)
-    st.link_button("Open authorization", url)
+    _render_private_authorization_link(url)

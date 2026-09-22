@@ -81,6 +81,19 @@ def main():
             - Device and data-completeness monitoring
             - Research alerts and approved study integrations
             """)
+            st.markdown("### Google Health read-only permissions")
+            st.markdown(
+                """
+| Scope | Approved data and visible feature |
+| --- | --- |
+| `googlehealth.activity_and_fitness.readonly` | Steps and physical activity in the Dashboard steps view |
+| `googlehealth.health_metrics_and_measurements.readonly` | Heart rate and respiratory rate; heart rate is shown in the Dashboard |
+| `googlehealth.sleep.readonly` | Sleep sessions, timing, duration, and stages when available in the Dashboard sleep view |
+| `googlehealth.settings.readonly` | Assigned watch model, battery level/status, and last synchronization time in Device Details |
+
+No Google Health write or mindfulness permission is requested.
+"""
+            )
         with hebrew:
             st.write(
                 "השירות תומך במחקר שאושר על-ידי ועדת האתיקה של אוניברסיטת חיפה. "
@@ -90,6 +103,19 @@ def main():
             st.info(
                 "אנשי צוות יכולים להתחבר מהסרגל. משתתפים צריכים להשתמש רק בקישור "
                 "ההרשאה הפרטי שנמסר להם מצוות המחקר."
+            )
+            st.markdown("### הרשאות Google Health לקריאה בלבד")
+            st.markdown(
+                """
+| הרשאה | מידע מאושר ותכונה במערכת |
+| --- | --- |
+| `googlehealth.activity_and_fitness.readonly` | צעדים ופעילות גופנית בתצוגת הצעדים בלוח הבקרה |
+| `googlehealth.health_metrics_and_measurements.readonly` | דופק וקצב נשימה; הדופק מוצג בלוח הבקרה |
+| `googlehealth.sleep.readonly` | מקטעי שינה, זמנים, משך ושלבים כאשר הם זמינים בתצוגת השינה |
+| `googlehealth.settings.readonly` | דגם השעון שהוקצה, רמת ומצב הסוללה ומועד הסנכרון האחרון בפרטי המכשיר |
+
+לא מתבקשת הרשאת כתיבה או הרשאה לנתוני mindfulness ב-Google Health.
+"""
             )
         st.markdown("---")
         st.markdown("### Need Help?")

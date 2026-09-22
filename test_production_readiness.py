@@ -7,7 +7,13 @@ from zoneinfo import ZoneInfo
 
 from firbitfilesOrgenizer import _resolve_watch_access_token
 from entity.Watch import Watch
-from run_drive_archive_collection import _zip_tree, enabled_archive_providers, period_windows
+from run_drive_archive_collection import (
+    GOOGLE_HEALTH_ARCHIVE_CADENCE,
+    GOOGLE_DATA_TYPES,
+    _zip_tree,
+    enabled_archive_providers,
+    period_windows,
+)
 from services.drive_archive import safe_drive_segment
 from services.google_health_client import GoogleHealthClient
 from utils.compliance import (
@@ -86,6 +92,13 @@ class ComplianceGateTests(unittest.TestCase):
         for disallowed in ("calories", "heart-rate variability", "skin temperature"):
             self.assertNotIn(disallowed, english)
         self.assertIn("מצב ורמת הסוללה", hebrew)
+
+    def test_google_health_archive_matches_approved_data_categories(self):
+        expected = {"heart_rate", "steps", "sleep", "breathing_rate"}
+        self.assertEqual(set(GOOGLE_HEALTH_ARCHIVE_CADENCE), expected)
+        self.assertEqual(set(GOOGLE_DATA_TYPES), expected)
+        for disallowed in ("calories", "hrv", "temperature"):
+            self.assertNotIn(disallowed, GOOGLE_HEALTH_ARCHIVE_CADENCE)
 
     def test_public_participant_url_uses_production_domain(self):
         with patch.dict("os.environ", APPROVED_ENV, clear=True):

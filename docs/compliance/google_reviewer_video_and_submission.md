@@ -6,6 +6,33 @@ Use a dedicated study test account and a test watch containing only non-research
 data. The recording must show the complete authorization flow, the complete Google
 consent screen in English, and working functionality for every requested scope.
 
+## Rehearsal setup — complete before recording
+
+1. In **Google Auth Platform → Audience**, confirm the app is External. If the app
+   is still in Testing, add the dedicated reviewer/demo Google account under **Test
+   users**. A non-test account will be blocked before verification.
+2. In **Google Auth Platform → Clients**, open the participant web client used by
+   AdmonTracker. Confirm its authorized redirect URI is exactly
+   `https://app.admontracker.online/?google_health_callback=1`. Do not use the staff
+   login client for participant health access.
+3. In **Data Access**, confirm the client requests the four scopes listed below and
+   no write or mindfulness scope. Keep the submitted list identical to the public
+   site, approved addendum, and recorded consent screen.
+4. On the assigned test watch, create recent test-only steps, heart-rate, sleep, and
+   paired-device data. Synchronize the watch immediately before recording and verify
+   that Google returns model, battery, and last-sync values.
+5. Rehearse once with a disposable pseudonymous code. For the final take, use a new
+   code such as `REVIEW_DEMO_02`; a consumed OAuth state cannot be reused.
+6. Run the focused release checks from the repository root:
+
+   ```bash
+   python3 -m pytest -q test_public_verification_site.py test_production_readiness.py
+   ```
+
+7. Open the public URLs in a signed-out private window and check every PDF download.
+   Open the production app in a separate staff browser profile so the staff and
+   participant accounts cannot be confused.
+
 ## Recording gates
 
 Do not record the final video until all of these checks pass:
@@ -22,6 +49,9 @@ Do not record the final video until all of these checks pass:
   - `googlehealth.sleep.readonly`
   - `googlehealth.settings.readonly`
 - `PARTICIPANT_DISCLOSURE_ENFORCED=true` and plaintext secret fallback is disabled.
+- Firestore is the primary operational store, the protected Sheets copy is only the
+  configured recovery mirror, OAuth tokens are in Secret Manager, and wearable ZIP
+  archives are in the restricted Shared Drive.
 - The test watch has recent steps, heart-rate, sleep, and paired-device data. Confirm
   that **Device Details** displays model, battery, and last synchronization time.
 - Have a second private participant link ready in case the first OAuth state expires
@@ -66,7 +96,8 @@ page URL visible.
 ### 0:25–1:15 — Show the public purpose and four scopes
 
 **Show and do:** Scroll through **Purpose and functionality** and **Why AdmonTracker
-requests Google access**. Pause on the paragraph naming all four read-only scopes.
+requests Google access**. Pause on the table that maps each exact read-only scope to
+the data used and the feature you will demonstrate later.
 
 **Say:**
 
@@ -95,18 +126,23 @@ one PDF preview or download control so the reviewer can see that it works.
 > credit decisions, or used to train unrelated general-purpose models. The Terms of
 > Use explain that participation is voluntary and research-only. The Research Ethics
 > page provides the Study 385/23 approval and the approved participant documents in
-> English and Hebrew.
+> English and Hebrew. Operational metadata is stored in Google Cloud Firestore,
+> OAuth tokens are stored in Google Secret Manager, and research archives are stored
+> in a restricted University Shared Drive.
 
 ### 2:40–3:20 — Sign in as authorized staff
 
-**Show and do:** Open `https://app.admontracker.online/`. Sign in using the authorized
-test staff account. Pause recording while typing credentials or completing a
-one-time code if necessary, then resume on the authenticated welcome page. Show the
-curated staff navigation.
+**Show and do:** Open `https://app.admontracker.online/`. Before signing in, briefly
+show the public purpose text, bilingual tabs, exact four-scope mapping, and public
+legal links. Then sign in using the authorized test staff account. Pause recording
+while typing credentials or completing a one-time code if necessary, then resume on
+the authenticated welcome page. Show the curated staff navigation.
 
 **Say:**
 
 > I am now entering the production application as an authorized test staff member.
+> Its signed-out page explains the research purpose and Google Health permissions
+> without requiring a login.
 > Staff authentication uses a separate OAuth client with only OpenID, profile, and
 > email. Participant health permissions are not requested by the staff-login client.
 > The staff navigation exposes only the operational research pages.
@@ -116,14 +152,15 @@ curated staff navigation.
 **Show and do:** Open **Connect wearable**. In **Add a new watch & generate
 authorization link**, enter `REVIEW_DEMO_01`, choose the test project, select
 **Google Health**, select the active production Google Cloud/OAuth client, select
-purpose **test**, and leave **Active** selected. Check both staff attestations:
+purpose **test**, and leave **Active** selected. Pause on the four-permission mapping
+shown below the provider selection. Check both staff attestations:
 
 1. the participant completed the current ethics-approved study consent and Google
    Health addendum; and
 2. the participant is at least 18 years old.
 
-Click **Add watch & generate link**. When the private URL appears, ensure the video
-is cropped or blurred over the URL itself. Click **Open authorization**.
+Click **Add watch & generate link**. Keep **Copy private authorization link**
+collapsed so the one-time state is never shown, and click **Open authorization**.
 
 **Say:**
 
@@ -204,8 +241,8 @@ click the management button yet; leave this tab open for the final segment.
 **Show and do:** Return to the authenticated staff tab. Open **Dashboard**, select
 `REVIEW_DEMO_01`, and point out **Provider: Google Health**.
 
-1. In **Signal Data**, select **Steps**, choose a short date range containing test
-   data, and click **Load Data**. Pause on the steps result.
+1. In **Signal Data**, choose a short date range containing test data, select
+   **Steps**, and click **Load Data**. Pause on the steps result.
 2. Select **Heart Rate** and click **Load Data**. Pause on the heart-rate result.
 3. Select **Sleep** and click **Load Data**. Pause on sleep timing/duration.
 4. Open **Device Details** and click **Refresh Device Data**. Pause on device model,

@@ -18,7 +18,7 @@ language = st.radio("Language / שפה", ["English", "עברית"], horizontal=T
 
 if language == "English":
     st.title("Privacy Policy")
-    st.caption("AdmonTracker • Last updated 21 September 2026")
+    st.caption("AdmonTracker • Last updated 22 September 2026")
     st.markdown(
         f"""
 ## 1. Operator, study, and contact
@@ -94,11 +94,13 @@ Access to the identity link is limited to the Principal Investigator, laboratory
 head, and authorized programmer.
 
 Secure University, Google, and Heroku services provide the technical infrastructure.
-Operational metadata is held in access-controlled Google Sheets, wearable archives
-in a restricted University Google Workspace Shared Drive, and OAuth secrets and
-tokens in Google Secret Manager. Data is transferred over encrypted connections and
-protected by role-based access controls, restricted service accounts, secret
-management, OAuth expiry and replay controls, and audit records.
+Operational metadata is held in Google Cloud Firestore with an access-controlled
+Google Sheets recovery copy. Wearable archives are held in a restricted University
+Google Workspace Shared Drive, and
+OAuth secrets and tokens are held in Google Secret Manager. Data is transferred over
+encrypted connections and protected by role-based access controls, restricted
+service accounts, secret management, OAuth expiry and replay controls, and audit
+records.
 
 Information about an individual participant is not shared outside the research team
 without new explicit consent and any required approvals. Technical providers process
@@ -135,7 +137,7 @@ ethics-review and participant-consent process.
     )
 else:
     st.title("מדיניות פרטיות")
-    st.caption("AdmonTracker • עודכן לאחרונה: 21 בספטמבר 2026")
+    st.caption("AdmonTracker • עודכן לאחרונה: 22 בספטמבר 2026")
     st.markdown(
         f"""
 ## 1. מפעיל השירות, המחקר ויצירת קשר
@@ -198,10 +200,11 @@ AdmonTracker מופעלת עבור מחקר 385/23 של אוניברסיטת ח�
 לנתוני המחקר. הגישה לקישור לזהות מוגבלת לחוקר הראשי, לראש המעבדה ולמתכנת המורשה.
 
 שירותים מאובטחים של האוניברסיטה, Google ו-Heroku מספקים את התשתית הטכנית.
-מטא-נתונים תפעוליים נשמרים ב-Google Sheets מוגנים, ארכיוני מדדים ב-Shared Drive
-אוניברסיטאי מוגבל, וסודות ואסימוני OAuth ב-Google Secret Manager. המידע מועבר
-בחיבור מוצפן ומוגן בבקרת גישה לפי תפקיד, חשבונות שירות מוגבלים, ניהול סודות,
-תפוגה ומניעת שימוש חוזר ב-OAuth ורישומי ביקורת.
+מטא-נתונים תפעוליים נשמרים ב-Google Cloud Firestore עם עותק התאוששות מוגן
+ב-Google Sheets. ארכיוני מדדים נשמרים ב-Shared Drive אוניברסיטאי מוגבל,
+וסודות ואסימוני OAuth ב-Google Secret Manager.
+המידע מועבר בחיבור מוצפן ומוגן בבקרת גישה לפי תפקיד, חשבונות שירות מוגבלים,
+ניהול סודות, תפוגה ומניעת שימוש חוזר ב-OAuth ורישומי ביקורת.
 
 מידע על משתתף מסוים לא יועבר מחוץ לצוות המחקר ללא הסכמה מפורשת חדשה והאישורים
 הנדרשים. ספקי התשתית מעבדים מידע רק לצורך הפעלת השירות המאושר. מידע עשוי להימסר

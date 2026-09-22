@@ -145,6 +145,20 @@ h3 { margin: 0 0 10px; font-size: 1.22rem; }
 .band { background: var(--wash); border-block: 1px solid var(--line); }
 .band .section { border: 0; }
 
+.table-wrap {
+  margin: 28px 0;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--paper);
+}
+
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 15px 17px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+th { background: #fff8f3; font-size: 0.92rem; }
+tr:last-child td { border-bottom: 0; }
+code { overflow-wrap: anywhere; color: #6e2a15; font-size: 0.88em; }
+
 .policy h2 { margin-top: 42px; font-size: 1.65rem; }
 .policy h2:first-of-type { margin-top: 24px; }
 .policy ul { padding-left: 24px; }

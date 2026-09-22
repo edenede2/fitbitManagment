@@ -15,11 +15,13 @@
 ```text
 Participant -> public disclosure -> Google Health/Fitbit OAuth
             -> provider callback -> token JSON in Secret Manager
-                                  -> token reference/status in Google Sheets
+                                  -> token reference/status in Firestore
+                                  -> access-controlled Sheets recovery mirror
 
 Clock worker -> Secret Manager token -> provider read-only API
              -> temporary JSON/CSV ZIP -> restricted Google Shared Drive
-             -> checksum/file reference -> archive_manifest in Google Sheets
+             -> checksum/file reference -> archive_manifest in Firestore
+             -> access-controlled Sheets recovery mirror
 ```
 
 Heroku temporary files are removed with the temporary directory and are not the
@@ -32,8 +34,9 @@ lab-mounted archive remains read-only and is not migrated.
 - Separate staff and participant OAuth clients and least-privilege read-only scopes.
 - 48-hour OAuth state expiry, append-only replay record, single-use callbacks, and
   an enforced disclosure version/hash.
-- Secrets and participant tokens outside Sheets; Sheets contain references and
-  operational metadata only after migration.
+- Firestore is the primary operational store. Secrets and participant tokens remain
+  in Secret Manager; Firestore and the Sheets recovery mirror contain references
+  and operational metadata, not plaintext OAuth secrets.
 - Shared Drive API calls set `supportsAllDrives`; folder and filenames are sanitized;
   deterministic ZIP hashes make retries idempotent.
 - One clock process, non-overlapping APScheduler jobs, restart coalescing, bounded
@@ -50,5 +53,7 @@ authorization stop immediately and all collected data is deleted unless the
 participant gives separate, explicit retention consent at that time. The operational
 procedure is recorded in `retention_deletion_procedure.md`.
 
-The institutional accreditation package still needs the actual registry identifier
-or an official English confirmation if Google requests that evidence during review.
+The evidence package includes the public Study 385/23 approval and approved bilingual
+participant documents. The study team should keep the ethics committee's official
+registry/accreditation identifier or English institutional confirmation available if
+Google requests it during review.

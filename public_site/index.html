@@ -64,6 +64,17 @@
         <h2>Why AdmonTracker requests Google access</h2>
         <p>For staff authentication, Google Sign-In provides basic identity information such as name and email address so AdmonTracker can verify the staff member and apply the correct project role.</p>
         <p>For participants who separately authorize Google Health access, AdmonTracker requests only four approved read-only scopes: activity and fitness; health metrics and measurements; sleep; and settings. The settings scope is used only to retrieve the assigned watch model, battery level and status, and last synchronization time for device support and data-quality checks. Participants use the Google account designated for the study, not a personal Google account. The resulting data is used only for Study 385/23 and necessary quality checks as described in the approved participant materials and <a href="privacy.html">Privacy Policy</a>.</p>
+        <div class="table-wrap" role="region" aria-label="Google Health permission mapping" tabindex="0">
+          <table>
+            <thead><tr><th>Read-only Google Health scope</th><th>Data used</th><th>AdmonTracker feature</th></tr></thead>
+            <tbody>
+              <tr><td><code>googlehealth.activity_and_fitness.readonly</code></td><td>Steps and physical activity</td><td>Dashboard steps view</td></tr>
+              <tr><td><code>googlehealth.health_metrics_and_measurements.readonly</code></td><td>Heart rate and respiratory rate</td><td>Dashboard heart-rate view and bounded research collection</td></tr>
+              <tr><td><code>googlehealth.sleep.readonly</code></td><td>Sleep sessions, timing, duration, and stages when available</td><td>Dashboard sleep view</td></tr>
+              <tr><td><code>googlehealth.settings.readonly</code></td><td>Assigned watch model, battery level/status, and last synchronization time</td><td>Dashboard Device Details</td></tr>
+            </tbody>
+          </table>
+        </div>
         <p>AdmonTracker does not sell Google user data, use it for advertising or credit decisions, or use it to train general-purpose AI or machine-learning models.</p>
       </section>
     </div>
