@@ -34,6 +34,7 @@ Do not submit until every checkbox in this section is complete.
   - `googlehealth.activity_and_fitness.readonly`
   - `googlehealth.health_metrics_and_measurements.readonly`
   - `googlehealth.sleep.readonly`
+  - `googlehealth.settings.readonly`
 - [ ] Complete the Google Health research intake/attestation.
 
 ## Evidence package
@@ -62,7 +63,7 @@ evidence use the same production configuration.
 - [ ] Show the participant disclosure, language option, document download, and all confirmations.
 - [ ] Show the Google consent screen and explain every requested scope.
 - [ ] Show the resulting participant-visible/staff-visible features for activity,
-      physiology, and sleep.
+      physiology, sleep, and watch model/battery/synchronization status.
 - [ ] Show the private management link, provider revocation, and deletion-request workflow.
 - [ ] Show that no token or client secret appears in Sheets, UI errors, or logs.
 

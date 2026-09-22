@@ -143,8 +143,7 @@ def handle_fitbit_callback(auth_controller=None) -> bool:
         pass
     st.success(f"Fitbit watch '{watch_name}' connected successfully. You can close this tab.")
     if management_url:
-        st.info("Save this private link if you want to disconnect or request deletion later.")
-        st.code(management_url)
+        st.info("Use the private button below to disconnect or request deletion later.")
         st.link_button("Manage this connection", management_url)
     else:
         st.warning("The connection is active, but its management link could not be created. Contact the study team.")

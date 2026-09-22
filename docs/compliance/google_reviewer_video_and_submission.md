@@ -1,68 +1,325 @@
-# Google Health reviewer video and submission runbook
+# Google OAuth reviewer video: recording script and submission runbook
 
-Use this only after every release gate in `google_publication_checklist.md` is
-complete. Record with a dedicated test participant and synthetic/non-research data.
-Do not show credentials, authorization codes, tokens, participant names, Sheet
-contents, Secret Manager payloads, Heroku config values, or real health data.
+Record one continuous English video of approximately 11–13 minutes. Use the exact
+production app, production OAuth client, and branding submitted for verification.
+Use a dedicated study test account and a test watch containing only non-research
+data. The recording must show the complete authorization flow, the complete Google
+consent screen in English, and working functionality for every requested scope.
 
-## Before recording
+## Recording gates
 
-- Confirm the production app name is **AdmonTracker** everywhere.
-- Confirm the External audience, support email, developer contacts, authorized
-  domain, homepage, Privacy Policy, and Terms URLs in Google Auth Platform.
-- Confirm both callbacks are registered on their respective web clients:
-  - Staff: `https://app.admontracker.online/oauth2callback`
-  - Participant: `https://app.admontracker.online/?google_health_callback=1`
-- Confirm the approved addendum is downloadable, the disclosure gate is enforced,
-  plaintext fallback is off, and the three requested scopes exactly match the app.
-- Set the Google consent screen language to English for the recording.
-- Open an incognito/private browser window and use an account created only for review.
+Do not record the final video until all of these checks pass:
 
-## Recording sequence
+- `https://admontracker.online/` is public while signed out and identifies
+  **AdmonTracker**, University of Haifa, Study 385/23, and the app's purpose.
+- Privacy, Terms, and Research Ethics are public and the approved English and Hebrew
+  addenda download successfully.
+- Google Auth Platform contains the same app name, logo, production domain, public
+  URLs, and participant OAuth client used in the video.
+- The participant OAuth client requests exactly these four scopes:
+  - `googlehealth.activity_and_fitness.readonly`
+  - `googlehealth.health_metrics_and_measurements.readonly`
+  - `googlehealth.sleep.readonly`
+  - `googlehealth.settings.readonly`
+- `PARTICIPANT_DISCLOSURE_ENFORCED=true` and plaintext secret fallback is disabled.
+- The test watch has recent steps, heart-rate, sleep, and paired-device data. Confirm
+  that **Device Details** displays model, battery, and last synchronization time.
+- Have a second private participant link ready in case the first OAuth state expires
+  or is consumed during rehearsal.
 
-1. Start signed out at `https://admontracker.online/`. Show the app identity,
-   University of Haifa, research purpose, and public legal links.
-2. Open Privacy Policy, Terms of Use, and Research Ethics. Show the Limited Use
-   statement and preview/download controls for the approval, accreditation evidence,
-   approved consent, and approved Google Health addendum.
-3. Sign in as authorized test staff. Create a test participant link while showing
-   the adult-eligibility and approved-consent attestations.
-4. Open the private participant link in the test-participant browser. Show language
-   selection, the in-context disclosure, document downloads, retention/deletion
-   language, and every affirmative consent/signature control.
-5. Continue to Google. Show the entire English Google consent screen and visibly
-   show exactly these scopes:
-   - activity and fitness, read-only;
-   - health metrics and measurements, read-only;
-   - sleep, read-only.
-6. Complete authorization. Show the successful connection and the private
-   connection-management link without exposing its token in the video.
-7. Show the application features that use each scope: steps/physical activity,
-   heart rate/respiratory rate, and sleep. Explain that data is used for the approved
-   research and completeness monitoring, not diagnosis or emergency monitoring.
-8. Open connection management. Demonstrate disconnect/revocation and record a
-   deletion request. Explain how already collected data is handled using the exact
-   ethics-approved wording.
-9. End on the public contact information. State that data is not sold, used for
-   advertising/credit decisions, or used for unrelated model training.
+## Privacy-safe recording setup
 
-## Submission
+- Record only the browser content area. Hide the address bar whenever a private
+  authorization or management URL is open because its query string contains an
+  access token or one-time state.
+- Turn off browser notifications, password-manager overlays, autofill suggestions,
+  bookmarks, and email/chat pop-ups.
+- Never show passwords, one-time codes, OAuth client secrets, access/refresh tokens,
+  Heroku configuration, Secret Manager values, Google Sheets contents, or real
+  participant identifiers.
+- Use a pseudonymous watch name such as `REVIEW_DEMO_01`. Do not use YN4 or another
+  live research participant in the recording unless it is formally designated as
+  the non-research reviewer account.
+- Set the Google consent screen language to **English** using its language control.
+- Zoom to a readable level. Pause after each page and scroll slowly enough for a
+  reviewer to read the relevant text.
 
-1. Upload the English video as an unlisted link accessible without requesting access.
-2. In Google Auth Platform, use **Publish App**, then **Prepare for Verification**.
-3. Supply a scope-by-scope justification that matches the video and
-   `google_scope_justification.md` exactly.
-4. Submit the Google Health research intake with the approval/waiver letter,
-   accreditation evidence and registry identifier, exact requested data/rationale,
-   approved consent/addendum, retention/deletion procedure, and security/data-flow
-   description.
-5. Monitor the project owner/editor email addresses and answer reviewer questions
-   without changing the production UI, branding, callbacks, or scopes shown in the
-   video. Complete a CASA assessment if Google requests one.
+## Timed, word-for-word script
 
-Current official references:
+The text in quotation marks is the narration to say. The actions in the **Show and
+do** sections are not narration.
 
-- https://developers.google.com/health/policies/health-api-user-data-and-research-policy
-- https://developers.google.com/health/policies/health-api-developer-user-data-policy
-- https://support.google.com/cloud/answer/13464321?hl=en
-- https://support.google.com/cloud/answer/13461325?hl=en
+### 0:00–0:25 — Introduce the app
+
+**Show and do:** Start at `https://admontracker.online/` in a signed-out private
+browser window. Keep the AdmonTracker name, logo, University of Haifa identity, and
+page URL visible.
+
+**Say:**
+
+> This is AdmonTracker, the production research application operated by the Stress
+> and Psychopathology Lab at the University of Haifa for ethics-approved Study
+> 385/23. The public site is available without login. The application supports
+> participant authorization, wearable-data collection, data-completeness checks,
+> and authorized study-team device management.
+
+### 0:25–1:15 — Show the public purpose and four scopes
+
+**Show and do:** Scroll through **Purpose and functionality** and **Why AdmonTracker
+requests Google access**. Pause on the paragraph naming all four read-only scopes.
+
+**Say:**
+
+> Participants use a Google account designated for the study and decide whether to
+> grant read-only Google Health access. AdmonTracker requests four read-only scopes:
+> activity and fitness; health metrics and measurements; sleep; and settings. The
+> settings scope is used only for the assigned watch model, battery level and status,
+> and last synchronization time, so staff can identify charging or synchronization
+> problems. The app does not request Google Health write access or mindfulness data.
+
+### 1:15–2:40 — Show public policy and ethics evidence
+
+**Show and do:** Open **Privacy Policy** in a new tab. Show the sections describing
+the Google data categories, purpose, storage and protection, sharing, retention,
+withdrawal/deletion, and Google API Services Limited Use. Open **Terms of Use** and
+briefly show voluntary research participation and research-only use. Open **Research
+Ethics** and show the study approval and both approved Google Health addenda; click
+one PDF preview or download control so the reviewer can see that it works.
+
+**Say:**
+
+> The Privacy Policy identifies every Google data category and explains its research
+> purpose, storage, access, sharing, retention, withdrawal, deletion, and security.
+> It affirms compliance with the Google API Services User Data Policy, including the
+> Limited Use requirements. Google user data is not sold, used for advertising or
+> credit decisions, or used to train unrelated general-purpose models. The Terms of
+> Use explain that participation is voluntary and research-only. The Research Ethics
+> page provides the Study 385/23 approval and the approved participant documents in
+> English and Hebrew.
+
+### 2:40–3:20 — Sign in as authorized staff
+
+**Show and do:** Open `https://app.admontracker.online/`. Sign in using the authorized
+test staff account. Pause recording while typing credentials or completing a
+one-time code if necessary, then resume on the authenticated welcome page. Show the
+curated staff navigation.
+
+**Say:**
+
+> I am now entering the production application as an authorized test staff member.
+> Staff authentication uses a separate OAuth client with only OpenID, profile, and
+> email. Participant health permissions are not requested by the staff-login client.
+> The staff navigation exposes only the operational research pages.
+
+### 3:20–4:20 — Generate a participant authorization link
+
+**Show and do:** Open **Connect wearable**. In **Add a new watch & generate
+authorization link**, enter `REVIEW_DEMO_01`, choose the test project, select
+**Google Health**, select the active production Google Cloud/OAuth client, select
+purpose **test**, and leave **Active** selected. Check both staff attestations:
+
+1. the participant completed the current ethics-approved study consent and Google
+   Health addendum; and
+2. the participant is at least 18 years old.
+
+Click **Add watch & generate link**. When the private URL appears, ensure the video
+is cropped or blurred over the URL itself. Click **Open authorization**.
+
+**Say:**
+
+> An authorized staff member assigns a pseudonymous watch code and selects the
+> production Google Health client. Before a participant link can be generated, staff
+> must attest that the participant is an adult and completed the current
+> ethics-approved consent and Google Health addendum. This private, single-use link
+> contains no participant name and expires if it is not used.
+
+### 4:20–5:45 — Demonstrate participant disclosure and acknowledgement
+
+**Show and do:** On **Participant Authorization**, select **English**. Keep the
+address bar hidden. Slowly show the Google Health disclosure, including the five
+health/research data types and the watch model/battery/synchronization fields. Click
+**Save this disclosure**. Expand **Study documents** and show the downloadable
+approved English addendum. Check all six acknowledgement boxes and click
+**Acknowledge and continue**.
+
+**Say:**
+
+> Before Google authorization, the participant receives an in-context disclosure
+> in English or Hebrew and can save a copy. It lists heart rate, respiratory rate,
+> steps and physical activity, sleep, plus the assigned watch model, battery status,
+> and synchronization time. It explains the study purpose, read-only access,
+> storage, authorized access, retention, withdrawal, and deletion. The participant
+> can download the approved study documents and must affirmatively acknowledge every
+> item before the provider authorization button is created.
+
+**Show and do:** After the acknowledgement is recorded, click **Continue to Google
+Health**.
+
+**Say:**
+
+> The acknowledgement is recorded with the disclosure version and document hash.
+> The provider authorization URL is generated only after the required participant
+> acknowledgement.
+
+### 5:45–7:10 — Show the complete Google consent screen
+
+**Show and do:** On Google's page, confirm the heading names **AdmonTracker**. If
+needed, switch the consent-screen language to **English** using the control at the
+bottom of the page. Show the complete consent screen from top to bottom. Expand any
+permission details and visibly show all four permissions before approving:
+
+1. activity and fitness, read-only;
+2. health metrics and measurements, read-only;
+3. sleep, read-only; and
+4. settings, read-only.
+
+Then approve access using the Google button presented on screen.
+
+**Say:**
+
+> This is the complete Google consent screen in English, and the app name matches the
+> submitted production app. The activity-and-fitness permission supplies steps and
+> physical activity. Health metrics and measurements supplies heart rate and
+> respiratory rate. Sleep supplies sleep sessions, timing, duration, and stages when
+> available. Settings supplies only the assigned watch model, battery level and
+> status, and last synchronization time. All four permissions are read-only and are
+> the narrowest Google Health permissions that cover the data in the approved
+> participant addendum.
+
+### 7:10–7:35 — Show successful connection without exposing a token
+
+**Show and do:** Wait for the AdmonTracker success page. Show the success message and
+the **Manage this connection** button. Do not expose a raw management URL. Do not
+click the management button yet; leave this tab open for the final segment.
+
+**Say:**
+
+> Google returned to AdmonTracker and the test watch is connected successfully. The
+> page provides a private management button for disconnect and deletion requests.
+> The underlying token-bearing URL is not printed on the page or spoken in this
+> video.
+
+### 7:35–9:55 — Demonstrate each requested scope in the dashboard
+
+**Show and do:** Return to the authenticated staff tab. Open **Dashboard**, select
+`REVIEW_DEMO_01`, and point out **Provider: Google Health**.
+
+1. In **Signal Data**, select **Steps**, choose a short date range containing test
+   data, and click **Load Data**. Pause on the steps result.
+2. Select **Heart Rate** and click **Load Data**. Pause on the heart-rate result.
+3. Select **Sleep** and click **Load Data**. Pause on sleep timing/duration.
+4. Open **Device Details** and click **Refresh Device Data**. Pause on device model,
+   device type if returned, battery level/status, and **Last Synced**.
+
+If Google returns no value for one category, create fresh test-account data and
+re-record. Do not submit a final video that shows errors or unavailable data for a
+scope being justified.
+
+**Say while showing Steps:**
+
+> This steps view demonstrates the activity-and-fitness read-only scope. Authorized
+> staff use it for the approved physical-activity measure and data-completeness
+> checks.
+
+**Say while showing Heart Rate:**
+
+> This heart-rate view demonstrates the health-metrics-and-measurements read-only
+> scope. The same scope supplies the approved respiratory-rate measure for bounded
+> research collection when the assigned device makes it available.
+
+**Say while showing Sleep:**
+
+> This sleep view demonstrates the sleep read-only scope. Sleep patterns are an
+> explicit variable in Study 385/23.
+
+**Say while showing Device Details:**
+
+> This Device Details view demonstrates the settings read-only scope. AdmonTracker
+> retrieves the assigned watch model, battery level and status, and last
+> synchronization time to identify charging or synchronization failures and assess
+> data completeness. The application does not change any Google Health setting.
+
+### 9:55–11:15 — Demonstrate participant controls
+
+**Show and do:** Return to the successful-connection tab and click **Manage this
+connection** while keeping the browser address bar outside the recording. Select
+**English**. Show **Provider: Google Health**, the disconnect explanation, the
+confirmation checkbox, and the **Deletion request** section.
+
+For the final submitted take, demonstrate the deletion-request action first if the
+approved text and button are present. Then select **I want to disconnect and stop
+future collection** and click **Disconnect connection**. Show the confirmation that
+future collection stopped and locally stored tokens were removed. Use a disposable
+review account because disconnect revokes the connection.
+
+**Say:**
+
+> The participant can use the private connection-management page to stop future
+> collection and revoke the active connection. The same page presents the approved
+> deletion wording and records a deletion request for study-team handling. The
+> treatment of already collected research data follows the exact ethics-approved
+> consent. Disconnect removes the stored provider tokens and prevents future
+> collection.
+
+### 11:15–11:45 — Close the demonstration
+
+**Show and do:** Return to the public homepage or Privacy Policy and keep the PI
+contact information visible.
+
+**Say:**
+
+> This concludes the end-to-end AdmonTracker authorization and data-use flow for all
+> four requested Google Health scopes. Questions about participation, privacy,
+> withdrawal, or deletion can be sent to Principal Investigator Professor Roee
+> Admon at radmon@psy.haifa.ac.il. Thank you for reviewing AdmonTracker.
+
+## Final video quality check
+
+Before submitting the link, watch the entire uploaded video while signed out of the
+video host and confirm:
+
+- the link opens without requesting access;
+- the app name is AdmonTracker everywhere;
+- the production domain and public legal pages are visible;
+- the Google consent screen is fully visible in English;
+- all four requested permissions are readable;
+- a working feature is shown for activity/fitness, health metrics, sleep, and
+  settings/device details;
+- no secret, password, real participant data, raw authorization URL, or raw
+  management URL appears in any frame; and
+- narration matches the submitted scope justification and the deployed Privacy
+  Policy.
+
+Add timestamps for the four scope demonstrations to the verification submission or
+video description: steps, heart rate, sleep, and device details.
+
+## Submission sequence
+
+1. Upload the final English video as an unlisted link accessible without login or an
+   access request.
+2. Use the text in `google_data_access_justification.txt` for the Google Auth
+   Platform scope explanation, provided it still matches the recorded build.
+3. In Google Auth Platform, confirm the app is **In production**, then select
+   **Prepare for verification** and supply the public URLs, four scopes,
+   justification, and video link.
+4. Submit the Google Health research intake/evidence requested by Google, including
+   the study approval, approved addenda, data-flow/security description, and
+   retention/deletion procedure.
+5. Keep the recorded production UI, branding, callback URLs, and scope list stable
+   while Google reviews the application. Monitor the project contact email and
+   respond to requests for clarification or a security assessment.
+
+## Official references
+
+- Google OAuth demo-video requirements:
+  https://support.google.com/cloud/answer/13804565?hl=en
+- Google Auth Platform submission process:
+  https://support.google.com/cloud/answer/13461325?hl=en-GB
+- OAuth verification requirements:
+  https://support.google.com/cloud/answer/13464321?hl=en
+- Sensitive-scope verification:
+  https://developers.google.com/identity/protocols/oauth2/production-readiness/sensitive-scope-verification
+- Google Health research policy:
+  https://developers.google.com/health/policies/health-api-user-data-and-research-policy
+- Google Health paired-device endpoint and settings scope:
+  https://developers.google.com/health/reference/rest/v4/users.pairedDevices/list

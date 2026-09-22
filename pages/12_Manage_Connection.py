@@ -17,7 +17,7 @@ st.set_page_config(
     page_icon="🛡️",
     layout="centered",
 )
-render_app_logo()
+render_app_logo(show_navigation=False)
 
 language_label = st.radio("Language / שפה", ["English", "עברית"], horizontal=True)
 language = "he" if language_label == "עברית" else "en"

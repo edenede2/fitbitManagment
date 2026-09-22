@@ -39,6 +39,14 @@ def test_public_homepage_is_crawler_readable_and_explains_purpose():
     assert "Why AdmonTracker requests Google access" in homepage
     assert 'href="privacy.html"' in homepage
     assert "Login required" not in homepage
+    for scope_description in (
+        "activity and fitness",
+        "health metrics and measurements",
+        "sleep",
+        "settings",
+    ):
+        assert scope_description in homepage
+    assert "battery level and status" in homepage
 
 
 def test_static_privacy_policy_contains_google_required_topics():

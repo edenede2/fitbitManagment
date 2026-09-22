@@ -365,13 +365,44 @@ class PageBoundaryAndLegalTests(unittest.TestCase):
         self.assertNotIn("Qualtrics", visible_ui)
         self.assertNotIn("AppSheet", visible_ui)
 
+    def test_sidebar_exposes_only_current_staff_pages(self):
+        pages = {path.name for path in (PROJECT_ROOT / "pages").glob("*.py")}
+        self.assertNotIn("07_Connect_Participant.py", pages)
+
+        config = (PROJECT_ROOT / ".streamlit" / "config.toml").read_text()
+        self.assertIn("showSidebarNavigation = false", config)
+
+        branding = (PROJECT_ROOT / "utils" / "branding.py").read_text()
+        for visible_page in (
+            "01_Home.py",
+            "02_Dashboard.py",
+            "03_Fitbit_Management.py",
+            "04_Alerts_Configuration.py",
+            "07_OAuth_Connect.py",
+        ):
+            self.assertIn(visible_page, branding)
+        for private_or_public_page in (
+            "08_Privacy_Policy.py",
+            "09_Terms_of_Service.py",
+            "10_Research_Ethics.py",
+            "11_Participant_Authorization.py",
+            "12_Manage_Connection.py",
+        ):
+            self.assertNotIn(private_or_public_page, branding)
+
+    def test_oauth_success_pages_do_not_print_private_management_url(self):
+        for callback in ("fitbit_callback.py", "google_health_callback.py"):
+            with self.subTest(callback=callback):
+                source = (PROJECT_ROOT / "utils" / callback).read_text()
+                self.assertNotIn("st.code(management_url)", source)
+                self.assertIn('st.link_button("Manage this connection", management_url)', source)
+
     def test_every_functional_page_branches_guest_before_production_source(self):
         expected_pages = {
             "01_Home.py",
             "02_Dashboard.py",
             "03_Fitbit_Management.py",
             "04_Alerts_Configuration.py",
-            "07_Connect_Participant.py",
             "07_OAuth_Connect.py",
         }
         for filename in expected_pages:
@@ -430,7 +461,6 @@ class StreamlitGuestSmokeTests(unittest.TestCase):
             "pages/02_Dashboard.py": {"Refresh from device", "Send message"},
             "pages/03_Fitbit_Management.py": {"Add new device", "Save changes"},
             "pages/04_Alerts_Configuration.py": {"Save configuration"},
-            "pages/07_Connect_Participant.py": {"Generate connect link"},
             "pages/07_OAuth_Connect.py": {
                 "Add watch & generate link",
                 "Generate link for existing watch",
@@ -441,7 +471,6 @@ class StreamlitGuestSmokeTests(unittest.TestCase):
             "pages/02_Dashboard.py",
             "pages/03_Fitbit_Management.py",
             "pages/04_Alerts_Configuration.py",
-            "pages/07_Connect_Participant.py",
             "pages/07_OAuth_Connect.py",
         ]
 

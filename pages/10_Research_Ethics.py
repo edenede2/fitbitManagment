@@ -17,7 +17,7 @@ st.set_page_config(
     page_icon="🏛️",
     layout="wide",
 )
-render_app_logo()
+render_app_logo(show_navigation=False)
 
 language = st.radio("Language / שפה", ["English", "עברית"], horizontal=True)
 is_hebrew = language == "עברית"
