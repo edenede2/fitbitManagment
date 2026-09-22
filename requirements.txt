@@ -11,6 +11,7 @@ google-auth-oauthlib>=1.0.0
 gspread>=5.7.0
 google-api-python-client>=2.120.0
 google-cloud-secret-manager>=2.20.0
+google-cloud-firestore>=2.19.0,<3.0.0
 
 # Data visualization
 plotly>=5.13.0

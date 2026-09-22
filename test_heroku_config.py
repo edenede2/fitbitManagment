@@ -157,6 +157,12 @@ class PrepareHerokuConfigTests(unittest.TestCase):
         self.assertEqual(config["CLOCK_CATCH_UP_ON_START"], "true")
         self.assertEqual(config["ARCHIVE_SHADOW_MODE"], "true")
         self.assertEqual(config["ARCHIVE_ENABLED_PROVIDERS"], "fitbit")
+        self.assertEqual(config["DATA_BACKEND"], "sheets")
+        self.assertEqual(config["FIRESTORE_PROJECT_ID"], "new-project")
+        self.assertEqual(config["FIRESTORE_DATABASE_ID"], "(default)")
+        self.assertEqual(config["FIRESTORE_SHADOW_WRITE"], "false")
+        self.assertEqual(config["SHEETS_READ_FALLBACK"], "true")
+        self.assertEqual(config["SHEETS_SHADOW_WRITE"], "false")
 
 
 if __name__ == "__main__":

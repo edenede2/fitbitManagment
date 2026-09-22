@@ -77,6 +77,53 @@ comment. Revoke or rotate any affected Fitbit credentials before production.
 Rewriting shared Git history is a separate, disruptive operator decision and was
 not performed by this implementation.
 
+## 3a. Firestore operational-data migration
+
+Firestore is deployed behind flags and Sheets remains authoritative initially:
+
+```text
+DATA_BACKEND=sheets
+FIRESTORE_PROJECT_ID=admontracker
+FIRESTORE_DATABASE_ID=(default)
+FIRESTORE_SHADOW_WRITE=false
+SHEETS_READ_FALLBACK=true
+SHEETS_SHADOW_WRITE=false
+```
+
+The importer never writes to Sheets and unconditionally omits plaintext OAuth
+tokens, legacy tokens, client secrets, credential JSON, and cookie secrets.
+Run the core dry run first:
+
+```bash
+heroku run --app admontracker \
+  'python3 scripts/render_streamlit_secrets.py && python3 scripts/migrate_sheets_to_firestore.py'
+```
+
+Review counts and omitted-secret totals, then import and verify deterministic
+documents:
+
+```bash
+heroku run --app admontracker \
+  'python3 scripts/render_streamlit_secrets.py && python3 scripts/migrate_sheets_to_firestore.py --apply'
+```
+
+An independent verification pass is safe to repeat:
+
+```bash
+heroku run --app admontracker \
+  'python3 scripts/render_streamlit_secrets.py && python3 scripts/verify_firestore_migration.py'
+```
+
+The core profile compacts append-only OAuth-token and device-status history to
+the latest operational record. The existing Sheet remains the read-only history
+during rollout. Do not run `--profile all` until the write count and retention
+decision for historical API/webhook logs have been reviewed.
+
+Do not set `DATA_BACKEND=firestore` merely because the import verifies. First
+deploy live repository routing and shadow-write integration, compare every
+operational path, and complete the documented smoke tests. No current release
+automatically cuts production reads over to Firestore.
+
 ## 4. Participant disclosure gate
 
 Leave `PARTICIPANT_DISCLOSURE_ENFORCED=false` until all of these exist:

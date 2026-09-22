@@ -167,6 +167,13 @@ def build_config_vars(
         "STREAMLIT_SERVER_HEADLESS": "true",
         "SECRET_MANAGER_ENABLED": "true",
         "ALLOW_PLAINTEXT_SECRET_FALLBACK": "true",
+        # Firestore support is deployed dark. Import and verify before changing
+        # DATA_BACKEND or enabling either shadow writer.
+        "DATA_BACKEND": "sheets",
+        "FIRESTORE_DATABASE_ID": "(default)",
+        "FIRESTORE_SHADOW_WRITE": "false",
+        "SHEETS_READ_FALLBACK": "true",
+        "SHEETS_SHADOW_WRITE": "false",
         "PARTICIPANT_DISCLOSURE_ENFORCED": "true",
         "PARTICIPANT_DISCLOSURE_VERSION": "385-23-GOOGLE-HEALTH-v1.0",
         "RESEARCH_RETENTION_TEXT_EN": (
@@ -200,6 +207,7 @@ def build_config_vars(
             service_json.encode("utf-8")
         ).decode("ascii")
         config["GOOGLE_CLOUD_PROJECT"] = str(service_account.get("project_id") or "")
+        config["FIRESTORE_PROJECT_ID"] = str(service_account.get("project_id") or "")
     if drive_folder_id:
         config["GOOGLE_DRIVE_ARCHIVE_ROOT_ID"] = drive_folder_id.strip()
     return config
