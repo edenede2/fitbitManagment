@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
 import sys
 from collections import defaultdict
 from dataclasses import dataclass
@@ -29,6 +31,12 @@ from model.config import get_secrets
 from utils.secret_store import load_json_secret, secret_manager_enabled, store_json_secret
 
 
+_SECRET_REF_RE = re.compile(
+    r"^projects/(?P<project>[^/]+)/secrets/(?P<secret>[A-Za-z0-9_-]+)"
+    r"(?:/versions/(?:latest|[0-9]+))?$"
+)
+
+
 @dataclass
 class MigrationCount:
     candidates: int = 0
@@ -38,6 +46,7 @@ class MigrationCount:
     inactive: int = 0
     unresolved: int = 0
     skipped: int = 0
+    invalid_refs: int = 0
 
 
 @dataclass(frozen=True)
@@ -90,6 +99,27 @@ def _payload_matches(readback: dict[str, Any], payload: dict[str, str]) -> bool:
     return all(_text(readback.get(key)) == _text(value) for key, value in payload.items())
 
 
+def _usable_secret_ref(value: Any) -> bool:
+    """Accept only canonical Secret Manager resource names for this project."""
+    match = _SECRET_REF_RE.fullmatch(_text(value))
+    if not match:
+        return False
+    expected_project = os.getenv("GOOGLE_CLOUD_PROJECT", "").strip()
+    return not expected_project or match.group("project") == expected_project
+
+
+def _migration_secret_ref(value: Any, count: MigrationCount | None = None) -> str:
+    """Drop malformed placeholders without ever treating them as secret names."""
+    ref = _text(value)
+    if not ref:
+        return ""
+    if _usable_secret_ref(ref):
+        return ref
+    if count is not None:
+        count.invalid_refs += 1
+    return ""
+
+
 def _verified_store(
     kind: str,
     identifiers: list[str],
@@ -97,7 +127,7 @@ def _verified_store(
     existing_ref: str = "",
 ) -> str:
     """Reuse a matching secret version; otherwise store and verify a new version."""
-    existing_ref = _text(existing_ref)
+    existing_ref = _migration_secret_ref(existing_ref)
     if existing_ref:
         readback = load_json_secret(existing_ref)
         if _payload_matches(readback, payload):
@@ -196,7 +226,10 @@ def _migrate_grouped_sheet(
 
         selected = active_rows[-1]
         payload = _latest_payload(active_rows, secret_fields)
-        existing_ref = _latest_reference(active_rows, ref_field)
+        existing_ref = _migration_secret_ref(
+            _latest_reference(active_rows, ref_field),
+            count,
+        )
         if not any(payload.values()):
             # The active row can already be reference-only while older inactive
             # history still contains plaintext. Verify that reference before
@@ -408,15 +441,18 @@ def _migrate_fitbit_registry(
             continue
 
         selected = active_rows[-1]
-        existing_ref = _latest_reference(active_rows, "token_secret_ref")
+        existing_ref = _migration_secret_ref(
+            _latest_reference(active_rows, "token_secret_ref"),
+            count,
+        )
         oauth_rows = oauth_groups.get(watch_name, [])
+        ref = ""
         if oauth_rows:
-            ref = _latest_reference(oauth_rows, "token_secret_ref")
-            if apply and not ref:
-                raise RuntimeError(
-                    "An active Fitbit OAuth group has no migrated secret reference"
-                )
-        else:
+            ref = _migration_secret_ref(
+                _latest_reference(oauth_rows, "token_secret_ref"),
+                count,
+            )
+        if not ref:
             payload = _latest_payload(active_rows, ["token"])
             if not payload["token"]:
                 count.unresolved += len(plaintext_rows)
@@ -514,7 +550,7 @@ def main() -> int:
             f"{tab}: plaintext_rows={count.candidates}, groups={count.groups}, "
             f"referenced={count.migrated}, cleared={count.cleared}, "
             f"inactive_groups={count.inactive}, unresolved_rows={count.unresolved}, "
-            f"skipped_rows={count.skipped}"
+            f"skipped_rows={count.skipped}, invalid_refs={count.invalid_refs}"
         )
     if not args.apply:
         print("Re-run with --apply, verify live OAuth/refresh, then use --apply --clear-plaintext.")

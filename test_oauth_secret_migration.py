@@ -7,6 +7,7 @@ from scripts.migrate_oauth_secrets import (
     _is_registry_active,
     _migrate_fitbit_registry,
     _migrate_grouped_sheet,
+    _migration_secret_ref,
     _verified_store,
 )
 
@@ -159,6 +160,41 @@ class OAuthSecretMigrationTests(unittest.TestCase):
             )
         self.assertEqual(ref, "projects/p/secrets/existing")
         store.assert_not_called()
+
+    def test_malformed_reference_is_not_sent_to_secret_manager(self):
+        count = type("Count", (), {"invalid_refs": 0})()
+        self.assertEqual(_migration_secret_ref("legacy", count), "")
+        self.assertEqual(count.invalid_refs, 1)
+
+        payload = {"access_token": "a", "refresh_token": "r"}
+        with patch(
+            "scripts.migrate_oauth_secrets.load_json_secret",
+            return_value=payload,
+        ) as load, patch(
+            "scripts.migrate_oauth_secrets.store_json_secret",
+            return_value="projects/p/secrets/recovered",
+        ) as store:
+            ref = _verified_store(
+                "participant-oauth",
+                ["fitbit", "P-001"],
+                payload,
+                existing_ref="legacy",
+            )
+        self.assertEqual(ref, "projects/p/secrets/recovered")
+        load.assert_called_once_with("projects/p/secrets/recovered")
+        store.assert_called_once_with(
+            "participant-oauth",
+            ["fitbit", "P-001"],
+            payload,
+            existing_ref="",
+        )
+
+    def test_wrong_project_reference_is_rejected_when_project_is_configured(self):
+        with patch.dict("os.environ", {"GOOGLE_CLOUD_PROJECT": "admontracker"}):
+            self.assertEqual(
+                _migration_secret_ref("projects/other-project/secrets/token"),
+                "",
+            )
 
     def test_registry_reuses_oauth_ref_and_only_stores_legacy_only_watch(self):
         oauth = FakeWorksheet(
