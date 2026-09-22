@@ -176,8 +176,8 @@ class GoogleHealthClient:
         end_dt = datetime.now(timezone.utc)
         start_dt = end_dt - timedelta(days=3)
         filter_expr = (
-            f'sleep.interval.end_time >= "{start_dt.isoformat().replace("+00:00", "Z")}" '
-            f'AND sleep.interval.end_time < "{end_dt.isoformat().replace("+00:00", "Z")}"'
+            f'sleep.interval.civil_end_time >= "{start_dt.date().isoformat()}T00:00:00" '
+            f'AND sleep.interval.civil_end_time < "{(end_dt.date() + timedelta(days=1)).isoformat()}T00:00:00"'
         )
         points = self.list_data_points("sleep", filter_expr=filter_expr, page_size=1000)
         sleep_points = sorted(
@@ -286,6 +286,28 @@ class GoogleHealthClient:
                 return self._fitbit_heart_intraday_payload(points)
             return self._fitbit_steps_intraday_payload(points)
 
+        dashboard_list_types = {
+            "Sleep": ("sleep", "sleep.interval.civil_end_time"),
+            "Breathing Rate": ("daily-respiratory-rate", "dailyRespiratoryRate.date"),
+            "Physical Activity": ("exercise", "exercise.interval.civil_start_time"),
+        }
+        if data_type in dashboard_list_types:
+            google_data_type, filter_field = dashboard_list_types[data_type]
+            filter_expr = kwargs.get("filter_expr")
+            if not filter_expr:
+                filter_expr = self._dashboard_date_filter(
+                    field=filter_field,
+                    start_date=kwargs.get("start_date"),
+                    end_date=kwargs.get("end_date") or kwargs.get("start_date"),
+                    include_time=google_data_type in {"sleep", "exercise"},
+                )
+            points = self.list_data_points(google_data_type, filter_expr=filter_expr)
+            if data_type == "Sleep":
+                return self._fitbit_sleep_payload(points)
+            if data_type == "Breathing Rate":
+                return self._fitbit_breathing_rate_payload(points)
+            return self._fitbit_physical_activity_payload(points)
+
         if data_type in {"steps", "heart-rate"} and {"start_time", "end_time"} <= set(kwargs):
             return {
                 "rollupDataPoints": self.rollup(
@@ -298,6 +320,23 @@ class GoogleHealthClient:
         if data_type == "sleep":
             return {"dataPoints": self.list_data_points("sleep", filter_expr=kwargs.get("filter_expr"))}
         return {"dataPoints": self.list_data_points(data_type, filter_expr=kwargs.get("filter_expr"))}
+
+    @classmethod
+    def _dashboard_date_filter(
+        cls,
+        *,
+        field: str,
+        start_date: str | date | datetime,
+        end_date: str | date | datetime,
+        include_time: bool,
+    ) -> str:
+        start = cls._as_date(start_date)
+        end_exclusive = cls._as_date(end_date) + timedelta(days=1)
+        suffix = "T00:00:00" if include_time else ""
+        return (
+            f'{field} >= "{start.isoformat()}{suffix}" '
+            f'AND {field} < "{end_exclusive.isoformat()}{suffix}"'
+        )
 
     @classmethod
     def _as_date(cls, value: str | date | datetime) -> date:
@@ -425,6 +464,149 @@ class GoogleHealthClient:
                 "first_keys": list(points[0].keys()) if points else [],
             },
         }
+
+    @classmethod
+    def _fitbit_sleep_payload(cls, points: list[dict[str, Any]]) -> dict[str, Any]:
+        sleep_records = []
+        for point in points:
+            sleep = point.get("sleep") if isinstance(point, dict) else None
+            if not isinstance(sleep, dict):
+                continue
+            start_time, end_time = cls._extract_interval(point)
+            summary = sleep.get("summary")
+            summary = summary if isinstance(summary, dict) else {}
+            metadata = sleep.get("metadata")
+            metadata = metadata if isinstance(metadata, dict) else {}
+
+            minutes_in_period = cls._as_number(summary.get("minutesInSleepPeriod"))
+            minutes_asleep = cls._as_number(summary.get("minutesAsleep"))
+            minutes_awake = cls._as_number(summary.get("minutesAwake"))
+            duration_ms = cls._interval_duration_ms(start_time, end_time)
+            if duration_ms is None and minutes_in_period is not None:
+                duration_ms = int(minutes_in_period * 60_000)
+
+            level_summary = {}
+            for stage in summary.get("stagesSummary", []):
+                if not isinstance(stage, dict):
+                    continue
+                stage_type = str(stage.get("type") or "").strip().lower()
+                minutes = cls._as_number(stage.get("minutes"))
+                if stage_type and minutes is not None:
+                    level_summary[stage_type] = {
+                        "minutes": int(minutes),
+                        "count": int(cls._as_number(stage.get("count")) or 0),
+                    }
+
+            efficiency = None
+            if minutes_asleep is not None and minutes_in_period:
+                efficiency = round(minutes_asleep / minutes_in_period * 100)
+            sleep_records.append({
+                "startTime": start_time,
+                "endTime": end_time,
+                "duration": duration_ms,
+                "efficiency": efficiency,
+                "isMainSleep": not bool(metadata.get("nap")),
+                "minutesAsleep": int(minutes_asleep) if minutes_asleep is not None else None,
+                "minutesAwake": int(minutes_awake) if minutes_awake is not None else None,
+                "levels": {"summary": level_summary},
+            })
+        return {"sleep": sleep_records}
+
+    @classmethod
+    def _fitbit_breathing_rate_payload(cls, points: list[dict[str, Any]]) -> dict[str, Any]:
+        records = []
+        for point in points:
+            daily = point.get("dailyRespiratoryRate") if isinstance(point, dict) else None
+            if not isinstance(daily, dict):
+                continue
+            date_value = daily.get("date")
+            date_text = cls._google_date_text(date_value)
+            rate = cls._as_number(daily.get("breathsPerMinute"))
+            if not date_text or rate is None:
+                continue
+            records.append({
+                "dateTime": date_text,
+                "value": {
+                    "breathingRate": rate,
+                    "fullSleepSummary": {"breathingRate": rate},
+                },
+            })
+        return {"br": records}
+
+    @classmethod
+    def _fitbit_physical_activity_payload(cls, points: list[dict[str, Any]]) -> dict[str, Any]:
+        records = []
+        for point in points:
+            exercise = point.get("exercise") if isinstance(point, dict) else None
+            if not isinstance(exercise, dict):
+                continue
+            start_time, end_time = cls._extract_interval(point)
+            metrics = exercise.get("metricsSummary")
+            metrics = metrics if isinstance(metrics, dict) else {}
+            duration_seconds = cls._parse_duration_seconds(exercise.get("activeDuration"))
+            if duration_seconds is None:
+                duration_ms = cls._interval_duration_ms(start_time, end_time)
+            else:
+                duration_ms = int(duration_seconds * 1000)
+            records.append({
+                "startTime": start_time,
+                "endTime": end_time,
+                "activityName": exercise.get("displayName") or exercise.get("exerciseType"),
+                "exerciseType": exercise.get("exerciseType"),
+                "duration": duration_ms,
+                "steps": metrics.get("steps"),
+            })
+        return {"activities": records}
+
+    @staticmethod
+    def _as_number(value: Any) -> float | None:
+        if value in (None, ""):
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _parse_duration_seconds(value: Any) -> float | None:
+        if value in (None, ""):
+            return None
+        text = str(value).strip()
+        if text.endswith("s"):
+            text = text[:-1]
+        try:
+            return float(text)
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _interval_duration_ms(start_time: str | None, end_time: str | None) -> int | None:
+        if not start_time or not end_time:
+            return None
+        try:
+            start = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
+            end = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        return max(0, int((end - start).total_seconds() * 1000))
+
+    @staticmethod
+    def _google_date_text(value: Any) -> str | None:
+        if isinstance(value, str):
+            try:
+                return date.fromisoformat(value).isoformat()
+            except ValueError:
+                return None
+        if not isinstance(value, dict):
+            return None
+        try:
+            return date(
+                int(value.get("year")),
+                int(value.get("month")),
+                int(value.get("day")),
+            ).isoformat()
+        except (TypeError, ValueError):
+            return None
 
     @staticmethod
     def _extract_numeric(payload: dict[str, Any], *preferred_keys: str) -> int | float | None:

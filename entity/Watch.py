@@ -32,6 +32,7 @@ URL_DICT = {
     'Daily RMSSD': "https://api.fitbit.com/1.2/user/-/hrv/date/{}/all.json", # BASE_URL2, start_date
     'ECG': 'https://api.fitbit.com/1.2/user/-/ecg/list.json?{} asc {} {}', # BASE_URL2, start_date, limit, offset
     'Breathing Rate': 'https://api.fitbit.com/1/user/-/br/date/{}/{}.json', # BASE_URL, start_date, end_date
+    'Physical Activity': 'https://api.fitbit.com/1/user/-/activities/date/{}.json', # BASE_URL, date
     'device': 'https://api.fitbit.com/1/user/-/devices.json', # BASE_URL
     'Activity_Time_Series': 'https://api.fitbit.com/1/user/-/spo2/date/{}/{}/all.json', # BASE_URL, start_date, end_date
     'Activity intraday': 'https://api.fitbit.com/1/user/-/activities/{}/date/{}/1m/time/{}/{}.json' # BASE_URL, start_date, start_time, end_time
@@ -232,6 +233,13 @@ class RequestBuilder:
                 self.params.get('start_time'),
                 self.params.get('end_time')
             )
+        elif self.endpoint_type == 'Breathing Rate':
+            self.url = url_template.format(
+                self.params.get('start_date'),
+                self.params.get('end_date')
+            )
+        elif self.endpoint_type == 'Physical Activity':
+            self.url = url_template.format(self.params.get('start_date'))
         elif self.endpoint_type == 'device':
             self.url = url_template
         
@@ -410,6 +418,98 @@ class SleepProcessor(DataProcessor):
                 
         return df
 
+
+class BreathingRateProcessor(DataProcessor):
+    """Normalize Fitbit and Google Health daily respiratory-rate summaries."""
+
+    def process(self, data: Dict) -> List[Dict]:
+        if not data or not isinstance(data, dict):
+            return []
+
+        processed_data = []
+        for record in data.get('br', []):
+            value = record.get('value') if isinstance(record, dict) else None
+            value = value if isinstance(value, dict) else {}
+            sleep_summary = value.get('fullSleepSummary')
+            sleep_summary = sleep_summary if isinstance(sleep_summary, dict) else {}
+            breathing_rate = value.get('breathingRate')
+            if breathing_rate in (None, ''):
+                breathing_rate = sleep_summary.get('breathingRate')
+            if breathing_rate in (None, ''):
+                continue
+            try:
+                breathing_rate = float(breathing_rate)
+            except (TypeError, ValueError):
+                continue
+            processed_data.append({
+                'date': record.get('dateTime'),
+                'syncDate': record.get('dateTime'),
+                'respiratory_rate': breathing_rate,
+            })
+        return processed_data
+
+    def to_dataframe(self, data: Any) -> pd.DataFrame:
+        if not data:
+            return pd.DataFrame()
+        df = pd.DataFrame(data)
+        if 'syncDate' in df.columns:
+            df['syncDate'] = pd.to_datetime(df['syncDate'], errors='coerce')
+        return df
+
+
+class PhysicalActivityProcessor(DataProcessor):
+    """Normalize workout-session summaries without exposing routes or notes."""
+
+    def process(self, data: Dict) -> List[Dict]:
+        if not data or not isinstance(data, dict):
+            return []
+
+        processed_data = []
+        response_date = data.get('_activity_date')
+        for record in data.get('activities', []):
+            if not isinstance(record, dict):
+                continue
+            start_time = record.get('startTime') or record.get('start_time')
+            if start_time and response_date and 'T' not in str(start_time):
+                start_time = f"{response_date}T{start_time}"
+
+            duration = record.get('duration')
+            try:
+                duration_minutes = float(duration) / 60000 if duration not in (None, '') else None
+            except (TypeError, ValueError):
+                duration_minutes = None
+
+            steps = record.get('steps')
+            try:
+                steps = int(steps) if steps not in (None, '') else None
+            except (TypeError, ValueError):
+                steps = None
+
+            processed_data.append({
+                'syncDate': start_time,
+                'end_time': record.get('endTime') or record.get('end_time'),
+                'activity_type': (
+                    record.get('activityName')
+                    or record.get('displayName')
+                    or record.get('exerciseType')
+                    or 'Activity'
+                ),
+                'duration_minutes': duration_minutes,
+                'steps': steps,
+            })
+        return processed_data
+
+    def to_dataframe(self, data: Any) -> pd.DataFrame:
+        if not data:
+            return pd.DataFrame()
+        df = pd.DataFrame(data)
+        for column in ('syncDate', 'end_time'):
+            if column in df.columns:
+                df[column] = pd.to_datetime(df[column], errors='coerce')
+        if 'syncDate' in df.columns:
+            df = df.dropna(subset=['syncDate'])
+        return df
+
 class DeviceProcessor(DataProcessor):
     def process(self, data: Dict) -> List[Dict]:
         if not data or not isinstance(data, list):
@@ -454,6 +554,8 @@ class ProcessorFactory:
             DataType.STEPS.value: StepsProcessor(),
             DataType.SLEEP.value: SleepProcessor(),
             DataType.DEVICE_INFO.value: DeviceProcessor(),
+            DataType.BREATHING_RATE.value: BreathingRateProcessor(),
+            DataType.ACTIVITY.value: PhysicalActivityProcessor(),
         }
         
         endpoint_to_data_type = {
@@ -463,6 +565,8 @@ class ProcessorFactory:
             'Steps Intraday': DataType.STEPS.value,
             'Sleep': DataType.SLEEP.value,
             'Sleep Levels': DataType.SLEEP.value,
+            'Breathing Rate': DataType.BREATHING_RATE.value,
+            'Physical Activity': DataType.ACTIVITY.value,
             'device': DataType.DEVICE_INFO.value,
         }
         
@@ -1065,13 +1169,12 @@ class Watch:
             Number of minutes with heart rate data (0-1440)
         """
         url = f"https://api.fitbit.com/1/user/-/activities/heart/date/{date}/{date}/1min.json"
-        response = requests.get(url, headers=self.header)
-        
-        if response.status_code != 200:
-            print(f"Error in hr_minutes_one_day: {response.status_code}")
-            return 0
-            
-        js = response.json()
+        js = self._request_fitbit_json_with_auth_retry(
+            'Heart Rate Intraday',
+            url,
+            self.header,
+            context=f'for {date}',
+        )
         
         meta = js.get("activities-heart-intraday", {})
         pts = len(meta.get("dataset", []))  # 1 point per minute
@@ -1095,29 +1198,55 @@ class Watch:
         if isinstance(end_date, datetime.datetime) or isinstance(end_date, datetime.date):
             end_date = end_date.strftime("%Y-%m-%d")
             
-        rows = self.quick_scan(start_date, end_date)  # pass 1
-        
-        if not rows:
-            return []
-            
-        df = pd.DataFrame(rows)
-        suspects = []
-        
-        if not df.empty and 'no_hr_hint' in df.columns and 'date' in df.columns:
-            suspects = df[df.no_hr_hint]["date"].tolist()
-        
+        if self.health_client is not None:
+            bad = []
+            current = datetime.date.fromisoformat(start_date)
+            last = datetime.date.fromisoformat(end_date)
+            while current <= last:
+                date_str = current.isoformat()
+                data = self.fetch_data(
+                    'Heart Rate Intraday',
+                    start_date=date_str,
+                    end_date=date_str,
+                    start_time='00:00',
+                    end_time='24:00',
+                )
+                frame = self.get_data_as_dataframe('Heart Rate Intraday', data)
+                if frame.empty:
+                    available_minutes = 0
+                elif 'datetime' in frame.columns:
+                    timestamps = pd.to_datetime(frame['datetime'], errors='coerce').dropna()
+                    available_minutes = min(1440, timestamps.dt.floor('min').nunique())
+                else:
+                    available_minutes = min(1440, len(frame.index))
+                missing_count = 1440 - available_minutes
+                if available_minutes / 1440 < p_thresh:
+                    bad.append({
+                        'date': date_str,
+                        'available_minutes': available_minutes,
+                        'missing_count': missing_count,
+                        'percentage_available': round((available_minutes / 1440) * 100, 2),
+                        'percentage_missing': round((missing_count / 1440) * 100, 2),
+                    })
+                current += datetime.timedelta(days=1)
+            return bad
+
+        current = datetime.date.fromisoformat(start_date)
+        last = datetime.date.fromisoformat(end_date)
         bad = []
-        for d in suspects:  # pass 2, targeted
-            pts = self.hr_minutes_one_day(d)
+        while current <= last:
+            date_str = current.isoformat()
+            pts = self.hr_minutes_one_day(date_str)
             missing_count = 1440 - pts
             if pts / 1440 < p_thresh:
                 bad.append({
-                    "date": d, 
+                    "date": date_str,
                     "available_minutes": pts,
                     "missing_count": missing_count,
                     "percentage_available": round((pts / 1440) * 100, 2),
                     "percentage_missing": round((missing_count / 1440) * 100, 2)
                 })
+            current += datetime.timedelta(days=1)
         
         return sorted(bad, key=lambda x: x["date"])
     

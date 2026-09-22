@@ -1,25 +1,37 @@
 import streamlit as st
-from mitosheet.streamlit.v1 import spreadsheet
 import pandas as pd
 import polars as pl
 import datetime
 import plotly.express as px
 import plotly.graph_objects as go
-from pathlib import Path
-import os
 import time
-import functools
-from datetime import timedelta
-import re
 
 from controllers.project_controller import ProjectController
-from controllers.agGridHelper import aggrid_polars
-from entity.Sheet import Spreadsheet, GoogleSheetsAdapter
+from entity.Sheet import Spreadsheet
 from entity.Watch import Watch, WatchFactory
 from model.config import get_secrets
 from entity.AsyncSheetsManager import AsyncSheetsManager
 from utils.rate_limit_ui import show_rate_limit_notice
 from utils.access_control import require_external_service_access, require_write_access
+
+
+SIGNAL_OPTIONS = [
+    "Heart Rate",
+    "Steps",
+    "Sleep",
+    "Physical Activity",
+    "Respiratory Rate",
+    "Missing Heart Rate Coverage",
+]
+
+SIGNAL_MAP = {
+    "Heart Rate": "HR",
+    "Steps": "steps",
+    "Sleep": "sleep_duration",
+    "Physical Activity": "physical_activity",
+    "Respiratory Rate": "respiratory_rate",
+    "Missing Heart Rate Coverage": "missing_values",
+}
 
 # Increase cache time to reduce API calls
 # @st.cache_data(ttl=1800)  # Cache for 30 minutes instead of 5
@@ -149,6 +161,27 @@ def fetch_watch_data(watch_name, signal_type, start_date, end_date, should_fetch
             if not df.empty and 'value' in df.columns:
                 df = df.rename(columns={'value': 'steps'})
                 df['syncDate'] = df['datetime']
+        elif signal_type == "respiratory_rate":
+            start_date_str = start_date.strftime("%Y-%m-%d") if isinstance(start_date, datetime.date) else start_date
+            end_date_str = end_date.strftime("%Y-%m-%d") if isinstance(end_date, datetime.date) else end_date
+            data = watch.fetch_data(
+                'Breathing Rate',
+                start_date=start_date_str,
+                end_date=end_date_str,
+            )
+            df = watch.get_data_as_dataframe('Breathing Rate', data)
+
+        elif signal_type == "physical_activity":
+            start_date_str = start_date.strftime("%Y-%m-%d") if isinstance(start_date, datetime.date) else start_date
+            data = watch.fetch_data(
+                'Physical Activity',
+                start_date=start_date_str,
+                end_date=start_date_str,
+            )
+            if isinstance(data, dict):
+                data.setdefault('_activity_date', start_date_str)
+            df = watch.get_data_as_dataframe('Physical Activity', data)
+
         elif signal_type == "missing_values":
             # Convert date objects to strings in the format YYYY-MM-DD
             start_date_str = start_date.strftime("%Y-%m-%d") if isinstance(start_date, datetime.date) else start_date
@@ -157,7 +190,7 @@ def fetch_watch_data(watch_name, signal_type, start_date, end_date, should_fetch
             # Show a message to the user that this might take some time
             st.info(f"Scanning for missing heart rate data from {start_date_str} to {end_date_str}. This may take a moment...")
 
-            # Fetch missing values data from Fitbit API
+                # Fetch provider heart-rate coverage data.
             try:
                 # Use the Watch methods we added to find days with missing data
                 bad_days = watch.find_bad_days(
@@ -192,7 +225,7 @@ def fetch_watch_data(watch_name, signal_type, start_date, end_date, should_fetch
             start_date_str = start_date.strftime("%Y-%m-%d") if isinstance(start_date, datetime.date) else start_date
             end_date_str = end_date.strftime("%Y-%m-%d") if isinstance(end_date, datetime.date) else end_date
 
-            # Fetch sleep data from Fitbit API
+            # Fetch sleep data from the configured provider.
             data = watch.fetch_data(
                 'Sleep',
                 start_date=start_date_str,  # Pass date as string
@@ -231,6 +264,59 @@ def _normalize_signal_frame(data):
         data['syncDate'] = pd.to_datetime(data['syncDate'], errors='coerce')
         data = data.dropna(subset=['syncDate']).sort_values('syncDate')
     return data
+
+
+def _render_signal_results(data, signal_column, selected_signal, watch_name, start_date, end_date):
+    """Render one consistent table and chart for every supported signal."""
+    data = _normalize_signal_frame(data)
+    st.subheader(f"{selected_signal}: {start_date} to {end_date}")
+    st.dataframe(data, width="stretch", hide_index=True)
+
+    title = f"{selected_signal} for {watch_name}"
+    if signal_column == "HR" and {'syncDate', 'HR'} <= set(data.columns):
+        figure = px.line(data, x='syncDate', y='HR', title=title)
+    elif signal_column == "steps" and {'syncDate', 'steps'} <= set(data.columns):
+        figure = px.bar(data, x='syncDate', y='steps', title=title)
+    elif signal_column == "sleep_duration" and {'syncDate', 'sleep_duration'} <= set(data.columns):
+        figure = px.bar(
+            data,
+            x='syncDate',
+            y='sleep_duration',
+            color='main_sleep' if 'main_sleep' in data.columns else None,
+            labels={'sleep_duration': 'Sleep duration (hours)', 'syncDate': 'Sleep start'},
+            title=title,
+        )
+    elif signal_column == "respiratory_rate" and {'syncDate', 'respiratory_rate'} <= set(data.columns):
+        figure = px.line(
+            data,
+            x='syncDate',
+            y='respiratory_rate',
+            markers=True,
+            labels={'respiratory_rate': 'Breaths per minute', 'syncDate': 'Date'},
+            title=title,
+        )
+    elif signal_column == "physical_activity" and {'syncDate', 'duration_minutes'} <= set(data.columns):
+        figure = px.bar(
+            data,
+            x='syncDate',
+            y='duration_minutes',
+            color='activity_type' if 'activity_type' in data.columns else None,
+            labels={'duration_minutes': 'Active duration (minutes)', 'syncDate': 'Activity start'},
+            title=title,
+        )
+    elif signal_column == "missing_values" and {'date', 'percentage_missing'} <= set(data.columns):
+        figure = px.bar(
+            data,
+            x='date',
+            y='percentage_missing',
+            color='percentage_missing',
+            color_continuous_scale='Reds',
+            labels={'percentage_missing': 'Missing heart-rate minutes (%)', 'date': 'Date'},
+            title=title,
+        )
+    else:
+        return
+    st.plotly_chart(figure, width="stretch")
 
 
 # Add a cache decorator for watch details
@@ -441,94 +527,45 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
             if 'prev_end_date' not in st.session_state:
                 st.session_state.prev_end_date = end_date
 
-            # Signal selector
-            signal_options = ["missingValues","Heart Rate", "Steps", "Sleep"]
-            selected_signal = st.selectbox("Select Signal Type", signal_options)
+            selected_signal = st.selectbox("Select Signal Type", SIGNAL_OPTIONS)
+            signal_column = SIGNAL_MAP[selected_signal]
 
-            # Track previous signal selection
             if 'prev_signal' not in st.session_state:
                 st.session_state.prev_signal = selected_signal
 
-            # Map selected signal to data column
-            signal_map = {
-                "Heart Rate": "HR",
-                "Steps": "steps",
-                "Sleep": "sleep_duration",
-                "missingValues": "missing_values"
-            }
-
-            signal_column = signal_map.get(selected_signal)
-
-            # Better session state management
-            if "load_data_button" not in st.session_state:
-                st.session_state.load_data_button = False
-            if "loading_complete" not in st.session_state:
-                st.session_state.loading_complete = False
-            if "loaded_dates" not in st.session_state:
-                st.session_state.loaded_dates = []
-
-            # Check for changes in selection that should reset the load button state
-            selection_changed = (st.session_state.prev_watch != st.session_state.selected_watch or
-                                st.session_state.prev_start_date != start_date or
-                                st.session_state.prev_end_date != end_date or
-                                st.session_state.prev_signal != selected_signal)
-
+            selection_changed = (
+                st.session_state.prev_watch != st.session_state.selected_watch
+                or st.session_state.prev_start_date != start_date
+                or st.session_state.prev_end_date != end_date
+                or st.session_state.prev_signal != selected_signal
+            )
             if selection_changed:
-                if st.session_state.load_data_button:
-                    st.session_state.load_data_button = False
-                    st.session_state.loading_complete = False
-                    st.session_state.loaded_dates = []
-                    st.session_state.current_data = None
-                    st.session_state.loaded_watch = None
-                    st.session_state.loaded_signal = None
-
-                # Update previous selections
+                st.session_state.current_data = None
+                st.session_state.loaded_watch = None
+                st.session_state.loaded_signal = None
                 st.session_state.prev_watch = st.session_state.selected_watch
                 st.session_state.prev_start_date = start_date
                 st.session_state.prev_end_date = end_date
                 st.session_state.prev_signal = selected_signal
 
-            # Show debugging info in an expander
-            with st.expander("Debug Info", expanded=False):
-                st.write("Button state:", st.session_state.load_data_button)
-                st.write("Loading complete:", st.session_state.loading_complete)
-                st.write("Selected watch:", st.session_state.selected_watch)
-                st.write("Selected signal:", signal_column)
-                st.write("Selection changed:", selection_changed)
+            if selected_signal == "Respiratory Rate" and provider_label == "Fitbit":
+                st.caption("Fitbit respiratory-rate access requires the respiratory_rate OAuth permission.")
 
-            # Create a button that triggers loading
-            load_button_clicked = st.button("Load Data")
-
-            # Set the flag when button is clicked
-            if load_button_clicked:
-                st.session_state.load_data_button = True
-
-            # Process data when button is clicked but loading is not complete
-            if st.session_state.load_data_button and not st.session_state.loading_complete:
-                # Calculate date range
+            if start_date > end_date:
+                st.error("Start Date must be on or before End Date.")
+            elif st.button("Load Data", type="primary"):
                 date_range = []
                 current_date = start_date
                 while current_date <= end_date:
                     date_range.append(current_date)
                     current_date += datetime.timedelta(days=1)
 
-                # Initialize container for all data
                 all_data = pd.DataFrame()
-
-                # Use a with st.spinner block to show loading status
-                with st.spinner(f"Fetching {selected_signal} data for {len(date_range)} days...",show_time=True):
-                    # Add a progress bar
-                    progress_bar = st.progress(0)
-                    if signal_column in ["HR", "steps"]:
-                        day_frames = []
-                        st.session_state.loaded_dates = []
-
-                        for i, single_date in enumerate(date_range):
-                            progress_bar.progress((i + 1) / len(date_range))
-
-                            date_str = single_date.strftime("%Y-%m-%d")
-                            st.text(f"Processing {date_str} ({i + 1}/{len(date_range)})")
-
+                with st.spinner(f"Fetching {selected_signal} data...", show_time=True):
+                    if signal_column in {"HR", "steps", "physical_activity"}:
+                        progress_bar = st.progress(0)
+                        frames = []
+                        for index, single_date in enumerate(date_range):
                             day_data = fetch_watch_data(
                                 st.session_state.selected_watch,
                                 signal_column,
@@ -538,23 +575,13 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                                 spreadsheet=sp,
                             )
                             day_data = _normalize_signal_frame(day_data)
-
                             if not day_data.empty:
-                                day_data_key = f"{st.session_state.selected_watch}_{signal_column}_{date_str}"
-                                st.session_state[day_data_key] = day_data
-                                st.session_state.loaded_dates.append(date_str)
-                                day_frames.append(day_data)
-
-                        if day_frames:
-                            all_data = pd.concat(day_frames, ignore_index=True)
+                                frames.append(day_data)
+                            progress_bar.progress((index + 1) / len(date_range))
+                        if frames:
+                            all_data = pd.concat(frames, ignore_index=True)
                     else:
-                        # Special case for sleep data
-                        st.text(f"Processing {signal_column} data for {st.session_state.selected_watch} from {start_date} to {end_date}")
-                        date_str = start_date.strftime("%Y-%m-%d")
-                        # Unique key for this date's data
-                        day_data_key = f"{st.session_state.selected_watch}_{signal_column}_{date_str}"
-                        # Fetch sleep data
-                        sleep_data = fetch_watch_data(
+                        all_data = fetch_watch_data(
                             st.session_state.selected_watch,
                             signal_column,
                             start_date,
@@ -562,202 +589,30 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
                             should_fetch=True,
                             spreadsheet=sp,
                         )
-                        st.write(sleep_data)
-                        # Store in session state
-                        if not sleep_data.empty:
-                            st.session_state[day_data_key] = sleep_data
-                            all_data = pd.concat([all_data, sleep_data])
-                            if date_str not in st.session_state.loaded_dates:
-                                st.session_state.loaded_dates.append(date_str)
-                        else:
-                            st.warning("No sleep data found for the selected date range.")
-                            st.session_state.loaded_dates = []
-                            st.session_state.current_data = None
-                            st.session_state.loaded_watch = None
-                            st.session_state.loaded_signal = None
-                    st.write(all_data)
-                    # Store combined data
-                    if not all_data.empty:
-                        st.session_state.current_data = all_data
-                        st.session_state.loaded_watch = st.session_state.selected_watch
-                        st.session_state.loaded_signal = signal_column
-                    else:
-                        st.warning("No data found for the selected date range.")
-                        st.session_state.loaded_dates = []
-                        st.session_state.current_data = None
-                        st.session_state.loaded_watch = None
-                        st.session_state.loaded_signal = None
+                        all_data = _normalize_signal_frame(all_data)
 
-                # Mark loading as complete to prevent reloading on rerun
-                # st.session_state.loading_complete = True
-                # # Force a rerun to display the data
-                # st.rerun()
-                st.session_state.fetch_debug = {
-                    "rows_fetched": 0 if all_data is None else (len(all_data.index) if hasattr(all_data, 'index') else (all_data.shape[0] if hasattr(all_data, 'shape') else 0)),
-                    "dates_loaded": list(st.session_state.loaded_dates),
-                    "watch": st.session_state.selected_watch,
-                    "signal": signal_column
-                }
+                st.session_state.current_data = all_data if not all_data.empty else None
+                st.session_state.loaded_watch = st.session_state.selected_watch
+                st.session_state.loaded_signal = signal_column
 
-                if all_data is not None and not all_data.empty:
-                    st.session_state.current_data = all_data
-                    st.session_state.loaded_watch = st.session_state.selected_watch
-                    st.session_state.loaded_signal = signal_column
-                    st.session_state.loading_complete = True
+            loaded_data = st.session_state.get('current_data')
+            loaded_for_selection = (
+                st.session_state.get('loaded_watch') == st.session_state.selected_watch
+                and st.session_state.get('loaded_signal') == signal_column
+            )
+            if loaded_for_selection:
+                if loaded_data is None or loaded_data.empty:
+                    st.info(f"No {selected_signal.lower()} data was returned for this date range.")
                 else:
-                    st.session_state.current_data = None
-                    st.session_state.loaded_watch = None
-                    st.session_state.loaded_signal = None
-                    st.session_state.loading_complete = True  # still mark finished so the UI can show the message
-
-                # prefer the official rerun API
-                try:
-                    st.rerun()
-                except Exception:
-                     # If rerun fails, continue — the session_state flags are set and UI will update on next interaction
-                    pass
-
-            # Display the loaded data after loading is complete
-            if st.session_state.loading_complete and "loaded_watch" in st.session_state:
-                # If there's no data, show a warning
-                if (st.session_state.current_data is None or st.session_state.current_data.empty):
-                    st.warning("No data to show.")
-                    st.write("here")
-                    st.warning(st.session_state.fetch_debug)
-                    st.session_state.loading_complete = False
-                    st.session_state.loaded_dates = []
-                    st.session_state.current_data = None
-                    st.session_state.loaded_watch = None
-                    st.session_state.loaded_signal = None
-                    st.session_state.load_data_button = False
-                elif st.session_state.loaded_watch != st.session_state.selected_watch:
-                    st.warning("Data loaded for a different watch. Please select the correct watch and run again.")
-                    st.session_state.loading_complete = False
-                    st.session_state.loaded_dates = []
-                    st.session_state.current_data = None
-                    st.session_state.loaded_watch = None
-                    st.session_state.loaded_signal = None
-                    st.session_state.load_data_button = False
-                else:
-                    st.success(f"Data loaded successfully for {len(st.session_state.loaded_dates)} dates")
-
-                    combined_data = st.session_state.current_data.copy()
-                    if 'syncDate' in combined_data.columns:
-                        combined_data['syncDate'] = pd.to_datetime(combined_data['syncDate'], errors='coerce')
-                        combined_data = combined_data.sort_values('syncDate')
-
-                    if signal_column in ["HR", "steps"]:
-                        st.subheader(f"{selected_signal} for {start_date} to {end_date}")
-                        try:
-                            spreadsheet(combined_data)
-                        except Exception as e:
-                            if not show_rate_limit_notice(
-                                e,
-                                provider="google_sheets",
-                                key="mitosheet_combined_data",
-                                context="rendering spreadsheet data",
-                            ):
-                                st.error(f"Error with spreadsheet: {str(e)}")
-                            st.dataframe(combined_data, width="stretch")
-
-                        if signal_column == "HR":
-                            fig = px.line(
-                                combined_data,
-                                x='syncDate',
-                                y='HR',
-                                title=f'Heart Rate for {st.session_state.selected_watch} ({start_date} to {end_date})'
-                            )
-                        else:
-                            fig = px.bar(
-                                combined_data,
-                                x='syncDate',
-                                y='steps',
-                                title=f'Steps for {st.session_state.selected_watch} ({start_date} to {end_date})'
-                            )
-                        st.plotly_chart(fig, width="stretch")
-
-                    # Display data for each date in expanders
-                    for date_str in st.session_state.loaded_dates:
-                        day_data_key = f"{st.session_state.selected_watch}_{signal_column}_{date_str}"
-
-                        if day_data_key in st.session_state:
-                            with st.expander(f"Data for {date_str}", expanded=False):
-                                if not st.session_state[day_data_key].empty:
-                                    st.subheader(f"{selected_signal} for {date_str}")
-
-                                    # Safe way to use spreadsheet
-                                    try:
-                                        spreadsheet(st.session_state[day_data_key])
-                                    except Exception as e:
-                                        if not show_rate_limit_notice(
-                                            e,
-                                            provider="google_sheets",
-                                            key=f"mitosheet_{day_data_key}",
-                                            context="rendering daily spreadsheet data",
-                                        ):
-                                            st.error(f"Error with spreadsheet: {str(e)}")
-                                        st.dataframe(st.session_state[day_data_key])
-
-                                    # Create visualization
-                                    if signal_column == "HR":
-                                        fig = px.line(st.session_state[day_data_key], x='syncDate', y='HR',
-                                                    title=f'Heart Rate for {date_str}')
-                                        st.plotly_chart(fig, width="stretch")
-                                    elif signal_column == "steps":
-                                        fig = px.bar(st.session_state[day_data_key], x='syncDate', y='steps',
-                                                    title=f'Steps for {date_str}')
-                                        st.plotly_chart(fig, width="stretch")
-                                    elif signal_column == "sleep_duration":
-
-                                        df = pl.DataFrame(st.session_state[day_data_key]).with_columns(
-                                            pl.col("duration").pipe(lambda x: x / (1000 * 60 * 60))
-                                        )
-                                        aggrid_polars(df,
-                                                    key=f"sleep_duration_{date_str}",
-                                                    selection_mode="single")
-                                    elif signal_column == "missing_values":
-                                        # Create a bar chart showing missing minutes per day
-                                        fig = px.bar(
-                                            st.session_state[day_data_key],
-                                            x='date',
-                                            y='percentage_missing',
-                                            title=f'Missing Heart Rate Data (minutes) for {date_str}',
-                                            labels={
-                                                'date': 'Date',
-                                                'missing_values': 'Missing Minutes'
-                                            },
-                                            color='percentage_missing',
-                                            color_continuous_scale='Reds',
-                                        )
-                                        fig.update_layout(
-                                            xaxis_title='Date',
-                                            yaxis_title='Missing Minutes (out of 1440)',
-                                            coloraxis_colorbar_title='% Missing'
-                                        )
-                                        st.plotly_chart(fig, width="stretch")
-
-                                        # Also display as a table for detailed analysis
-                                        st.write("### Detailed Missing Data")
-                                        detail_df = st.session_state[day_data_key].copy()
-                                        # detail_df['available_minutes'] = 1440 - detail_df['missing_values']
-                                        detail_df['available_percentage'] = (detail_df['available_minutes'] / 1440 * 100).round(2)
-                                        st.dataframe(
-                                            detail_df[['date', 'available_minutes', 'percentage_missing', 'available_percentage']],
-                                            width="stretch"
-                                        )
-
-                                else:
-                                    st.info(f"No data for {date_str}")
-
-                    # # Add a clear button to reset loading state
-                    # if st.button("Clear Data"):
-                    #     st.session_state.load_data_button = False
-                    #     st.session_state.loading_complete = False
-                    #     st.session_state.loaded_dates = []
-                    #     st.session_state.current_data = None
-                    #     st.session_state.loaded_watch = None
-                    #     st.session_state.loaded_signal = None
-                    #     st.rerun()
+                    st.success(f"Loaded {len(loaded_data.index):,} records from {provider_label}.")
+                    _render_signal_results(
+                        loaded_data,
+                        signal_column,
+                        selected_signal,
+                        st.session_state.selected_watch,
+                        start_date,
+                        end_date,
+                    )
 
         with tab2:
             st.subheader(f"Device Details: {st.session_state.selected_watch}")

@@ -14,6 +14,7 @@ from utils.secret_store import load_json_secret
 AUTH_URL = "https://www.fitbit.com/oauth2/authorize"
 TOKEN_URL = "https://api.fitbit.com/oauth2/token"
 REVOKE_URL = "https://api.fitbit.com/oauth2/revoke"
+REQUIRED_RESEARCH_SCOPES = ("activity", "heartrate", "sleep", "respiratory_rate")
 
 
 class FitbitOAuthError(RuntimeError):
@@ -51,6 +52,8 @@ def _cfg():
         or secrets.get("fitbit_scopes")
         or ""
     ).strip()
+    configured_scopes = scopes.split()
+    scopes = " ".join(dict.fromkeys([*configured_scopes, *REQUIRED_RESEARCH_SCOPES]))
     missing = [
         name for name, value in (
             ("FITBIT_CLIENT_ID", client_id),

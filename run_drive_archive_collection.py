@@ -191,13 +191,22 @@ def _utc_bounds(window: PeriodWindow) -> tuple[str, str]:
 def _google_filter(data_type: str, record_type: str, window: PeriodWindow) -> str:
     start = window.start_date.isoformat()
     end = (window.end_date + timedelta(days=1)).isoformat()
-    identifier = data_type.replace("-", "_")
+    daily_fields = {
+        "daily-respiratory-rate": "dailyRespiratoryRate.date",
+    }
+    interval_fields = {
+        "exercise": "exercise.interval.civil_start_time",
+    }
     if record_type == "daily":
-        field = f"{identifier}.date"
+        field = daily_fields.get(data_type)
+        if not field:
+            raise ValueError(f"No daily list filter for {data_type}")
     elif record_type == "sleep":
         field = "sleep.interval.civil_end_time"
     elif record_type == "interval":
-        field = f"{identifier}.interval.civil_start_time"
+        field = interval_fields.get(data_type)
+        if not field:
+            raise ValueError(f"No interval list filter for {data_type}")
     else:
         raise ValueError(f"No list filter for {record_type}")
     return f'{field} >= "{start}" AND {field} < "{end}"'
