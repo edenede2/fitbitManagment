@@ -113,16 +113,8 @@ def fetch_watch_data(watch_name, signal_type, start_date, end_date, should_fetch
                     start_time="00:00",
                     end_time=end_time
                 )
-                google_debug = data.get("_google_health") if isinstance(data, dict) else None
                 # Process data with Watch class method
                 df = watch.get_data_as_dataframe('Heart Rate Intraday', data)
-                if df.empty and google_debug:
-                    st.warning(
-                        "Google Health returned "
-                        f"{google_debug.get('rollup_count', 0)} HR rollup points; "
-                        f"parsed {google_debug.get('parsed_count', 0)} points. "
-                        f"First point keys: {google_debug.get('first_keys', [])}"
-                    )
 
                 # Rename columns for consistency with dashboard display
                 if not df.empty and 'value' in df.columns:
@@ -190,7 +182,7 @@ def fetch_watch_data(watch_name, signal_type, start_date, end_date, should_fetch
             # Show a message to the user that this might take some time
             st.info(f"Scanning for missing heart rate data from {start_date_str} to {end_date_str}. This may take a moment...")
 
-                # Fetch provider heart-rate coverage data.
+            # Fetch provider heart-rate coverage data.
             try:
                 # Use the Watch methods we added to find days with missing data
                 bad_days = watch.find_bad_days(
@@ -360,13 +352,6 @@ def get_available_watches(user_email, user_role, user_project):
     try:
         watches_df = cached_get_watches(user_email, user_role, user_project)
 
-        # Log the time taken
-        elapsed_time = time.time() - start_time
-
-        # Only display timing info first time or if it's slow
-        if not st.session_state[cache_key] or elapsed_time > 2.0:
-            st.info(f"Watches loaded in {elapsed_time:.2f} seconds")
-
         # Mark that we've used the cache successfully
         st.session_state[cache_key] = True
 
@@ -391,8 +376,6 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
         user_role (str): The role of the user (Admin, Manager, Student, Guest)
         user_project (str): The project the user is associated with
     """
-    # Time the entire dashboard loading process
-    dashboard_start_time = time.time()
     if "fitbit_watches" not in st.session_state:
         try:
             df = sp.get_sheet("fitbit", sheet_type="fitbit").to_dataframe("polars")
@@ -427,17 +410,6 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
     st.title("Wearable Data Dashboard")
     st.markdown("---")
 
-    # Add option to debug slow performance
-    if st.checkbox("Show Performance Debug Info", value=False):
-        st.write("This will display information about slow operations.")
-        with st.expander("Project Controller Performance", expanded=True):
-            # Add placeholder for project controller debug info
-            if "controller_debug" not in st.session_state:
-                st.session_state.controller_debug = []
-
-            for debug_msg in st.session_state.controller_debug:
-                st.text(debug_msg)
-
     # Get available watches
     with st.spinner("Loading available watches...",show_time=True):
         if 'available_watches' not in st.session_state:
@@ -446,11 +418,6 @@ def display_dashboard(user_email, user_role, user_project, sp: Spreadsheet) -> N
         if len(st.session_state.available_watches) <= 0:
             st.warning("No watches available for your role and project")
             return
-
-    # Log total dashboard load time only on initial load or if it's slow
-    dashboard_load_time = time.time() - dashboard_start_time
-    if dashboard_load_time > 2.0:  # Only show timing info if loading is slow
-        st.info(f"Dashboard initialized in {dashboard_load_time:.2f} seconds")
 
     # Display watch selector in the main page (not sidebar)
     st.subheader("Select Watch")
