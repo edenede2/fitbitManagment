@@ -27,6 +27,15 @@ def _enabled() -> bool:
     return os.getenv("CLOCK_RUN_JOBS", "false").strip().casefold() in {"1", "true", "yes", "on"}
 
 
+def _archive_enabled() -> bool:
+    return os.getenv("ARCHIVE_RUN_JOBS", "true").strip().casefold() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 def _spreadsheet() -> Spreadsheet:
     load_runtime_config()
     key = os.getenv("SPREADSHEET_KEY", "").strip()
@@ -48,12 +57,21 @@ def _retry_delays() -> list[float]:
     return delays
 
 
-def _run_with_backoff(job_name: str, operation):
+def _run_with_backoff(
+    job_name: str,
+    operation,
+    *,
+    retry_reported_failures: bool = True,
+):
     delays = _retry_delays()
     for attempt in range(len(delays) + 1):
         try:
             result = operation()
-            if isinstance(result, dict) and result.get("failed"):
+            if (
+                retry_reported_failures
+                and isinstance(result, dict)
+                and result.get("failed")
+            ):
                 raise RuntimeError(f"{result['failed']} archive operations failed")
             return result
         except Exception as exc:
@@ -67,7 +85,12 @@ def _run_with_backoff(job_name: str, operation):
             time.sleep(delay)
 
 
-def _run_audited(job_name: str, operation) -> None:
+def _run_audited(
+    job_name: str,
+    operation,
+    *,
+    retry_reported_failures: bool = True,
+) -> None:
     if not _enabled():
         print(f"{job_name}: skipped because CLOCK_RUN_JOBS is false")
         return
@@ -79,8 +102,17 @@ def _run_audited(job_name: str, operation) -> None:
     try:
         spreadsheet = _spreadsheet()
         run_id, _ = start_job(spreadsheet, job_name)
-        result = _run_with_backoff(job_name, operation)
-        finish_job(spreadsheet, run_id, status="success", message=str(result or ""))
+        result = _run_with_backoff(
+            job_name,
+            operation,
+            retry_reported_failures=retry_reported_failures,
+        )
+        status = (
+            "partial_failure"
+            if isinstance(result, dict) and result.get("failed")
+            else "success"
+        )
+        finish_job(spreadsheet, run_id, status=status, message=str(result or ""))
     except Exception as exc:
         if spreadsheet is not None and run_id:
             finish_job(spreadsheet, run_id, status="failed", message=type(exc).__name__)
@@ -95,7 +127,16 @@ def run_monitoring() -> None:
 
 
 def run_archive() -> None:
-    _run_audited("hourly-drive-archive", collect_drive_archives)
+    if not _archive_enabled():
+        print("hourly-drive-archive: skipped because ARCHIVE_RUN_JOBS is false")
+        return
+    # collect_drive_archives retries only its failed items.  Do not repeat the
+    # entire successful archive batch when a small subset remains unavailable.
+    _run_audited(
+        "hourly-drive-archive",
+        collect_drive_archives,
+        retry_reported_failures=False,
+    )
 
 
 def write_heartbeat() -> None:

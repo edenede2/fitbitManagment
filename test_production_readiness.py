@@ -10,7 +10,9 @@ from entity.Watch import Watch
 from run_drive_archive_collection import (
     GOOGLE_HEALTH_ARCHIVE_CADENCE,
     GOOGLE_DATA_TYPES,
+    PeriodWindow,
     _zip_tree,
+    collect_drive_archives,
     enabled_archive_providers,
     period_windows,
 )
@@ -285,6 +287,58 @@ class ArchiveBehaviorTests(unittest.TestCase):
         monthly = period_windows(now, "monthly", cutover)
         self.assertEqual([item.period for item in daily], ["2026-09-14"])
         self.assertEqual(monthly[0].start_date.isoformat(), "2026-09-14")
+
+    def test_archive_retry_repeats_only_failed_items(self):
+        watches = Mock()
+        watches.iter_rows.return_value = [
+            {"project": "Review", "name": "success", "provider": "fitbit"},
+            {"project": "Review", "name": "retry", "provider": "fitbit"},
+        ]
+        attempts = {"success": 0, "retry": 0}
+
+        def collect_one(**kwargs):
+            name = kwargs["row"]["name"]
+            attempts[name] += 1
+            if name == "retry" and attempts[name] == 1:
+                raise RuntimeError("temporary provider failure")
+            return "shadow"
+
+        env = {
+            "ARCHIVE_CUTOVER_AT": "2026-09-01T00:00:00+03:00",
+            "ARCHIVE_ENABLED_PROVIDERS": "fitbit",
+            "ARCHIVE_ITEM_RETRY_DELAYS_SECONDS": "0",
+        }
+        with patch.dict("os.environ", env, clear=False), patch(
+            "run_drive_archive_collection.load_runtime_config"
+        ), patch(
+            "run_drive_archive_collection.get_active_watches",
+            return_value=(watches, object()),
+        ), patch(
+            "run_drive_archive_collection.ARCHIVE_CADENCE_BY_PROVIDER",
+            {"fitbit": {"heart_rate": "daily"}},
+        ), patch(
+            "run_drive_archive_collection.period_windows",
+            return_value=[
+                PeriodWindow(
+                    "2026-09-22",
+                    datetime(2026, 9, 22).date(),
+                    datetime(2026, 9, 22).date(),
+                    "daily",
+                )
+            ],
+        ), patch(
+            "run_drive_archive_collection._collect_archive_item",
+            side_effect=collect_one,
+        ):
+            result = collect_drive_archives(
+                now=datetime(2026, 9, 23, tzinfo=ZoneInfo("Asia/Jerusalem")),
+                shadow=True,
+            )
+
+        self.assertEqual(attempts, {"success": 1, "retry": 2})
+        self.assertEqual(result["shadow"], 2)
+        self.assertEqual(result["retried"], 1)
+        self.assertEqual(result["failed"], 0)
 
     def test_zip_bytes_are_deterministic(self):
         with tempfile.TemporaryDirectory() as directory:

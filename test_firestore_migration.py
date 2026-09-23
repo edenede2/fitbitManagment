@@ -20,9 +20,10 @@ def spec_for(sheet):
 
 
 class FakeSnapshot:
-    def __init__(self, document_id, value):
+    def __init__(self, document_id, value, *, exists=True):
         self.id = document_id
         self._value = value
+        self.exists = exists
 
     def to_dict(self):
         return dict(self._value)
@@ -37,19 +38,36 @@ class FakeDocument:
     def set(self, value):
         self.client.data.setdefault(self.collection, {})[self.document_id] = dict(value)
 
+    def get(self):
+        self.client.document_get_calls += 1
+        value = self.client.data.get(self.collection, {}).get(self.document_id)
+        return FakeSnapshot(
+            self.document_id,
+            value or {},
+            exists=value is not None,
+        )
+
 
 class FakeCollection:
-    def __init__(self, client, name):
+    def __init__(self, client, name, filters=None):
         self.client = client
         self.name = name
+        self.filters = list(filters or [])
 
     def document(self, document_id):
         return FakeDocument(self.client, self.name, document_id)
 
+    def where(self, field, operator, value):
+        if operator != "==":
+            raise AssertionError("FakeCollection supports equality filters only")
+        return FakeCollection(self.client, self.name, self.filters + [(field, value)])
+
     def stream(self):
+        self.client.stream_calls += 1
         return [
             FakeSnapshot(document_id, value)
             for document_id, value in self.client.data.get(self.name, {}).items()
+            if all(value.get(field) == expected for field, expected in self.filters)
         ]
 
 
@@ -75,6 +93,8 @@ class FakeBatch:
 class FakeFirestoreClient:
     def __init__(self):
         self.data = {}
+        self.stream_calls = 0
+        self.document_get_calls = 0
 
     def collection(self, name):
         return FakeCollection(self, name)
@@ -275,6 +295,36 @@ class FirestoreMigrationTests(unittest.TestCase):
         )
         self.assertEqual(store.read_sheet_rows("fitbit"), [])
 
+    def test_identity_lookup_and_update_do_not_stream_entire_collection(self):
+        client = FakeFirestoreClient()
+        store = GoogleFirestoreStore(client=client, project_id="admontracker")
+        store.upsert_sheet_rows(
+            "archive_manifest",
+            [
+                {"logical_key": "project/watch/heart_rate/2026-09-22", "status": "uploaded"},
+                {"logical_key": "project/watch/sleep/2026-09", "status": "uploaded"},
+            ],
+        )
+
+        rows = store.read_sheet_rows(
+            "archive_manifest",
+            filters={"logical_key": "project/watch/heart_rate/2026-09-22"},
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(client.document_get_calls, 1)
+        self.assertEqual(client.stream_calls, 0)
+
+        self.assertEqual(
+            store.update_sheet_rows(
+                "archive_manifest",
+                keys={"logical_key": "project/watch/heart_rate/2026-09-22"},
+                updates={"status": "unchanged"},
+            ),
+            1,
+        )
+        self.assertEqual(client.document_get_calls, 2)
+        self.assertEqual(client.stream_calls, 0)
+
     def test_spreadsheet_routes_primary_backend_to_firestore(self):
         with patch.dict(
             os.environ,
@@ -301,7 +351,10 @@ class FirestoreMigrationTests(unittest.TestCase):
                 project="Yoga",
             )
         self.assertEqual(rows, [{"project": "Yoga", "name": "YN4"}])
-        store.read_sheet_rows.assert_called_once_with("fitbit")
+        store.read_sheet_rows.assert_called_once_with(
+            "fitbit",
+            filters={"project": "Yoga"},
+        )
 
     def test_firestore_missing_match_can_fall_back_to_sheets(self):
         store = Mock()

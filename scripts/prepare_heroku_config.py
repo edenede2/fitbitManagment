@@ -191,6 +191,7 @@ def build_config_vars(
         "SCHEDULER_TIMEZONE": "Asia/Jerusalem",
         "CLOCK_RUN_JOBS": "false",
         "CLOCK_CATCH_UP_ON_START": "true",
+        "ARCHIVE_RUN_JOBS": "false",
         "ARCHIVE_SHADOW_MODE": "true",
         # Enable Google Health archive collection only after the reviewer flow and
         # operational retention procedure have been smoke-tested in production.

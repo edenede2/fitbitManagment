@@ -105,6 +105,25 @@ def enabled_archive_providers(value: str | None = None) -> set[str]:
     return providers
 
 
+def archive_item_retry_delays(value: str | None = None) -> list[float]:
+    """Return bounded delays for retries of failed individual archive items."""
+    raw = value if value is not None else os.getenv(
+        "ARCHIVE_ITEM_RETRY_DELAYS_SECONDS",
+        "5,20",
+    )
+    delays: list[float] = []
+    for item in str(raw or "").split(","):
+        if not item.strip():
+            continue
+        try:
+            delays.append(max(0.0, min(float(item.strip()), 60.0)))
+        except ValueError as exc:
+            raise ValueError(
+                "ARCHIVE_ITEM_RETRY_DELAYS_SECONDS must be comma-separated numbers"
+            ) from exc
+    return delays
+
+
 def period_windows(now: datetime, cadence: str, cutover: datetime) -> list[PeriodWindow]:
     local_now = now.astimezone(LOCAL_TZ)
     cutoff_date = cutover.astimezone(LOCAL_TZ).date()
@@ -255,6 +274,118 @@ def _google_package(spreadsheet, row: dict[str, Any], data_type: str, window: Pe
         )
 
 
+def _archive_base_record(
+    row: dict[str, Any],
+    *,
+    provider: str,
+    data_type: str,
+    cadence: str,
+    window: PeriodWindow,
+) -> dict[str, Any]:
+    watch_name = str(row.get("name") or row.get("watchName") or "").strip()
+    project = str(row.get("project") or "unassigned").strip()
+    return {
+        "logical_key": archive_logical_key(
+            project,
+            watch_name,
+            provider,
+            data_type,
+            window.period,
+        ),
+        "project": project,
+        "watchName": watch_name,
+        "provider": provider,
+        "data_type": data_type,
+        "cadence": cadence,
+        "period": window.period,
+        "source_start": window.start_date.isoformat(),
+        "source_end": window.end_date.isoformat(),
+    }
+
+
+def _collect_archive_item(
+    *,
+    spreadsheet,
+    drive,
+    shadow: bool,
+    row: dict[str, Any],
+    provider: str,
+    data_type: str,
+    cadence: str,
+    window: PeriodWindow,
+) -> str:
+    """Collect one logical archive item and return its final status.
+
+    Exceptions are intentionally allowed to escape so the caller can retry only
+    this item.  Empty provider responses are a valid terminal outcome and are not
+    retried.
+    """
+    base_record = _archive_base_record(
+        row,
+        provider=provider,
+        data_type=data_type,
+        cadence=cadence,
+        window=window,
+    )
+    try:
+        content = (
+            _google_package(spreadsheet, row, data_type, window)
+            if provider == "google_health"
+            else _fitbit_package(spreadsheet, row, data_type, window)
+        )
+    except RuntimeError as exc:
+        message = " ".join(str(exc).split())[:300]
+        if "no archiveable" not in message.casefold():
+            raise
+        upsert_archive_record(
+            spreadsheet,
+            {**base_record, "status": "empty", "message": message},
+        )
+        return "empty"
+
+    checksum = sha256_bytes(content)
+    existing = get_archive_record(spreadsheet, base_record["logical_key"])
+    if (
+        existing
+        and str(existing.get("checksum") or "") == checksum
+        and str(existing.get("status") or "") == "uploaded"
+    ):
+        return "unchanged"
+    if shadow:
+        upsert_archive_record(
+            spreadsheet,
+            {
+                **base_record,
+                "checksum": checksum,
+                "size_bytes": len(content),
+                "status": "shadow_validated",
+            },
+        )
+        return "shadow"
+
+    filename = f"{data_type}_{window.filename_suffix}.zip"
+    upload = drive.upsert_zip(
+        project=base_record["project"],
+        watch_name=base_record["watchName"],
+        data_type=data_type,
+        filename=filename,
+        content=content,
+    )
+    upsert_archive_record(
+        spreadsheet,
+        {
+            **base_record,
+            "checksum": upload.checksum,
+            "drive_file_id": upload.file_id,
+            "drive_web_view_link": upload.web_view_link,
+            "size_bytes": upload.size,
+            "status": "uploaded",
+            "message": upload.action,
+        },
+    )
+    return "uploaded"
+
+
 def collect_drive_archives(*, now: datetime | None = None, shadow: bool | None = None) -> dict[str, int]:
     load_runtime_config()
     now = now or datetime.now(LOCAL_TZ)
@@ -276,12 +407,12 @@ def collect_drive_archives(*, now: datetime | None = None, shadow: bool | None =
         "shadow": 0,
         "empty": 0,
         "failed": 0,
+        "retried": 0,
         "provider_skipped": 0,
     }
-
+    tasks: list[dict[str, Any]] = []
     for row in watches.iter_rows(named=True):
         watch_name = str(row.get("name") or row.get("watchName") or "").strip()
-        project = str(row.get("project") or "unassigned").strip()
         provider_value = str(row.get("provider") or row.get("oauth_type") or "fitbit").casefold()
         provider = "google_health" if "google" in provider_value or provider_value == "health" else "fitbit"
         if not watch_name:
@@ -291,68 +422,72 @@ def collect_drive_archives(*, now: datetime | None = None, shadow: bool | None =
             continue
         for data_type, cadence in ARCHIVE_CADENCE_BY_PROVIDER[provider].items():
             for window in period_windows(now, cadence, cutover):
-                logical_key = archive_logical_key(project, watch_name, provider, data_type, window.period)
-                base_record = {
-                    "logical_key": logical_key,
-                    "project": project,
-                    "watchName": watch_name,
-                    "provider": provider,
-                    "data_type": data_type,
-                    "cadence": cadence,
-                    "period": window.period,
-                    "source_start": window.start_date.isoformat(),
-                    "source_end": window.end_date.isoformat(),
-                }
-                try:
-                    content = (
-                        _google_package(spreadsheet, row, data_type, window)
-                        if provider == "google_health"
-                        else _fitbit_package(spreadsheet, row, data_type, window)
-                    )
-                    checksum = sha256_bytes(content)
-                    existing = get_archive_record(spreadsheet, logical_key)
-                    if existing and str(existing.get("checksum") or "") == checksum and str(existing.get("status") or "") == "uploaded":
-                        counts["unchanged"] += 1
-                        continue
-                    if shadow:
-                        upsert_archive_record(
-                            spreadsheet,
-                            {**base_record, "checksum": checksum, "size_bytes": len(content), "status": "shadow_validated"},
-                        )
-                        counts["shadow"] += 1
-                        continue
-                    filename = f"{data_type}_{window.filename_suffix}.zip"
-                    upload = drive.upsert_zip(
-                        project=project,
-                        watch_name=watch_name,
-                        data_type=data_type,
-                        filename=filename,
-                        content=content,
-                    )
-                    upsert_archive_record(
-                        spreadsheet,
-                        {
-                            **base_record,
-                            "checksum": upload.checksum,
-                            "drive_file_id": upload.file_id,
-                            "drive_web_view_link": upload.web_view_link,
-                            "size_bytes": upload.size,
-                            "status": "uploaded",
-                            "message": upload.action,
-                        },
-                    )
-                    counts["uploaded"] += 1
-                except RuntimeError as exc:
-                    message = " ".join(str(exc).split())[:300]
-                    status = "empty" if "no archiveable" in message.casefold() else "failed"
-                    upsert_archive_record(spreadsheet, {**base_record, "status": status, "message": message})
-                    counts[status] += 1
-                except Exception as exc:
-                    upsert_archive_record(
-                        spreadsheet,
-                        {**base_record, "status": "failed", "message": type(exc).__name__},
-                    )
-                    counts["failed"] += 1
+                tasks.append(
+                    {
+                        "row": row,
+                        "provider": provider,
+                        "data_type": data_type,
+                        "cadence": cadence,
+                        "window": window,
+                    }
+                )
+
+    pending = tasks
+    retry_delays = archive_item_retry_delays()
+    for pass_index in range(len(retry_delays) + 1):
+        retry_pending: list[dict[str, Any]] = []
+        for task in pending:
+            row = task["row"]
+            provider = task["provider"]
+            data_type = task["data_type"]
+            cadence = task["cadence"]
+            window = task["window"]
+            base_record = _archive_base_record(
+                row,
+                provider=provider,
+                data_type=data_type,
+                cadence=cadence,
+                window=window,
+            )
+            try:
+                status = _collect_archive_item(
+                    spreadsheet=spreadsheet,
+                    drive=drive,
+                    shadow=shadow,
+                    row=row,
+                    provider=provider,
+                    data_type=data_type,
+                    cadence=cadence,
+                    window=window,
+                )
+                counts[status] += 1
+            except Exception as exc:
+                if pass_index < len(retry_delays):
+                    retry_pending.append(task)
+                    continue
+                upsert_archive_record(
+                    spreadsheet,
+                    {
+                        **base_record,
+                        "status": "failed",
+                        "message": type(exc).__name__,
+                    },
+                )
+                counts["failed"] += 1
+
+        if not retry_pending:
+            break
+        counts["retried"] += len(retry_pending)
+        delay = retry_delays[pass_index]
+        print(
+            f"Retrying {len(retry_pending)} failed archive operations "
+            f"in {delay:g}s"
+        )
+        if delay:
+            import time as time_module
+
+            time_module.sleep(delay)
+        pending = retry_pending
     return counts
 
 

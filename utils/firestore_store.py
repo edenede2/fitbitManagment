@@ -84,9 +84,44 @@ class GoogleFirestoreStore:
         collection: str,
         *,
         source_sheet: str | None = None,
+        filters: dict[str, Any] | None = None,
     ) -> dict[str, dict[str, Any]]:
+        """Read documents, using point/indexed lookups whenever filters exist.
+
+        The first Firestore cutover implementation streamed a whole collection and
+        filtered it in Python.  That is acceptable for an intentional full-table
+        load, but it is extremely expensive for per-watch lookups such as the
+        archive manifest.  Collections use deterministic IDs derived from their
+        business identity, so complete identity filters can be resolved with one
+        document read.  Partial filters use Firestore's indexed equality queries.
+        """
+        filters = dict(filters or {})
+        spec = spec_for_source_sheet(source_sheet) if source_sheet else None
+
+        if spec and all(
+            field in filters and str(filters.get(field) or "").strip()
+            for field in spec.identity_fields
+        ):
+            document_id = stable_document_id(spec, filters, 0)
+            snapshot = self.client.collection(collection).document(document_id).get()
+            if not getattr(snapshot, "exists", True):
+                return {}
+            data = snapshot.to_dict() or {}
+            metadata = data.get("_migration") or {}
+            if metadata.get("source_sheet") != source_sheet:
+                return {}
+            if not all(self._equal(data.get(key), value) for key, value in filters.items()):
+                return {}
+            return {snapshot.id: data}
+
+        query = self.client.collection(collection)
+        for key, value in filters.items():
+            # Positional equality filters work across the supported Firestore
+            # client versions and remain backed by automatic single-field indexes.
+            query = query.where(key, "==", value)
+
         documents: dict[str, dict[str, Any]] = {}
-        for snapshot in self.client.collection(collection).stream():
+        for snapshot in query.stream():
             data = snapshot.to_dict() or {}
             if source_sheet:
                 metadata = data.get("_migration") or {}
@@ -95,14 +130,31 @@ class GoogleFirestoreStore:
             documents[snapshot.id] = data
         return documents
 
+    @staticmethod
+    def _equal(left: Any, right: Any) -> bool:
+        if isinstance(left, bool):
+            left = "TRUE" if left else "FALSE"
+        if isinstance(right, bool):
+            right = "TRUE" if right else "FALSE"
+        return str(left or "").strip() == str(right or "").strip()
+
     def write_migration_run(self, run_id: str, values: dict[str, Any]) -> None:
         self.client.collection("_migration_runs").document(run_id).set(values)
 
-    def read_sheet_rows(self, source_sheet: str) -> list[dict[str, Any]]:
+    def read_sheet_rows(
+        self,
+        source_sheet: str,
+        *,
+        filters: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
         spec = spec_for_source_sheet(source_sheet)
         if spec is None:
             raise KeyError(f"No Firestore mapping exists for sheet {source_sheet}")
-        documents = self.read_documents(spec.collection, source_sheet=source_sheet)
+        documents = self.read_documents(
+            spec.collection,
+            source_sheet=source_sheet,
+            filters=filters,
+        )
         ordered = sorted(
             documents.items(),
             key=lambda item: (
@@ -155,19 +207,16 @@ class GoogleFirestoreStore:
         spec = spec_for_source_sheet(source_sheet)
         if spec is None:
             return 0
-        documents = self.read_documents(spec.collection, source_sheet=source_sheet)
-
-        def equal(left: Any, right: Any) -> bool:
-            if isinstance(left, bool):
-                left = "TRUE" if left else "FALSE"
-            if isinstance(right, bool):
-                right = "TRUE" if right else "FALSE"
-            return str(left or "").strip() == str(right or "").strip()
+        documents = self.read_documents(
+            spec.collection,
+            source_sheet=source_sheet,
+            filters=keys,
+        )
 
         matches = [
             (document_id, document)
             for document_id, document in documents.items()
-            if all(equal(document.get(key), value) for key, value in keys.items())
+            if all(self._equal(document.get(key), value) for key, value in keys.items())
         ]
         matches.sort(
             key=lambda item: (
@@ -197,7 +246,11 @@ class GoogleFirestoreStore:
         spec = spec_for_source_sheet(source_sheet)
         if spec is None:
             return 0
-        documents = self.read_documents(spec.collection, source_sheet=source_sheet)
+        documents = self.read_documents(
+            spec.collection,
+            source_sheet=source_sheet,
+            filters=keys,
+        )
         matches = [
             (document_id, document)
             for document_id, document in documents.items()

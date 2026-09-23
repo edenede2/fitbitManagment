@@ -191,6 +191,7 @@ Set a documented new-data-only cutoff and start in shadow mode:
 
 ```text
 ARCHIVE_CUTOVER_AT=<approved RFC3339 timestamp in Asia/Jerusalem>
+ARCHIVE_RUN_JOBS=false
 ARCHIVE_SHADOW_MODE=true
 ARCHIVE_ENABLED_PROVIDERS=fitbit
 CLOCK_RUN_JOBS=false
@@ -203,9 +204,11 @@ enabled, and a live authorization/refresh test passes, change it to
 `fitbit,google_health`.
 
 Scale exactly one clock dyno. Set `CLOCK_RUN_JOBS=true` while leaving archive
-shadow mode on; compare the manifest and monitoring outputs with the old lab cron.
-Then set `ARCHIVE_SHADOW_MODE=false` and disable the old cron. Do not migrate the
-historical mounted-drive archive.
+collection independently paused with `ARCHIVE_RUN_JOBS=false`. After its smoke
+test passes, set `ARCHIVE_RUN_JOBS=true` while leaving shadow mode on; compare the
+manifest and monitoring outputs with the old lab cron. Then set
+`ARCHIVE_SHADOW_MODE=false` and disable the old cron. Do not migrate the historical
+mounted-drive archive.
 
 The clock runs monitoring at minute `00`, archive collection at minute `30`, and
 writes a heartbeat every five minutes in `Asia/Jerusalem`. Check `job_runs`,

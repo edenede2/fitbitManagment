@@ -586,7 +586,11 @@ class GoogleSheetsAdapter:
             )
         if GoogleSheetsAdapter._is_firestore_sheet(spreadsheet, name):
             try:
-                records = GoogleSheetsAdapter._firestore_store().read_sheet_rows(name)
+                filters = {key: row[key] for key in keys}
+                records = GoogleSheetsAdapter._firestore_store().read_sheet_rows(
+                    name,
+                    filters=filters,
+                )
                 match = next(
                     (record for record in records if all(record.get(key) == row[key] for key in keys)),
                     None,
@@ -618,7 +622,11 @@ class GoogleSheetsAdapter:
             ]
         if GoogleSheetsAdapter._is_firestore_sheet(spreadsheet, sheet_name):
             try:
-                records = GoogleSheetsAdapter._firestore_store().read_sheet_rows(sheet_name)
+                filters = {key: row[key] for key in keys}
+                records = GoogleSheetsAdapter._firestore_store().read_sheet_rows(
+                    sheet_name,
+                    filters=filters,
+                )
                 matches = [
                     record for record in records
                     if all(record.get(key) == row[key] for key in keys)
