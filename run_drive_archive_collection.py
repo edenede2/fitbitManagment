@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Collect bounded wearable periods and upsert deterministic Shared Drive ZIPs."""
+"""Collect bounded wearable periods into the Shared Drive research archive."""
 
 from __future__ import annotations
 
@@ -17,10 +17,10 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import pandas as pd
+import requests
 
 from firbitfilesOrgenizer import (
     _resolve_watch_access_token,
-    download_watch_data,
     get_active_watches,
 )
 from run_data_collection import load_runtime_config
@@ -62,6 +62,28 @@ GOOGLE_DATA_TYPES = {
     "breathing_rate": ("daily-respiratory-rate", "daily"),
 }
 SUPPORTED_ARCHIVE_PROVIDERS = {"fitbit", "google_health"}
+PROVIDER_FOLDER_NAMES = {
+    "fitbit": "FITBIT",
+    "google_health": "GOOGLE_HEALTH",
+}
+ARCHIVE_CATEGORY_BY_DATA_TYPE = {
+    "heart_rate": "Physical Activity",
+    "steps": "Physical Activity",
+    "calories": "Physical Activity",
+    "breathing_rate": "Physical Activity",
+    "sleep": "Sleep",
+    "hrv": "Sleep",
+    "temperature": "Sleep",
+}
+ARCHIVE_FILENAME_PREFIX = {
+    "heart_rate": "heart_rate",
+    "steps": "steps",
+    "calories": "calories",
+    "breathing_rate": "respiratory_rate",
+    "sleep": "sleep",
+    "hrv": "hrv",
+    "temperature": "skin_temperature",
+}
 
 
 @dataclass(frozen=True)
@@ -74,6 +96,38 @@ class PeriodWindow:
     @property
     def filename_suffix(self) -> str:
         return self.period
+
+
+@dataclass(frozen=True)
+class ArchiveArtifact:
+    filename: str
+    category: str
+    content: bytes
+    mime_type: str = "application/json"
+
+
+def archive_category(data_type: str) -> str:
+    try:
+        return ARCHIVE_CATEGORY_BY_DATA_TYPE[data_type]
+    except KeyError as exc:
+        raise ValueError(f"No archive category for {data_type}") from exc
+
+
+def archive_filename(data_type: str, window: PeriodWindow) -> str:
+    try:
+        prefix = ARCHIVE_FILENAME_PREFIX[data_type]
+    except KeyError as exc:
+        raise ValueError(f"No archive filename for {data_type}") from exc
+    # The example names monthly files from the bounded period's first date.
+    # For daily data this is naturally the data date too.
+    return f"{prefix}-{window.start_date.isoformat()}.json"
+
+
+def _json_bytes(value: Any) -> bytes:
+    return (
+        json.dumps(value, indent=2, ensure_ascii=False, allow_nan=False)
+        + "\n"
+    ).encode("utf-8")
 
 
 def parse_cutover(value: str) -> datetime:
@@ -170,32 +224,196 @@ def _zip_tree(root: Path, metadata: dict[str, Any]) -> bytes:
     return stream.getvalue()
 
 
-def _fitbit_package(spreadsheet, row: dict[str, Any], data_type: str, window: PeriodWindow) -> bytes:
+def _fitbit_api_json(
+    token: str,
+    path: str,
+    *,
+    data_type: str,
+) -> dict[str, Any]:
+    response = requests.get(
+        f"https://api.fitbit.com/{path.lstrip('/')}",
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=60,
+    )
+    if not response.ok:
+        # Never include Fitbit response bodies in logs: they may contain user
+        # data or provider details that do not belong in operational logs.
+        raise RuntimeError(
+            f"Fitbit API failed with HTTP {response.status_code} for {data_type}"
+        )
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise RuntimeError(f"Fitbit returned invalid JSON for {data_type}") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"Fitbit returned an invalid payload for {data_type}")
+    return payload
+
+
+def _fitbit_datetime(date_text: str, time_text: str) -> str:
+    parsed = datetime.strptime(
+        f"{date_text} {time_text.split('.')[0]}",
+        "%Y-%m-%d %H:%M:%S",
+    )
+    return parsed.strftime("%m/%d/%y %H:%M:%S")
+
+
+def _fitbit_heart_rate_records(
+    token: str,
+    window: PeriodWindow,
+) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for target in pd.date_range(window.start_date, window.end_date):
+        target_text = target.date().isoformat()
+        payload = _fitbit_api_json(
+            token,
+            (
+                f"1/user/-/activities/heart/date/{target_text}/1d/1sec/"
+                "time/00:00/23:59.json"
+            ),
+            data_type="heart_rate",
+        )
+        summaries = payload.get("activities-heart") or []
+        date_text = str(
+            summaries[0].get("dateTime")
+            if summaries and isinstance(summaries[0], dict)
+            else target_text
+        )
+        dataset = (payload.get("activities-heart-intraday") or {}).get("dataset") or []
+        for item in dataset:
+            if not isinstance(item, dict) or item.get("time") in (None, ""):
+                continue
+            bpm = item.get("value")
+            if bpm in (None, ""):
+                continue
+            # The intraday API does not return Fitbit export's confidence field.
+            # Keep the compatible field present but explicitly unknown instead
+            # of fabricating the legacy export value of 2.
+            records.append(
+                {
+                    "dateTime": _fitbit_datetime(date_text, str(item["time"])),
+                    "value": {"bpm": bpm, "confidence": None},
+                }
+            )
+    return records
+
+
+def _fitbit_intraday_records(
+    token: str,
+    window: PeriodWindow,
+    *,
+    signal: str,
+) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for target in pd.date_range(window.start_date, window.end_date):
+        target_text = target.date().isoformat()
+        payload = _fitbit_api_json(
+            token,
+            (
+                f"1/user/-/activities/{signal}/date/{target_text}/1d/1min/"
+                "time/00:00/23:59.json"
+            ),
+            data_type=signal,
+        )
+        summaries = payload.get(f"activities-{signal}") or []
+        date_text = str(
+            summaries[0].get("dateTime")
+            if summaries and isinstance(summaries[0], dict)
+            else target_text
+        )
+        dataset = (payload.get(f"activities-{signal}-intraday") or {}).get("dataset") or []
+        for item in dataset:
+            if not isinstance(item, dict) or item.get("time") in (None, ""):
+                continue
+            value = item.get("value")
+            if value in (None, ""):
+                continue
+            records.append(
+                {
+                    "dateTime": _fitbit_datetime(date_text, str(item["time"])),
+                    # Fitbit's exported step example stores this value as text.
+                    "value": str(value),
+                }
+            )
+    return records
+
+
+def _fitbit_sleep_records(token: str, window: PeriodWindow) -> list[dict[str, Any]]:
+    payload = _fitbit_api_json(
+        token,
+        (
+            "1.1/user/-/sleep/date/"
+            f"{window.start_date.isoformat()}/{window.end_date.isoformat()}.json"
+        ),
+        data_type="sleep",
+    )
+    records: list[dict[str, Any]] = []
+    for source in payload.get("sleep") or []:
+        if not isinstance(source, dict):
+            continue
+        record = dict(source)
+        if "isMainSleep" in record:
+            record["mainSleep"] = record.pop("isMainSleep")
+        records.append(record)
+    return records
+
+
+def _fitbit_range_records(
+    token: str,
+    window: PeriodWindow,
+    *,
+    data_type: str,
+) -> list[dict[str, Any]]:
+    start = window.start_date.isoformat()
+    end = window.end_date.isoformat()
+    if data_type == "breathing_rate":
+        path, response_key = f"1/user/-/br/date/{start}/{end}/all.json", "br"
+    elif data_type == "temperature":
+        path, response_key = f"1/user/-/temp/skin/date/{start}/{end}.json", "tempSkin"
+    elif data_type == "hrv":
+        path, response_key = (
+            f"1/user/-/hrv/date/{start}/all.json"
+            if start == end
+            else f"1/user/-/hrv/date/{start}/{end}/all.json"
+        ), "hrv"
+    else:
+        raise ValueError(f"Unsupported Fitbit range data type: {data_type}")
+    payload = _fitbit_api_json(token, path, data_type=data_type)
+    return [item for item in payload.get(response_key) or [] if isinstance(item, dict)]
+
+
+def _fitbit_package(
+    spreadsheet,
+    row: dict[str, Any],
+    data_type: str,
+    window: PeriodWindow,
+) -> ArchiveArtifact:
     token = _resolve_watch_access_token(row, spreadsheet)
     if not token:
         raise RuntimeError("No active Fitbit token")
-    temp_dir, temp_path = download_watch_data(
-        str(row.get("name") or row.get("watchName") or ""),
-        token,
-        data_type,
-        window.start_date,
-        window.end_date,
-    )
-    if not temp_dir or not temp_path:
-        raise RuntimeError("Provider returned no archiveable Fitbit data")
-    try:
-        return _zip_tree(
-            Path(temp_path),
-            {
-                "schema_version": 1,
-                "provider": "fitbit",
-                "data_type": data_type,
-                "source_start": window.start_date.isoformat(),
-                "source_end": window.end_date.isoformat(),
-            },
+    if data_type == "heart_rate":
+        records = _fitbit_heart_rate_records(token, window)
+    elif data_type in {"steps", "calories"}:
+        records = _fitbit_intraday_records(
+            token,
+            window,
+            signal=data_type,
         )
-    finally:
-        temp_dir.cleanup()
+    elif data_type == "sleep":
+        records = _fitbit_sleep_records(token, window)
+    else:
+        records = _fitbit_range_records(
+            token,
+            window,
+            data_type=data_type,
+        )
+    if not records:
+        raise RuntimeError("Provider returned no archiveable Fitbit data")
+    return ArchiveArtifact(
+        filename=archive_filename(data_type, window),
+        category=archive_category(data_type),
+        content=_json_bytes(records),
+    )
 
 
 def _utc_bounds(window: PeriodWindow) -> tuple[str, str]:
@@ -231,7 +449,12 @@ def _google_filter(data_type: str, record_type: str, window: PeriodWindow) -> st
     return f'{field} >= "{start}" AND {field} < "{end}"'
 
 
-def _google_package(spreadsheet, row: dict[str, Any], data_type: str, window: PeriodWindow) -> bytes:
+def _google_package(
+    spreadsheet,
+    row: dict[str, Any],
+    data_type: str,
+    window: PeriodWindow,
+) -> ArchiveArtifact:
     client = HealthClientFactory.from_watch_row(spreadsheet, row)
     if client is None:
         raise RuntimeError("Google Health client is unavailable")
@@ -251,27 +474,14 @@ def _google_package(spreadsheet, row: dict[str, Any], data_type: str, window: Pe
         )
     if not any(payload.values()):
         raise RuntimeError("Provider returned no archiveable Google Health data")
-
-    with TemporaryDirectory() as directory:
-        root = Path(directory)
-        (root / "raw.json").write_text(
-            json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False),
-            encoding="utf-8",
-        )
-        points = payload.get("dataPoints") or payload.get("rollupDataPoints") or []
-        if points:
-            pd.json_normalize(points).to_csv(root / "normalized.csv", index=False)
-        return _zip_tree(
-            root,
-            {
-                "schema_version": 1,
-                "provider": "google_health",
-                "google_data_type": google_type,
-                "data_type": data_type,
-                "source_start": window.start_date.isoformat(),
-                "source_end": window.end_date.isoformat(),
-            },
-        )
+    points = payload.get("dataPoints") or payload.get("rollupDataPoints") or []
+    if not points:
+        raise RuntimeError("Provider returned no archiveable Google Health data")
+    return ArchiveArtifact(
+        filename=archive_filename(data_type, window),
+        category=archive_category(data_type),
+        content=_json_bytes(points),
+    )
 
 
 def _archive_base_record(
@@ -328,7 +538,7 @@ def _collect_archive_item(
         window=window,
     )
     try:
-        content = (
+        artifact = (
             _google_package(spreadsheet, row, data_type, window)
             if provider == "google_health"
             else _fitbit_package(spreadsheet, row, data_type, window)
@@ -343,7 +553,7 @@ def _collect_archive_item(
         )
         return "empty"
 
-    checksum = sha256_bytes(content)
+    checksum = sha256_bytes(artifact.content)
     existing = get_archive_record(spreadsheet, base_record["logical_key"])
     if (
         existing
@@ -357,19 +567,20 @@ def _collect_archive_item(
             {
                 **base_record,
                 "checksum": checksum,
-                "size_bytes": len(content),
+                "size_bytes": len(artifact.content),
                 "status": "shadow_validated",
             },
         )
         return "shadow"
 
-    filename = f"{data_type}_{window.filename_suffix}.zip"
-    upload = drive.upsert_zip(
+    upload = drive.upsert_file(
         project=base_record["project"],
         watch_name=base_record["watchName"],
-        data_type=data_type,
-        filename=filename,
-        content=content,
+        provider=PROVIDER_FOLDER_NAMES[provider],
+        category=artifact.category,
+        filename=artifact.filename,
+        content=artifact.content,
+        mime_type=artifact.mime_type,
     )
     upsert_archive_record(
         spreadsheet,

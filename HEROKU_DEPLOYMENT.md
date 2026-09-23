@@ -214,6 +214,23 @@ The clock runs monitoring at minute `00`, archive collection at minute `30`, and
 writes a heartbeat every five minutes in `Asia/Jerusalem`. Check `job_runs`,
 `clock_status`, and `archive_manifest` after every release.
 
+New archive writes use direct JSON files (historical ZIP files are preserved):
+
+```text
+AdmonTracker Raw Archive/
+  <project>/
+    <watchName>/
+      FITBIT/                  # or GOOGLE_HEALTH
+        Physical Activity/    # heart rate, steps, respiratory rate, calories
+        Sleep/                # sleep, HRV, skin temperature
+        Stress/               # intentionally empty
+```
+
+Heart-rate files are daily. Steps, sleep, respiratory-rate, and skin-temperature
+files are monthly; HRV and calories retain their daily cadence. Google Health
+contains only the categories approved for that provider. Files are upserted by a
+deterministic period filename, so a retry updates the same Drive file.
+
 ## 6. Provider console values
 
 - Google staff redirect: `https://app.admontracker.online/oauth2callback`

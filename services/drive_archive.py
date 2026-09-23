@@ -15,7 +15,9 @@ from utils.google_credentials import build_google_credentials
 DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
 FOLDER_MIME = "application/vnd.google-apps.folder"
 ZIP_MIME = "application/zip"
+JSON_MIME = "application/json"
 _UNSAFE_SEGMENT = re.compile(r"[\\/\x00-\x1f\x7f]+")
+ARCHIVE_CATEGORIES = ("Physical Activity", "Sleep", "Stress")
 
 
 def safe_drive_segment(value: str) -> str:
@@ -101,6 +103,11 @@ class SharedDriveArchive:
         return folder_id
 
     def ensure_archive_path(self, project: str, watch_name: str, data_type: str) -> str:
+        """Return the legacy ZIP path.
+
+        Kept so existing operator tools and historical ZIPs remain readable. New
+        collection writes use :meth:`ensure_provider_layout` instead.
+        """
         archive_root_name = os.getenv(
             "GOOGLE_DRIVE_ARCHIVE_SUBFOLDER", "AdmonTracker Raw Archive"
         )
@@ -108,6 +115,83 @@ class SharedDriveArchive:
         project_id = self.ensure_folder(archive_root, project)
         watch_id = self.ensure_folder(project_id, watch_name)
         return self.ensure_folder(watch_id, data_type)
+
+    def ensure_provider_layout(
+        self,
+        *,
+        project: str,
+        watch_name: str,
+        provider: str,
+    ) -> dict[str, str]:
+        """Create the reviewer-approved wearable archive folder hierarchy."""
+        archive_root_name = os.getenv(
+            "GOOGLE_DRIVE_ARCHIVE_SUBFOLDER", "AdmonTracker Raw Archive"
+        )
+        archive_root = self.ensure_folder(self.root_folder_id, archive_root_name)
+        project_id = self.ensure_folder(archive_root, project)
+        watch_id = self.ensure_folder(project_id, watch_name)
+        provider_id = self.ensure_folder(watch_id, provider)
+        return {
+            category: self.ensure_folder(provider_id, category)
+            for category in ARCHIVE_CATEGORIES
+        }
+
+    def upsert_file(
+        self,
+        *,
+        project: str,
+        watch_name: str,
+        provider: str,
+        category: str,
+        filename: str,
+        content: bytes,
+        mime_type: str = JSON_MIME,
+    ) -> DriveUpload:
+        """Create or replace one deterministic raw archive file."""
+        from googleapiclient.http import MediaIoBaseUpload
+
+        if category not in ARCHIVE_CATEGORIES:
+            raise ValueError(f"Unsupported archive category: {category}")
+        folders = self.ensure_provider_layout(
+            project=project,
+            watch_name=watch_name,
+            provider=provider,
+        )
+        parent_id = folders[category]
+        filename = safe_drive_segment(filename)
+        existing = self._find_child(parent_id, filename, mime_type)
+        media = MediaIoBaseUpload(
+            io.BytesIO(content),
+            mimetype=mime_type,
+            resumable=True,
+        )
+        if existing:
+            response = self.service.files().update(
+                fileId=existing["id"],
+                media_body=media,
+                fields="id,webViewLink,size",
+                supportsAllDrives=True,
+            ).execute()
+            action = "updated"
+        else:
+            response = self.service.files().create(
+                body={
+                    "name": filename,
+                    "mimeType": mime_type,
+                    "parents": [parent_id],
+                },
+                media_body=media,
+                fields="id,webViewLink,size",
+                supportsAllDrives=True,
+            ).execute()
+            action = "created"
+        return DriveUpload(
+            file_id=str(response.get("id") or ""),
+            web_view_link=str(response.get("webViewLink") or ""),
+            checksum=sha256_bytes(content),
+            size=len(content),
+            action=action,
+        )
 
     def upsert_zip(
         self,

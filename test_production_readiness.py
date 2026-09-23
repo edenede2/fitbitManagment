@@ -11,12 +11,15 @@ from run_drive_archive_collection import (
     GOOGLE_HEALTH_ARCHIVE_CADENCE,
     GOOGLE_DATA_TYPES,
     PeriodWindow,
+    _fitbit_package,
     _zip_tree,
+    archive_category,
+    archive_filename,
     collect_drive_archives,
     enabled_archive_providers,
     period_windows,
 )
-from services.drive_archive import safe_drive_segment
+from services.drive_archive import ARCHIVE_CATEGORIES, SharedDriveArchive, safe_drive_segment
 from services.google_health_client import GoogleHealthClient
 from utils.compliance import (
     approved_disclosure_ready,
@@ -278,6 +281,133 @@ class ArchiveBehaviorTests(unittest.TestCase):
         self.assertEqual(safe_drive_segment("Study / A"), "Study - A")
         with self.assertRaises(ValueError):
             safe_drive_segment("../")
+
+    def test_archive_layout_matches_drive_example(self):
+        self.assertEqual(archive_category("heart_rate"), "Physical Activity")
+        self.assertEqual(archive_category("steps"), "Physical Activity")
+        self.assertEqual(archive_category("breathing_rate"), "Physical Activity")
+        self.assertEqual(archive_category("sleep"), "Sleep")
+        window = PeriodWindow(
+            "2026-06",
+            datetime(2026, 6, 15).date(),
+            datetime(2026, 6, 30).date(),
+            "monthly",
+        )
+        self.assertEqual(archive_filename("steps", window), "steps-2026-06-15.json")
+        self.assertEqual(archive_filename("sleep", window), "sleep-2026-06-15.json")
+
+        archive = SharedDriveArchive(root_folder_id="root", service=Mock())
+        created = []
+
+        def ensure(parent, name):
+            created.append((parent, name))
+            return f"{parent}/{name}"
+
+        with patch.object(archive, "ensure_folder", side_effect=ensure):
+            folders = archive.ensure_provider_layout(
+                project="Fibro",
+                watch_name="sub_1312",
+                provider="FITBIT",
+            )
+        self.assertEqual(set(folders), set(ARCHIVE_CATEGORIES))
+        self.assertIn(("root/AdmonTracker Raw Archive/Fibro/sub_1312", "FITBIT"), created)
+        for category in ARCHIVE_CATEGORIES:
+            self.assertIn(
+                ("root/AdmonTracker Raw Archive/Fibro/sub_1312/FITBIT", category),
+                created,
+            )
+
+    def test_fitbit_heart_rate_file_matches_example_without_fake_confidence(self):
+        window = PeriodWindow(
+            "2026-06-29",
+            datetime(2026, 6, 29).date(),
+            datetime(2026, 6, 29).date(),
+            "daily",
+        )
+        response = {
+            "activities-heart": [{"dateTime": "2026-06-29"}],
+            "activities-heart-intraday": {
+                "dataset": [{"time": "08:01:02", "value": 73}]
+            },
+        }
+        with patch(
+            "run_drive_archive_collection._resolve_watch_access_token",
+            return_value="protected-token",
+        ), patch(
+            "run_drive_archive_collection._fitbit_api_json",
+            return_value=response,
+        ):
+            artifact = _fitbit_package(Mock(), {"name": "sub_1312"}, "heart_rate", window)
+        self.assertEqual(artifact.category, "Physical Activity")
+        self.assertEqual(artifact.filename, "heart_rate-2026-06-29.json")
+        self.assertEqual(
+            __import__("json").loads(artifact.content),
+            [
+                {
+                    "dateTime": "06/29/26 08:01:02",
+                    "value": {"bpm": 73, "confidence": None},
+                }
+            ],
+        )
+
+    def test_fitbit_steps_month_is_one_example_compatible_file(self):
+        window = PeriodWindow(
+            "2026-06",
+            datetime(2026, 6, 29).date(),
+            datetime(2026, 6, 30).date(),
+            "monthly",
+        )
+
+        def response(_token, path, *, data_type):
+            date_text = "2026-06-29" if "2026-06-29" in path else "2026-06-30"
+            return {
+                "activities-steps": [{"dateTime": date_text}],
+                "activities-steps-intraday": {
+                    "dataset": [{"time": "12:00:00", "value": 4}]
+                },
+            }
+
+        with patch(
+            "run_drive_archive_collection._resolve_watch_access_token",
+            return_value="protected-token",
+        ), patch(
+            "run_drive_archive_collection._fitbit_api_json",
+            side_effect=response,
+        ):
+            artifact = _fitbit_package(Mock(), {"name": "sub_1312"}, "steps", window)
+        values = __import__("json").loads(artifact.content)
+        self.assertEqual(artifact.filename, "steps-2026-06-29.json")
+        self.assertEqual(len(values), 2)
+        self.assertEqual(values[0], {"dateTime": "06/29/26 12:00:00", "value": "4"})
+
+    def test_fitbit_sleep_uses_export_main_sleep_field(self):
+        window = PeriodWindow(
+            "2026-06",
+            datetime(2026, 6, 15).date(),
+            datetime(2026, 6, 30).date(),
+            "monthly",
+        )
+        response = {
+            "sleep": [
+                {
+                    "logId": 123,
+                    "dateOfSleep": "2026-06-30",
+                    "isMainSleep": True,
+                    "levels": {"summary": {}},
+                }
+            ]
+        }
+        with patch(
+            "run_drive_archive_collection._resolve_watch_access_token",
+            return_value="protected-token",
+        ), patch(
+            "run_drive_archive_collection._fitbit_api_json",
+            return_value=response,
+        ):
+            artifact = _fitbit_package(Mock(), {"name": "sub_1312"}, "sleep", window)
+        record = __import__("json").loads(artifact.content)[0]
+        self.assertTrue(record["mainSleep"])
+        self.assertNotIn("isMainSleep", record)
 
     def test_periods_do_not_precede_cutover(self):
         tz = ZoneInfo("Asia/Jerusalem")
