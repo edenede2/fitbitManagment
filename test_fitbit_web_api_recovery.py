@@ -6,6 +6,8 @@ import sys
 import types
 from unittest.mock import Mock, patch
 
+import entity
+
 
 def _install_module_stub(name, **attrs):
     module = types.ModuleType(name)
@@ -43,7 +45,9 @@ class FakeSpreadsheet:
 
 
 class FakeGoogleSheetsAdapter:
-    pass
+    @staticmethod
+    def get_rows(*args, **kwargs):
+        return []
 
 
 _install_module_stub(
@@ -54,6 +58,7 @@ _install_module_stub(
 _install_module_stub("controllers.auth_controller", AuthenticationController=Mock())
 
 from entity.Watch import ApiRequestError, URL_DICT, Watch, WatchFactory
+from entity.HealthDataProvider import SnapshotContext
 from utils.fitbit_oauth import FitbitOAuthError, refresh_tokens
 import utils.fitbit_token_store as fitbit_token_store
 
@@ -156,6 +161,116 @@ class FitbitWebApiRecoveryTests(unittest.TestCase):
         self.assertEqual(token, "new-access")
         refresh_tokens.assert_called_once_with("refresh-token")
         save_tokens.assert_called_once()
+
+    def test_latest_fitbit_token_is_loaded_from_secret_reference(self):
+        with patch.object(
+            fitbit_token_store.GoogleSheetsAdapter,
+            "get_rows",
+            return_value=[{
+                "watchName": "PC05",
+                "token_secret_ref": "projects/admontracker/secrets/pc05-token",
+                "access_token": "",
+                "refresh_token": "",
+                "status": "connected",
+            }],
+        ), patch.object(
+            fitbit_token_store,
+            "load_json_secret",
+            return_value={"access_token": "secret-access", "refresh_token": "secret-refresh"},
+        ) as load_secret:
+            row = fitbit_token_store.get_latest_tokens(object(), "PC05")
+
+        self.assertEqual(row["access_token"], "secret-access")
+        self.assertEqual(row["refresh_token"], "secret-refresh")
+        load_secret.assert_called_once_with("projects/admontracker/secrets/pc05-token")
+
+    def test_legacy_fitbit_token_is_loaded_from_registry_secret_reference(self):
+        with patch.object(
+            fitbit_token_store.GoogleSheetsAdapter,
+            "get_rows",
+            return_value=[{
+                "name": "TW26",
+                "token": "",
+                "token_secret_ref": "projects/admontracker/secrets/tw26-token",
+            }],
+        ), patch.object(
+            fitbit_token_store,
+            "load_json_secret",
+            return_value={"access_token": "legacy-secret-access", "refresh_token": ""},
+        ):
+            token = fitbit_token_store.get_legacy_fitbit_token(object(), "TW26")
+
+        self.assertEqual(token, "legacy-secret-access")
+
+    def test_plaintext_legacy_token_is_rejected_when_fallback_is_disabled(self):
+        with patch.object(
+            fitbit_token_store.GoogleSheetsAdapter,
+            "get_rows",
+            return_value=[{"name": "legacy-watch", "token": "plaintext-token"}],
+        ), patch.object(
+            fitbit_token_store,
+            "plaintext_secret_fallback_allowed",
+            return_value=False,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "fallback is disabled"):
+                fitbit_token_store.get_legacy_fitbit_token(object(), "legacy-watch")
+
+    def test_secret_manager_refresh_writes_reference_without_plaintext(self):
+        with patch.object(
+            fitbit_token_store,
+            "get_latest_tokens",
+            return_value={
+                "token_secret_ref": "projects/admontracker/secrets/watch-token",
+                "refresh_token": "previous-refresh",
+                "fitbit_user_id": "fitbit-user",
+                "scope": "activity heartrate",
+            },
+        ), patch.object(
+            fitbit_token_store,
+            "store_json_secret",
+            return_value="projects/admontracker/secrets/watch-token",
+        ) as store_secret, patch.object(
+            fitbit_token_store,
+            "secret_manager_enabled",
+            return_value=True,
+        ), patch.object(
+            fitbit_token_store,
+            "_append",
+        ) as append_row, patch.object(
+            fitbit_token_store,
+            "_update_fitbit_token",
+        ) as update_legacy:
+            fitbit_token_store.save_tokens_for_watch(
+                object(),
+                watch_name="watch-1",
+                token_json={"access_token": "new-access", "expires_in": 3600},
+            )
+
+        stored_payload = store_secret.call_args.args[2]
+        self.assertEqual(stored_payload["access_token"], "new-access")
+        self.assertEqual(stored_payload["refresh_token"], "previous-refresh")
+        written_row = append_row.call_args.args[2]
+        self.assertEqual(written_row["token_secret_ref"], "projects/admontracker/secrets/watch-token")
+        self.assertEqual(written_row["access_token"], "")
+        self.assertEqual(written_row["refresh_token"], "")
+        update_legacy.assert_not_called()
+
+    def test_snapshot_context_uses_legacy_registry_secret_reference(self):
+        context = SnapshotContext.__new__(SnapshotContext)
+        context.fitbit_tokens_by_watch = {}
+
+        with patch(
+            "entity.HealthDataProvider.load_json_secret",
+            return_value={"access_token": "legacy-secret-access", "refresh_token": ""},
+        ) as load_secret:
+            token = context.get_valid_fitbit_access_token({
+                "name": "PC05",
+                "token": "",
+                "token_secret_ref": "projects/admontracker/secrets/pc05-token",
+            })
+
+        self.assertEqual(token, "legacy-secret-access")
+        load_secret.assert_called_once_with("projects/admontracker/secrets/pc05-token")
 
     def test_refresh_token_error_includes_sanitized_fitbit_body(self):
         with patch(

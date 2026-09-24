@@ -446,7 +446,7 @@ class StreamlitGuestSmokeTests(unittest.TestCase):
         ), patch(
             "entity.Sheet.SheetsAPI.get_instance"
         ) as sheets_api, patch(
-            "entity.Sheet.Credentials.from_service_account_info"
+            "utils.google_credentials.Credentials.from_service_account_info"
         ) as credentials, patch(
             "requests.get"
         ) as request_get, patch(

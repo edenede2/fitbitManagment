@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 /fitbitManagment/
+/.heroku/
 fitbit_log.csv
 data/
 logs/
@@ -13,4 +14,10 @@ generateKey.ipynb
 *.csv
 stsecrets.txt
 stsecters.txt
+stSecretsExample.txt
+client_secret_*.json
+/admontracker-*.json
+/Google_Health_Addendum_*.docx
+/Google_Health_Addendum_*.pdf
+/newConsents/
 *.DS_Store

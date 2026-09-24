@@ -7,13 +7,13 @@ from abc import ABC, abstractmethod
 import datetime
 import os
 import gspread
-from google.oauth2.service_account import Credentials
 import uuid
 import streamlit as st
 from entity.Watch import Watch, WatchFactory  # Remove FitbitAPI as it doesn't exist
 from entity.HealthDataProvider import SnapshotContext, clean_row, collect_watch_snapshot, collect_watch_snapshots_batch
 import traceback  # Add import for traceback
 from utils.sheets_cache import sheets_cache  # Import sheets_cache
+from utils.google_credentials import build_google_credentials
 
 # Import needed functions from model
 try:
@@ -373,19 +373,13 @@ class SheetsAPI:
     @st.cache_resource
     def _get_client():
         """Get a Google Sheets API client with proper authentication"""
-
-        secrets = get_secrets()
-
-
         scopes = [
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive",
             "https://www.googleapis.com/auth/drive.file"
         ]
 
-        credentials = Credentials.from_service_account_info(
-            secrets["gcp_service_account"], scopes=scopes
-        )
+        credentials = build_google_credentials(scopes)
 
         return gspread.authorize(credentials)
 

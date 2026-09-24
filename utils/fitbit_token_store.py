@@ -1,14 +1,17 @@
 # utils/fitbit_token_store.py
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Optional, Dict, Any, List
-import time
+from typing import Optional, Dict, Any
 from collections import OrderedDict
 
-import streamlit as st
 from entity.Sheet import Spreadsheet, GoogleSheetsAdapter
 from utils.fitbit_oauth import refresh_tokens, now_ts
+from utils.secret_store import (
+    load_json_secret,
+    plaintext_secret_fallback_allowed,
+    secret_manager_enabled,
+    store_json_secret,
+)
 
 OAUTH_STATES_TAB = "oauth_states"
 OAUTH_USED_TAB = "oauth_state_used"
@@ -101,26 +104,60 @@ def save_tokens_for_watch(sp: Spreadsheet, *, watch_name: str, token_json: dict)
     created_at = now_ts()
     expires_at = created_at + max(expires_in - 30, 0)  # 30s safety buffer
 
+    existing = get_latest_tokens(sp, watch_name)
+    refresh_token = token_json.get("refresh_token", "") or (existing or {}).get("refresh_token", "")
+    secret_ref = store_json_secret(
+        "participant-oauth",
+        ["fitbit", watch_name],
+        {
+            "access_token": token_json.get("access_token", ""),
+            "refresh_token": refresh_token,
+        },
+        existing_ref=str((existing or {}).get("token_secret_ref") or ""),
+    )
+    protected = secret_manager_enabled()
+    if protected and not secret_ref:
+        raise RuntimeError("Secret Manager did not return a Fitbit token reference")
     row = OrderedDict([
         ("watchName", watch_name),
-        ("fitbit_user_id", token_json.get("user_id", "")),
-        ("access_token", token_json.get("access_token", "")),
-        ("refresh_token", token_json.get("refresh_token", "")),
+        ("fitbit_user_id", token_json.get("user_id", "") or (existing or {}).get("fitbit_user_id", "")),
+        ("token_secret_ref", secret_ref),
+        ("access_token", "" if protected else token_json.get("access_token", "")),
+        ("refresh_token", "" if protected else refresh_token),
         ("expires_at", str(expires_at)),
-        ("scope", token_json.get("scope", "")),
+        ("scope", token_json.get("scope", "") or (existing or {}).get("scope", "")),
         ("created_at", str(created_at)),
+        ("status", "connected"),
+        ("revoked_at", ""),
     ])
     _append(sp, TOKENS_TAB, row)
-    _update_fitbit_token(sp, watch_name, token_json.get("access_token", ""))
+    if not protected:
+        _update_fitbit_token(sp, watch_name, token_json.get("access_token", ""))
 
 def get_latest_tokens(sp: Spreadsheet, watch_name: str) -> Optional[Dict[str, Any]]:
     if sp is None:
         raise ValueError("Spreadsheet connection unavailable")
 
     rows = GoogleSheetsAdapter.get_rows(sp, TOKENS_TAB, "watchName", watchName=watch_name)
-    if not rows:
+    active = [
+        row for row in rows
+        if str(row.get("status") or "connected").strip().casefold() == "connected"
+    ]
+    if not active:
         return None
-    return rows[-1]
+    row = dict(active[-1])
+    secret_ref = str(row.get("token_secret_ref") or "").strip()
+    if secret_ref:
+        try:
+            row.update(load_json_secret(secret_ref))
+        except Exception:
+            if not plaintext_secret_fallback_allowed() or not row.get("access_token"):
+                raise
+    elif not plaintext_secret_fallback_allowed() and (
+        row.get("access_token") or row.get("refresh_token")
+    ):
+        raise RuntimeError("Plaintext Fitbit token fallback is disabled")
+    return row
 
 def get_legacy_fitbit_token(sp: Spreadsheet, watch_name: str) -> str:
     """Return the static token from the legacy fitbit sheet, if one exists."""
@@ -131,7 +168,17 @@ def get_legacy_fitbit_token(sp: Spreadsheet, watch_name: str) -> str:
     if not rows:
         raise ValueError(f"No fitbit row found for watch '{watch_name}'")
 
-    token = rows[-1].get("token", "")
+    row = rows[-1]
+    token = row.get("token", "")
+    secret_ref = str(row.get("token_secret_ref") or "").strip()
+    if secret_ref:
+        try:
+            token = load_json_secret(secret_ref).get("access_token", "")
+        except Exception:
+            if not plaintext_secret_fallback_allowed() or not token:
+                raise
+    elif token and not plaintext_secret_fallback_allowed():
+        raise RuntimeError("Legacy plaintext Fitbit token fallback is disabled")
     if not token:
         raise ValueError(f"No legacy token found for watch '{watch_name}'")
 

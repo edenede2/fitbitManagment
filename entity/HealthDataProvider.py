@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Tuple
 
 import requests
+from utils.secret_store import load_json_secret, plaintext_secret_fallback_allowed
 
 from entity.Watch import ApiAuthError, ApiRateLimitError, Watch, WatchFactory
 from services.google_health_client import GoogleHealthClient as SpreadsheetGoogleHealthClient
@@ -54,8 +55,17 @@ class SnapshotContext:
 
     def _load_fitbit_tokens(self) -> None:
         for row in self._sheet_rows("fitbit_oauth_tokens"):
+            if str(row.get("status") or "connected").strip().casefold() != "connected":
+                continue
             watch_name = str(row.get("watchName") or "").strip()
             if watch_name:
+                secret_ref = str(row.get("token_secret_ref") or "").strip()
+                if secret_ref:
+                    try:
+                        row.update(load_json_secret(secret_ref))
+                    except Exception:
+                        if not plaintext_secret_fallback_allowed() or not row.get("access_token"):
+                            raise
                 self.fitbit_tokens_by_watch[watch_name] = row
 
     def get_active_fitbit_token_row(self, watch_name: str) -> dict[str, Any] | None:
@@ -148,6 +158,14 @@ class SnapshotContext:
 
             access_token = str(token_row.get("access_token") or "")
             refresh_token = str(token_row.get("refresh_token") or "")
+            if (
+                not token_row.get("token_secret_ref")
+                and (access_token or refresh_token)
+                and not plaintext_secret_fallback_allowed()
+            ):
+                raise RuntimeError(
+                    f"Fitbit OAuth token for {watch_name} still uses plaintext storage"
+                )
             try:
                 expires_at = int(token_row.get("expires_at", 0) or 0)
             except (TypeError, ValueError):
@@ -185,6 +203,17 @@ class SnapshotContext:
                 return access_token
 
         token = row.get("token")
+        secret_ref = str(row.get("token_secret_ref") or "").strip()
+        if secret_ref:
+            try:
+                token = load_json_secret(secret_ref).get("access_token", "")
+            except Exception:
+                if not plaintext_secret_fallback_allowed() or not has_value(token):
+                    raise
+        elif has_value(token) and not plaintext_secret_fallback_allowed():
+            raise RuntimeError(
+                f"Legacy Fitbit token for {watch_name} still uses plaintext storage"
+            )
         if has_value(token):
             return str(token)
         raise ValueError(f"No Fitbit token available for watch '{watch_name}'")
