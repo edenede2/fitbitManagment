@@ -214,6 +214,34 @@ The clock runs monitoring at minute `00`, archive collection at minute `30`, and
 writes a heartbeat every five minutes in `Asia/Jerusalem`. Check `job_runs`,
 `clock_status`, and `archive_manifest` after every release.
 
+### Wearable email alerts
+
+Configure these as Heroku config vars (or add the lowercase equivalents to the
+Secret Manager Streamlit TOML bundle). Never commit the password:
+
+```text
+SENDER_EMAIL_ADDRESS=<study sender mailbox>
+SENDER_EMAIL_PASSWORD=<SMTP/app password>
+SMTP_SERVER=smtp.gmail.com
+SMTP_PORT=587
+```
+
+The sender uses authenticated SMTP with STARTTLS. For Gmail/Google Workspace,
+use an app password or an administrator-approved SMTP credential rather than the
+mailbox's normal sign-in password.
+
+Each device alert is sent immediately when an hourly monitoring run first
+detects it. While the same problem remains active, later emails are sent 1, 2,
+4, 8, 16, and 24 hours after the preceding successful email, then every 24
+hours. Delivery state is stored in the `fitbit_alert_state` Firestore collection
+(or a same-named Sheet before Firestore cutover), so a dyno restart does not
+restart the sequence. Resolving the condition, deactivating the watch, or using
+**Mute Alerts** in Device Management resets the sequence. If an unmuted watch is
+still failing, the next monitoring run treats it as a new detection.
+
+Wearable alerts run before the isolated legacy Qualtrics/WhatsApp workflow. A
+legacy Sheets quota error therefore cannot prevent wearable alert processing.
+
 New archive writes use direct JSON files (historical ZIP files are preserved):
 
 ```text

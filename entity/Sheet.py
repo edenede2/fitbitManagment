@@ -166,7 +166,8 @@ class FitbitSheet(Sheet):
             'project', 'name', 'token', 'token_secret_ref', 'oauth_type', 'provider', 'oauth_client_key',
             'auth_status', 'health_user_id', 'legacy_fitbit_user_id',
             'last_successful_fetch_at', 'last_data_timestamp', 'last_auth_error',
-            'reauth_link', 'reauth_link_created_at', 'user', 'isActive', 'currentStudent'
+            'reauth_link', 'reauth_link_created_at', 'user', 'isActive',
+            'alertsMuted', 'lastActivatedDate', 'currentStudent'
         ],
         required_columns=['project', 'name']
     ))
@@ -890,7 +891,7 @@ class GoogleSheetsAdapter:
                 "health_oauth_tokens", "health_reauth_queue", "health_api_logs",
                 "health_webhook_events", "health_oauth_consents",
                 "health_connection_management", "health_deletion_requests", "archive_manifest", "job_runs",
-                "clock_status", "watch_status_history"
+                "clock_status", "watch_status_history", "fitbit_alert_state"
             ]
             if sheet_name not in sheets_names:
                 continue

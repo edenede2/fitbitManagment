@@ -4,6 +4,7 @@ from entity.Sheet import Spreadsheet, GoogleSheetsAdapter, SheetFactory
 from typing import Dict, List, Any, Optional
 import datetime
 import polars as pl
+from services.alert_delivery import as_bool
 from utils.health_oauth_clients import load_active_oauth_clients
 from utils.rate_limit_ui import show_rate_limit_notice
 from utils.access_control import require_device_management, require_write_access
@@ -40,6 +41,82 @@ def _select_google_oauth_client_key(spreadsheet: Spreadsheet, key: str) -> str:
         key=key,
     )
     return str(selected.get("client_key") or "")
+
+
+DEVICE_LEADING_COLUMNS = [
+    "name",
+    "project",
+    "lastActivatedDate",
+    "isActive",
+    "alertsMuted",
+]
+
+
+def _today_iso() -> str:
+    return datetime.datetime.now().astimezone().date().isoformat()
+
+
+def _prepare_editor_dataframe(fitbit_df: pl.DataFrame) -> pl.DataFrame:
+    """Add operational controls and place the key columns first."""
+    prepared = fitbit_df.clone()
+    if "lastActivatedDate" not in prepared.columns:
+        prepared = prepared.with_columns(pl.lit("").alias("lastActivatedDate"))
+    if "alertsMuted" not in prepared.columns:
+        prepared = prepared.with_columns(pl.lit(False).alias("alertsMuted"))
+    if "isActive" not in prepared.columns:
+        prepared = prepared.with_columns(pl.lit(False).alias("isActive"))
+
+    prepared = prepared.with_columns(
+        pl.col("isActive").map_elements(as_bool, return_dtype=pl.Boolean),
+        pl.col("alertsMuted").map_elements(as_bool, return_dtype=pl.Boolean),
+        pl.col("lastActivatedDate")
+        .cast(pl.Utf8, strict=False)
+        .str.to_date("%Y-%m-%d", strict=False)
+        .alias("lastActivatedDate"),
+    )
+    ordered = [column for column in DEVICE_LEADING_COLUMNS if column in prepared.columns]
+    ordered.extend(column for column in prepared.columns if column not in ordered)
+    return prepared.select(ordered).sort("project", "name")
+
+
+def _apply_activation_metadata(edited_df, original_rows):
+    """Normalize controls and stamp only new inactive-to-active transitions."""
+    return_polars = isinstance(edited_df, pl.DataFrame)
+    edited = edited_df.to_pandas() if return_polars else edited_df.copy()
+    original_by_key = {
+        (str(row.get("project") or ""), str(row.get("name") or "")): row
+        for row in (original_rows or [])
+    }
+    if "lastActivatedDate" not in edited.columns:
+        edited["lastActivatedDate"] = ""
+    if "alertsMuted" not in edited.columns:
+        edited["alertsMuted"] = False
+    if "isActive" not in edited.columns:
+        edited["isActive"] = False
+    edited["isActive"] = edited["isActive"].astype(object)
+    edited["alertsMuted"] = edited["alertsMuted"].astype(object)
+
+    today = _today_iso()
+    for index, row in edited.iterrows():
+        key = (str(row.get("project") or ""), str(row.get("name") or ""))
+        original = original_by_key.get(key)
+        active = as_bool(row.get("isActive"))
+        previously_active = as_bool(original.get("isActive")) if original else False
+        existing_date = row.get("lastActivatedDate")
+        if pd.isna(existing_date):
+            existing_date = ""
+        if original and not str(existing_date).strip():
+            existing_date = original.get("lastActivatedDate") or ""
+        if active and not previously_active:
+            existing_date = today
+
+        edited.at[index, "lastActivatedDate"] = str(existing_date)
+        edited.at[index, "isActive"] = "TRUE" if active else "FALSE"
+        edited.at[index, "alertsMuted"] = (
+            "TRUE" if as_bool(row.get("alertsMuted")) else "FALSE"
+        )
+
+    return pl.from_pandas(edited) if return_polars else edited
 
 
 def load_fitbit_datatable(user_email: str, user_role: str, user_project: str, spreadsheet: Spreadsheet) -> None:
@@ -174,6 +251,8 @@ def display_admin_interface(fitbit_df: pl.DataFrame, user_df: pl.DataFrame,
                     "reauth_link_created_at": "",
                     "user": new_user,
                     "isActive": "TRUE" if new_is_active else "FALSE",
+                    "alertsMuted": "FALSE",
+                    "lastActivatedDate": _today_iso() if new_is_active else "",
                     "currentStudent": new_current_student
                 }
                 
@@ -234,7 +313,7 @@ def display_editable_table(fitbit_df: pl.DataFrame, user_df: pl.DataFrame, is_ad
         The edited DataFrame
     """
     # Create a copy to avoid modifying the original during editing
-    edited_df = fitbit_df.clone().sort("project", "name")
+    edited_df = _prepare_editor_dataframe(fitbit_df)
     
     # Create a data editor with appropriate permissions
     edited_df = st.data_editor(
@@ -251,7 +330,7 @@ def display_editable_table(fitbit_df: pl.DataFrame, user_df: pl.DataFrame, is_ad
                 disabled=not is_admin,  # Only admins can change project
             ),
             "name": st.column_config.TextColumn(
-                "Device Name",
+                "Watch Name",
                 help="The name of the Fitbit device",
                 width="medium",
                 disabled=not is_admin,  # Only admins can change name
@@ -320,10 +399,23 @@ def display_editable_table(fitbit_df: pl.DataFrame, user_df: pl.DataFrame, is_ad
                 disabled=not is_admin,  # Only admins can edit user
             ),
             "isActive": st.column_config.CheckboxColumn(
-                "Is Active",
+                "Active",
                 help="Whether this device is currently active",
                 width="small",
                 disabled=False,  # Both managers and admins can toggle active status
+            ),
+            "lastActivatedDate": st.column_config.DateColumn(
+                "Date Last Activated",
+                help="The most recent date this device changed from inactive to active",
+                format="YYYY-MM-DD",
+                width="medium",
+                disabled=True,
+            ),
+            "alertsMuted": st.column_config.CheckboxColumn(
+                "Mute Alerts",
+                help="Pause email alerts for this device",
+                width="small",
+                disabled=False,
             ),
             "currentStudent": st.column_config.SelectboxColumn(
                 "Current Student",
@@ -344,6 +436,7 @@ def save_changes(edited_df: pl.DataFrame, fitbit_sheet: Any, spreadsheet: Spread
     try:
         require_write_access()
         st.warning("⚠️ Please note: Changes may take 2-3 minutes to fully update in the cloud. Meanwhile, you can continue using the app.")
+        edited_df = _apply_activation_metadata(edited_df, fitbit_sheet.data)
         # Update sheet data with edited DataFrame
         spreadsheet.update_sheet(
             "fitbit",

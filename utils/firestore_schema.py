@@ -83,11 +83,17 @@ MIGRATION_SPECS: tuple[SheetMigrationSpec, ...] = (
                 "oauth_client_key", "auth_status", "health_user_id",
                 "legacy_fitbit_user_id", "last_successful_fetch_at",
                 "last_data_timestamp", "last_auth_error", "reauth_link",
-                "reauth_link_created_at", "user", "isActive", "currentStudent",
+                "reauth_link_created_at", "user", "isActive", "alertsMuted",
+                "lastActivatedDate", "currentStudent",
             }
         ),
     ),
     SheetMigrationSpec("fitbit_alerts_config", "alert_configurations", ("project", "manager", "watch")),
+    SheetMigrationSpec(
+        "fitbit_alert_state",
+        "fitbit_alert_state",
+        ("project", "watchName"),
+    ),
     SheetMigrationSpec(
         "health_oauth_clients",
         "oauth_clients",

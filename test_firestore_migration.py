@@ -265,10 +265,18 @@ class FirestoreMigrationTests(unittest.TestCase):
     def test_device_project_does_not_require_project_collection(self):
         plan = build_migration_plan(
             spec_for("fitbit"),
-            [{"project": "NotInProjectTab", "name": "YN4", "isActive": "TRUE"}],
+            [{
+                "project": "NotInProjectTab",
+                "name": "YN4",
+                "isActive": "TRUE",
+                "alertsMuted": "TRUE",
+                "lastActivatedDate": "2026-09-29",
+            }],
         )
         device = next(iter(plan.documents.values()))
         self.assertEqual(device["project"], "NotInProjectTab")
+        self.assertEqual(device["alertsMuted"], "TRUE")
+        self.assertEqual(device["lastActivatedDate"], "2026-09-29")
 
     def test_runtime_store_updates_and_deletes_by_business_key(self):
         client = FakeFirestoreClient()

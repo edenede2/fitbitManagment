@@ -1,5 +1,6 @@
 # pages/🔑 OAuth Connect.py
 import streamlit as st
+import datetime
 from utils.branding import render_app_logo
 from controllers.auth_controller import AuthenticationController
 from collections import OrderedDict
@@ -343,6 +344,8 @@ if st.button("Add watch & generate link"):
         ("reauth_link", ""),
         ("reauth_link_created_at", ""),
         ("isActive", "TRUE" if is_active else "FALSE"),
+        ("alertsMuted", "FALSE"),
+        ("lastActivatedDate", datetime.date.today().isoformat() if is_active else ""),
     ])
     try:
         watch_row_action = _upsert_fitbit_watch_row(
