@@ -246,6 +246,12 @@ ends when the condition resolves or is muted; a later recurrence starts a new
 conversation. Recipient addresses are not stored in alert state: only a one-way
 fingerprint is kept for thread matching.
 
+Each alert contains a compact latest-device snapshot with the current battery
+and heart-rate values when those values are available in the existing status
+record. This snapshot does not require a historical Sheets read or another
+provider API request. The email labels the alert-generation time separately
+from the device-status check time and renders both in `Asia/Jerusalem`.
+
 Wearable alerts run before the isolated legacy Qualtrics/WhatsApp workflow. A
 legacy Sheets quota error therefore cannot prevent wearable alert processing.
 

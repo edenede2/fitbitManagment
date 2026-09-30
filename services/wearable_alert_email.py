@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from html import escape
+import math
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -30,6 +31,55 @@ def _display(value: Any, default: str = "Unknown") -> str:
     return str(value).strip()
 
 
+def _display_time(value: Any) -> str:
+    if isinstance(value, datetime):
+        parsed = value
+    elif value is None or not str(value).strip():
+        return _display(value)
+    else:
+        try:
+            parsed = datetime.fromisoformat(str(value).strip().replace("Z", "+00:00"))
+        except ValueError:
+            return _display(value)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=JERUSALEM)
+    parsed = parsed.astimezone(JERUSALEM)
+    return parsed.strftime("%Y-%m-%d %H:%M %Z")
+
+
+def _measurement(value: Any, *, minimum: float, maximum: float, unit: str) -> str:
+    try:
+        number = float(str(value).strip().replace("%", ""))
+    except (TypeError, ValueError):
+        return ""
+    if not math.isfinite(number) or number < minimum or number > maximum:
+        return ""
+    rendered = str(int(number)) if number.is_integer() else f"{number:.1f}"
+    return f"{rendered}{unit}"
+
+
+def _latest_snapshot(log_row: dict, reasons: list[str]) -> list[str]:
+    snapshot = []
+    battery_already_reported = any(reason.startswith("Battery") for reason in reasons)
+    battery = _measurement(
+        log_row.get("lastBattaryVal"),
+        minimum=0,
+        maximum=100,
+        unit="%",
+    )
+    heart_rate = _measurement(
+        log_row.get("lastHRVal"),
+        minimum=1,
+        maximum=300,
+        unit=" bpm",
+    )
+    if battery and not battery_already_reported:
+        snapshot.append(f"Battery {battery}")
+    if heart_rate:
+        snapshot.append(f"Heart rate {heart_rate}")
+    return snapshot
+
+
 def _reason_detail(reason: str, log_row: dict, config: dict) -> str:
     if reason.startswith("Battery"):
         level = _display(log_row.get("lastBattaryVal"))
@@ -53,16 +103,17 @@ def build_wearable_alert_message(
     watches: list[dict],
     evaluated_at: datetime,
 ) -> tuple[str, str]:
-    """Return plain-text and HTML versions containing only actionable details."""
+    """Return concise plain-text and HTML versions of an alert."""
     local_time = evaluated_at.astimezone(JERUSALEM).strftime("%Y-%m-%d %H:%M %Z")
     device_word = "device" if len(watches) == 1 else "devices"
+    attention_verb = "requires" if len(watches) == 1 else "require"
 
     plain_lines = [
         "AdmonTracker wearable-device alert",
         "",
         f"Project: {project}",
-        f"Checked: {local_time}",
-        f"{len(watches)} {device_word} currently require attention.",
+        f"Alert generated: {local_time}",
+        f"{len(watches)} {device_word} currently {attention_verb} attention.",
     ]
     html_sections = []
 
@@ -72,16 +123,25 @@ def build_wearable_alert_message(
         config = watch.get("config") or {}
         reasons = list(watch.get("alert_reasons") or [])
         details = [_reason_detail(reason, log_row, config) for reason in reasons]
-        last_check = _display(log_row.get("lastCheck"))
-        last_sync = _display(log_row.get("lastSynced"))
+        last_check = _display_time(log_row.get("lastCheck"))
+        last_sync = _display_time(log_row.get("lastSynced"))
+        snapshot = _latest_snapshot(log_row, reasons)
+        snapshot_text = f"Latest device snapshot: {'; '.join(snapshot)}." if snapshot else ""
+        snapshot_html = (
+            f'<p style="margin:8px 0 3px;"><strong>Latest device snapshot:</strong> '
+            f'{escape(" · ".join(snapshot))}</p>'
+            if snapshot
+            else ""
+        )
 
         plain_lines.extend(
             [
                 "",
                 f"Watch: {watch_name}",
                 *(f"- {detail}" for detail in details),
-                f"Last check: {last_check}",
-                f"Last successful sync: {last_sync}",
+                f"Device status checked: {last_check}",
+                f"Last successful device sync: {last_sync}",
+                *([snapshot_text] if snapshot_text else []),
             ]
         )
 
@@ -91,14 +151,16 @@ def build_wearable_alert_message(
             <section style="margin:16px 0;padding:14px;border:1px solid #d8dee8;border-radius:8px;">
               <h2 style="font-size:17px;margin:0 0 8px;">Watch: {watch}</h2>
               <ul style="margin:0 0 10px;padding-left:22px;">{details}</ul>
-              <p style="margin:3px 0;"><strong>Last check:</strong> {last_check}</p>
-              <p style="margin:3px 0;"><strong>Last successful sync:</strong> {last_sync}</p>
+              <p style="margin:3px 0;"><strong>Device status checked:</strong> {last_check}</p>
+              <p style="margin:3px 0;"><strong>Last successful device sync:</strong> {last_sync}</p>
+              {snapshot_html}
             </section>
             """.format(
                 watch=escape(watch_name),
                 details=html_details,
                 last_check=escape(last_check),
                 last_sync=escape(last_sync),
+                snapshot_html=snapshot_html,
             )
         )
 
@@ -116,8 +178,8 @@ def build_wearable_alert_message(
 <body style="font-family:Arial,sans-serif;line-height:1.5;color:#172033;max-width:680px;margin:auto;">
   <h1 style="font-size:22px;margin-bottom:8px;">Wearable-device alert</h1>
   <p style="margin:3px 0;"><strong>Project:</strong> {project}</p>
-  <p style="margin:3px 0;"><strong>Checked:</strong> {checked}</p>
-  <p><strong>{count} {device_word}</strong> currently require attention.</p>
+  <p style="margin:3px 0;"><strong>Alert generated:</strong> {checked}</p>
+  <p><strong>{count} {device_word}</strong> currently {attention_verb} attention.</p>
   {sections}
   <p style="margin-top:20px;">
     <a href="{dashboard}" style="background:#1769aa;color:#fff;padding:10px 16px;text-decoration:none;border-radius:5px;">
@@ -134,6 +196,7 @@ def build_wearable_alert_message(
         checked=escape(local_time),
         count=len(watches),
         device_word=device_word,
+        attention_verb=attention_verb,
         sections="".join(html_sections),
         dashboard=DASHBOARD_URL,
     )

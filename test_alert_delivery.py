@@ -128,6 +128,36 @@ class AlertMessageTests(unittest.TestCase):
             self.assertNotIn("edenede2", message)
         self.assertIn("YN4 &lt;demo&gt;", html)
         self.assertIn("Yoga &lt;study&gt;", html)
+        self.assertIn("Alert generated: 2026-09-30 10:00 IDT", plain)
+        self.assertIn("Device status checked: 2026-09-30 09:00 IDT", plain)
+
+    def test_message_includes_latest_available_device_snapshot_without_history(self):
+        watches = [{
+            "watch_name": "YN4",
+            "alert_reasons": ["Current Sync"],
+            "log_row": {
+                "CurrentFailedSync": 2,
+                "lastBattaryVal": "82%",
+                "lastHRVal": "71",
+                "lastCheck": "2026-09-30T09:00:00+03:00",
+                "lastSynced": "2026-09-30T08:45:00+03:00",
+            },
+            "config": {"currentSyncThr": 2},
+        }]
+
+        plain, html = build_wearable_alert_message(
+            project="Yoga",
+            watches=watches,
+            evaluated_at=datetime.datetime(2026, 9, 30, 7, 0, tzinfo=UTC),
+        )
+
+        expected = "Latest device snapshot: Battery 82%"
+        self.assertIn(expected, plain)
+        self.assertIn("Latest device snapshot:</strong> Battery 82%", html)
+        self.assertIn("Heart rate 71 bpm", plain)
+        self.assertIn("Heart rate 71 bpm", html)
+        self.assertIn("1 device</strong> currently requires attention", html)
+        self.assertNotIn("24-hour diagnostics", html)
 
 
 class EmailSenderTests(unittest.TestCase):

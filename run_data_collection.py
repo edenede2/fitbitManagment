@@ -581,7 +581,11 @@ def send_email_alert(
             if reference_ids:
                 message["References"] = " ".join(reference_ids)
 
-            message.attach(MIMEText(plain_text_body or "AdmonTracker wearable alert", "plain", "utf-8"))
+            message.attach(MIMEText(
+                plain_text_body or "AdmonTracker wearable alert",
+                "plain",
+                "utf-8",
+            ))
             message.attach(MIMEText(message_body, "html", "utf-8"))
 
             with smtplib.SMTP(smtp_server, smtp_port) as server:
