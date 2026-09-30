@@ -395,6 +395,56 @@ class FirestoreMigrationTests(unittest.TestCase):
         self.assertEqual(rows, [{"project": "Yoga", "name": "YN4"}])
         sheets_api.open_spreadsheet.assert_called_once_with("main")
 
+    def test_empty_alert_state_is_authoritative_and_skips_sheets(self):
+        store = Mock()
+        store.read_sheet_rows.return_value = []
+        spreadsheet = Spreadsheet(name="main", api_key="main", source_kind="firestore")
+        with patch.object(
+            GoogleSheetsAdapter,
+            "_firestore_store",
+            return_value=store,
+        ), patch.object(
+            GoogleSheetsAdapter,
+            "_sheets_read_fallback_allowed",
+            return_value=True,
+        ), patch(
+            "entity.Sheet.SheetsAPI.get_instance",
+        ) as sheets_api:
+            rows = GoogleSheetsAdapter.get_rows(
+                spreadsheet,
+                "fitbit_alert_state",
+            )
+
+        self.assertEqual(rows, [])
+        store.read_sheet_rows.assert_called_once_with(
+            "fitbit_alert_state",
+            filters={},
+        )
+        sheets_api.assert_not_called()
+
+    def test_alert_state_firestore_error_does_not_hide_behind_sheets(self):
+        store = Mock()
+        store.read_sheet_rows.side_effect = RuntimeError("Firestore unavailable")
+        spreadsheet = Spreadsheet(name="main", api_key="main", source_kind="firestore")
+        with patch.object(
+            GoogleSheetsAdapter,
+            "_firestore_store",
+            return_value=store,
+        ), patch.object(
+            GoogleSheetsAdapter,
+            "_sheets_read_fallback_allowed",
+            return_value=True,
+        ), patch(
+            "entity.Sheet.SheetsAPI.get_instance",
+        ) as sheets_api:
+            with self.assertRaisesRegex(RuntimeError, "Firestore unavailable"):
+                GoogleSheetsAdapter.get_rows(
+                    spreadsheet,
+                    "fitbit_alert_state",
+                )
+
+        sheets_api.assert_not_called()
+
     def test_unmapped_tab_does_not_use_firestore(self):
         spreadsheet = Spreadsheet(name="main", api_key="main", source_kind="firestore")
         self.assertFalse(

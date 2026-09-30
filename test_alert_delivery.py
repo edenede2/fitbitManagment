@@ -1,6 +1,7 @@
 import datetime
 import os
 import unittest
+from email import message_from_string
 from unittest.mock import Mock, patch
 
 import polars as pl
@@ -10,8 +11,13 @@ from services.alert_delivery import (
     alert_is_due,
     detected_state,
     next_interval_hours,
+    recipient_fingerprint,
     resolved_state,
     sent_state,
+)
+from services.wearable_alert_email import (
+    DASHBOARD_URL,
+    build_wearable_alert_message,
 )
 
 
@@ -54,8 +60,18 @@ class AlertScheduleTests(unittest.TestCase):
             reasons=["Battery (10%)"],
             now=now,
         )
-        state = sent_state(state, reasons=["Battery (10%)"], now=now)
+        state = sent_state(
+            state,
+            reasons=["Battery (10%)"],
+            now=now,
+            thread_recipient_fingerprint="recipient-hash",
+            thread_root_message_id="<root@admontracker.online>",
+            thread_last_message_id="<last@admontracker.online>",
+        )
         state = resolved_state(state, now=now + datetime.timedelta(minutes=30))
+        self.assertEqual(state["thread_recipient_fingerprint"], "")
+        self.assertEqual(state["thread_root_message_id"], "")
+        self.assertEqual(state["thread_last_message_id"], "")
         recurrence = detected_state(
             state,
             project="Yoga",
@@ -65,6 +81,53 @@ class AlertScheduleTests(unittest.TestCase):
         )
         self.assertEqual(recurrence["send_count"], 0)
         self.assertTrue(alert_is_due(recurrence, now + datetime.timedelta(hours=2)))
+
+    def test_recipient_fingerprint_is_stable_and_does_not_expose_addresses(self):
+        first = recipient_fingerprint(["Manager@Example.org", "student@example.org"])
+        second = recipient_fingerprint(["student@example.org", "manager@example.org"])
+
+        self.assertEqual(first, second)
+        self.assertNotIn("manager", first)
+        self.assertNotIn("@", first)
+
+
+class AlertMessageTests(unittest.TestCase):
+    def test_message_is_concise_escaped_and_contains_only_triggered_conditions(self):
+        watches = [{
+            "watch_name": "YN4 <demo>",
+            "alert_reasons": ["Current Sync", "Battery (9%)"],
+            "log_row": {
+                "CurrentFailedSync": 3,
+                "lastBattaryVal": 9,
+                "lastCheck": "2026-09-30 09:00:00",
+                "lastSynced": "2026-09-29 21:00:00",
+                "lastHRVal": "SENSITIVE_HEALTH_VALUE",
+                "lastSleepDur": "SENSITIVE_SLEEP_VALUE",
+            },
+            "config": {
+                "currentSyncThr": 2,
+                "batteryThr": 10,
+                "currentHrThr": 1,
+                "currentSleepThr": 1,
+            },
+        }]
+
+        plain, html = build_wearable_alert_message(
+            project="Yoga <study>",
+            watches=watches,
+            evaluated_at=datetime.datetime(2026, 9, 30, 7, 0, tzinfo=UTC),
+        )
+
+        for message in (plain, html):
+            self.assertIn("Current sync failures: 3", message)
+            self.assertIn("Battery level is 9%", message)
+            self.assertIn(DASHBOARD_URL, message)
+            self.assertNotIn("SENSITIVE_HEALTH_VALUE", message)
+            self.assertNotIn("SENSITIVE_SLEEP_VALUE", message)
+            self.assertNotIn("fitbitestapipy.streamlit.app", message)
+            self.assertNotIn("edenede2", message)
+        self.assertIn("YN4 &lt;demo&gt;", html)
+        self.assertIn("Yoga &lt;study&gt;", html)
 
 
 class EmailSenderTests(unittest.TestCase):
@@ -86,9 +149,16 @@ class EmailSenderTests(unittest.TestCase):
             run_data_collection.smtplib, "SMTP", return_value=smtp_context
         ) as smtp_class:
             result = run_data_collection.send_email_alert(
-                "one@example.org, two@example.org\u200f",
+                "one@example.org, two@example.org\u200f, ONE@example.org",
                 "Fitbit alert test",
                 "<p>test</p>",
+                plain_text_body="Plain test",
+                message_id="<current@admontracker.online>",
+                in_reply_to="<previous@admontracker.online>",
+                references=[
+                    "<root@admontracker.online>",
+                    "<previous@admontracker.online>",
+                ],
             )
 
         self.assertTrue(result)
@@ -97,6 +167,20 @@ class EmailSenderTests(unittest.TestCase):
         self.assertEqual(smtp.login.call_count, 2)
         recipients = [call.args[1] for call in smtp.sendmail.call_args_list]
         self.assertEqual(recipients, ["one@example.org", "two@example.org"])
+        for send_call in smtp.sendmail.call_args_list:
+            message = message_from_string(send_call.args[2])
+            self.assertEqual(message["Subject"], "Fitbit alert test")
+            self.assertIsNotNone(message["Date"])
+            self.assertEqual(message["Message-ID"], "<current@admontracker.online>")
+            self.assertEqual(message["In-Reply-To"], "<previous@admontracker.online>")
+            self.assertEqual(
+                message["References"],
+                "<root@admontracker.online> <previous@admontracker.online>",
+            )
+            self.assertEqual(
+                [part.get_content_type() for part in message.get_payload()],
+                ["text/plain", "text/html"],
+            )
 
 
 class AlertJobTests(unittest.TestCase):
@@ -164,10 +248,76 @@ class AlertJobTests(unittest.TestCase):
             )
 
         send.assert_called_once()
+        send_kwargs = send.call_args.kwargs
+        self.assertIn("AdmonTracker Fitbit/Google Health alert - Yoga", send.call_args.args)
+        self.assertIn("Current sync failures: 1", send_kwargs["plain_text_body"])
+        self.assertTrue(send_kwargs["message_id"].endswith("@admontracker.online>"))
+        self.assertEqual(send_kwargs["in_reply_to"], "")
         append.assert_called_once()
         self.assertEqual(update.call_args.kwargs["updates"]["send_count"], 1)
         self.assertEqual(update.call_args.kwargs["updates"]["next_interval_hours"], 1)
+        self.assertEqual(
+            update.call_args.kwargs["updates"]["thread_recipient_fingerprint"],
+            recipient_fingerprint(["manager@example.org"]),
+        )
+        self.assertEqual(
+            update.call_args.kwargs["updates"]["thread_root_message_id"],
+            send_kwargs["message_id"],
+        )
+        self.assertEqual(
+            update.call_args.kwargs["updates"]["thread_last_message_id"],
+            send_kwargs["message_id"],
+        )
         self.assertEqual(result["Yoga"]["watches"], ["YN4"])
+
+    def test_reminder_replies_to_existing_alert_conversation(self):
+        spreadsheet = self._spreadsheet()
+        existing_state = {
+            "project": "Yoga",
+            "watchName": "YN4",
+            "active": "TRUE",
+            "muted": "FALSE",
+            "first_detected_at": "2026-09-29T08:00:00+00:00",
+            "last_sent_at": "2000-01-01T00:00:00+00:00",
+            "next_interval_hours": 1,
+            "send_count": 1,
+            "alert_reasons": "Current Sync",
+            "thread_recipient_fingerprint": recipient_fingerprint(["manager@example.org"]),
+            "thread_root_message_id": "<root@admontracker.online>",
+            "thread_last_message_id": "<previous@admontracker.online>",
+            "resolved_at": "",
+            "updated_at": "2026-09-29T08:00:00+00:00",
+        }
+
+        with patch.object(
+            run_data_collection.GoogleSheetsAdapter,
+            "get_rows",
+            return_value=[existing_state],
+        ), patch.object(
+            run_data_collection, "_update_row_by_keys", return_value=True
+        ), patch.object(
+            run_data_collection, "send_email_alert", return_value=True
+        ) as send:
+            run_data_collection.check_fitbit_alerts(
+                spreadsheet,
+                self._log(),
+                self._config(),
+                self._devices(),
+            )
+
+        send.assert_called_once()
+        self.assertEqual(
+            send.call_args.args[1],
+            "AdmonTracker Fitbit/Google Health alert - Yoga",
+        )
+        self.assertEqual(
+            send.call_args.kwargs["in_reply_to"],
+            "<previous@admontracker.online>",
+        )
+        self.assertEqual(
+            send.call_args.kwargs["references"],
+            ["<root@admontracker.online>", "<previous@admontracker.online>"],
+        )
 
     def test_muted_watch_does_not_send_or_start_schedule(self):
         spreadsheet = self._spreadsheet()

@@ -13,6 +13,7 @@ import smtplib
 import unicodedata
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.utils import formatdate, make_msgid
 # Add project root to Python path if necessary
 project_root = str(Path(__file__).parent)
 if project_root not in sys.path:
@@ -27,9 +28,11 @@ from services.alert_delivery import (
     alert_is_due,
     as_bool,
     detected_state,
+    recipient_fingerprint,
     resolved_state,
     sent_state,
 )
+from services.wearable_alert_email import build_wearable_alert_message
 from utils.health_token_store import _append, _update_row_by_keys, utc_now_iso
 
 WATCH_STATUS_TAB = "watch_status_history"
@@ -38,6 +41,7 @@ ALERT_STATE_TAB = "fitbit_alert_state"
 ALERT_STATE_COLUMNS = [
     "project", "watchName", "active", "muted", "first_detected_at",
     "last_sent_at", "next_interval_hours", "send_count", "alert_reasons",
+    "thread_recipient_fingerprint", "thread_root_message_id", "thread_last_message_id",
     "resolved_at", "updated_at",
 ]
 
@@ -484,7 +488,34 @@ def _clean_email_address(email_address):
     return cleaned
 
 
-def send_email_alert(recipient_email, subject, message_body):
+def _clean_header_value(value):
+    """Prevent control characters from entering RFC email headers."""
+    return " ".join(
+        "".join(
+            char
+            for char in str(value or "")
+            if unicodedata.category(char) not in {"Cf", "Cc"}
+        ).split()
+    )
+
+
+def _clean_message_id(value):
+    cleaned = _clean_header_value(value)
+    if cleaned.startswith("<") and cleaned.endswith(">") and " " not in cleaned:
+        return cleaned
+    return ""
+
+
+def send_email_alert(
+    recipient_email,
+    subject,
+    message_body,
+    *,
+    plain_text_body=None,
+    message_id=None,
+    in_reply_to=None,
+    references=None,
+):
     """
     Sends an email alert to the specified recipient.
 
@@ -492,17 +523,22 @@ def send_email_alert(recipient_email, subject, message_body):
         recipient_email: Email address to send the alert to
         subject: Email subject line
         message_body: HTML content of the email
+        plain_text_body: Optional accessible plain-text alternative
+        message_id: Unique RFC Message-ID generated for this logical email
+        in_reply_to: Previous Message-ID when continuing an alert conversation
+        references: Root/previous Message-IDs for email-client threading
 
     Returns:
         bool: True if email was sent successfully, False otherwise
     """
+    subject = _clean_header_value(subject)
     if not r"fitbit" in subject.lower():
         print("Skipping email alert: subject does not contain 'fitbit'")
         return False
     try:
         # Load SMTP configuration from environment variables
         load_runtime_config()
-        sender_email = os.getenv("SENDER_EMAIL_ADDRESS")
+        sender_email = _clean_email_address(os.getenv("SENDER_EMAIL_ADDRESS"))
         sender_password = os.getenv("SENDER_EMAIL_PASSWORD")
         smtp_server = os.getenv("SMTP_SERVER", "smtp.gmail.com")
         smtp_port = int(os.getenv("SMTP_PORT", "587"))
@@ -510,57 +546,51 @@ def send_email_alert(recipient_email, subject, message_body):
         if not sender_email or not sender_password:
             print("Missing email configuration in environment variables")
             return False
-        recipients = [
-            _clean_email_address(recipient)
-            for recipient in str(recipient_email or "").split(",")
-        ]
-        recipients = [recipient for recipient in recipients if recipient]
+        recipients = []
+        seen_recipients = set()
+        for raw_recipient in str(recipient_email or "").split(","):
+            recipient = _clean_email_address(raw_recipient)
+            normalized_recipient = recipient.casefold()
+            if recipient and normalized_recipient not in seen_recipients:
+                recipients.append(recipient)
+                seen_recipients.add(normalized_recipient)
         if not recipients:
             print("No valid recipient email configured")
             return False
 
-        if len(recipients) > 1:
-            for recipient in recipients:
-                # Create email message
-                message = MIMEMultipart("alternative")
-                message["Subject"] = subject
-                message["From"] = sender_email
-                message["To"] = recipient
-                # message["To"] = "edenede2@gmail.com"
+        logical_message_id = _clean_message_id(message_id) or make_msgid(
+            domain="admontracker.online"
+        )
+        reply_to = _clean_message_id(in_reply_to)
+        reference_ids = []
+        raw_references = references if isinstance(references, (list, tuple)) else str(references or "").split()
+        for reference in raw_references:
+            cleaned_reference = _clean_message_id(reference)
+            if cleaned_reference and cleaned_reference not in reference_ids:
+                reference_ids.append(cleaned_reference)
 
-                # Create HTML version of the message
-                html_part = MIMEText(message_body, "html", "utf-8")
-                message.attach(html_part)
-
-                # Connect to SMTP server and send email
-                with smtplib.SMTP(smtp_server, smtp_port) as server:
-                    server.starttls()
-                    server.login(sender_email, sender_password)
-                    server.sendmail(sender_email, recipient, message.as_string())
-                    # server.sendmail(sender_email, "edenede2@gmail.com", message.as_string())
-
-                print(f"Successfully sent email alert to {recipient}")
-            return True
-        else:
-            recipient_email = recipients[0]
-            # Create email message
+        for recipient in recipients:
             message = MIMEMultipart("alternative")
             message["Subject"] = subject
             message["From"] = sender_email
-            message["To"] = recipient_email
+            message["To"] = recipient
+            message["Date"] = formatdate(localtime=False, usegmt=True)
+            message["Message-ID"] = logical_message_id
+            if reply_to:
+                message["In-Reply-To"] = reply_to
+            if reference_ids:
+                message["References"] = " ".join(reference_ids)
 
-            # Create HTML version of the message
-            html_part = MIMEText(message_body, "html", "utf-8")
-            message.attach(html_part)
+            message.attach(MIMEText(plain_text_body or "AdmonTracker wearable alert", "plain", "utf-8"))
+            message.attach(MIMEText(message_body, "html", "utf-8"))
 
-            # Connect to SMTP server and send email
             with smtplib.SMTP(smtp_server, smtp_port) as server:
                 server.starttls()
                 server.login(sender_email, sender_password)
-                server.sendmail(sender_email, recipient_email, message.as_string())
+                server.sendmail(sender_email, recipient, message.as_string())
 
-            print(f"Successfully sent email alert to {recipient_email}")
-            return True
+            print(f"Successfully sent email alert to {recipient}")
+        return True
     except Exception as e:
         print(f"Error sending email alert: {e}")
         print(traceback.format_exc())
@@ -925,12 +955,14 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
                 # Only collect if we have recipients
                 if recipients:
                     # Keep projects separate even when they share recipients.
-                    recipient_key = (str(project), ",".join(sorted(recipients)))
+                    group_fingerprint = recipient_fingerprint(recipients)
+                    recipient_key = (str(project), group_fingerprint)
 
                     # Initialize recipient's watch list if needed
                     if recipient_key not in watches_by_recipient:
                         watches_by_recipient[recipient_key] = {
                             'recipients': recipients,
+                            'recipient_fingerprint': group_fingerprint,
                             'project': project,
                             'watches': []
                         }
@@ -948,6 +980,7 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
         # Now send one consolidated email per recipient group
         for recipient_key, recipient_data in watches_by_recipient.items():
             recipients = recipient_data['recipients']
+            group_fingerprint = recipient_data['recipient_fingerprint']
             watches = recipient_data['watches']
             project = recipient_data['project']
 
@@ -955,197 +988,48 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
             if not watches:
                 continue
 
-            # Create consolidated alert message
-            html = f"""
-            <html>
-            <head>
-                <style>
-                    body {{ font-family: Arial, sans-serif; line-height: 1.6; }}
-                    .alert {{ color: #D8000C; background-color: #FFD2D2; padding: 10px; margin-bottom: 15px; }}
-                    .summary {{ background-color: #f0f0f0; padding: 10px; margin-bottom: 20px; }}
-                    .watch-section {{ margin-bottom: 30px; border-bottom: 1px solid #ddd; padding-bottom: 20px; }}
-                    table {{ border-collapse: collapse; width: 100%; margin-bottom: 15px; }}
-                    th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-                    th {{ background-color: #f2f2f2; }}
-                    tr:nth-child(even) {{ background-color: #f9f9f9; }}
-                    h2 {{ color: #333366; }}
-                    h3 {{ color: #666; }}
-                </style>
-            </head>
-            <body>
-                <h2>Fitbit Alert: Multiple Watches Need Attention</h2>
-
-                <div class="summary">
-                    <h3>Summary</h3>
-                    <p>Project: {project}</p>
-                    <p>Total watches with issues: {len(watches)}</p>
-                    <p>Watches affected: {", ".join([w['watch_name'] for w in watches])}</p>
-                </div>
-            """
-
-            # Add details for each watch
-            for watch_data in watches:
-                watch_name = watch_data['watch_name']
-                log_row = watch_data['log_row']
-                config = watch_data['config']
-                alert_reasons = watch_data['alert_reasons']
-
-                # Get thresholds from config
-                current_sync_thr = int(config.get('currentSyncThr', 0) or 0)
-                total_sync_thr = int(config.get('totalSyncThr', 0) or 0)
-                current_hr_thr = int(config.get('currentHrThr', 0) or 0)
-                total_hr_thr = int(config.get('totalHrThr', 0) or 0)
-                current_sleep_thr = int(config.get('currentSleepThr', 0) or 0)
-                total_sleep_thr = int(config.get('totalSleepThr', 0) or 0)
-                current_steps_thr = int(config.get('currentStepsThr', 0) or 0)
-                total_steps_thr = int(config.get('totalStepsThr', 0) or 0)
-                battery_thr = int(config.get('batteryThr', 0) or 0)
-
-                html += f"""
-                <div class="watch-section">
-                    <h3>Watch: {watch_name}</h3>
-                    <p class="alert">Alert reasons: {", ".join(alert_reasons)}</p>
-
-                    <table>
-                        <tr>
-                            <th>Watch Name</th>
-                            <th>Project</th>
-                            <th>Last Check</th>
-                            <th>Last Sync</th>
-                        </tr>
-                        <tr>
-                            <td>{watch_name}</td>
-                            <td>{project}</td>
-                            <td>{log_row.get('lastCheck', 'Unknown')}</td>
-                            <td>{log_row.get('lastSynced', 'Unknown')}</td>
-                        </tr>
-                    </table>
-
-                    <h4>Alert Details</h4>
-                    <table>
-                        <tr>
-                            <th>Metric</th>
-                            <th>Current Failures</th>
-                            <th>Total Failures</th>
-                            <th>Threshold (Current/Total)</th>
-                            <th>Last Value</th>
-                        </tr>
-                """
-
-                # Add sync information
-                if current_sync_thr > 0 or total_sync_thr > 0:
-                    html += f"""
-                    <tr>
-                        <td>Sync</td>
-                        <td>{log_row.get('CurrentFailedSync', 0)}</td>
-                        <td>{log_row.get('TotalFailedSync', 0)}</td>
-                        <td>{current_sync_thr}/{total_sync_thr}</td>
-                        <td>{log_row.get('lastSynced', 'Unknown')}</td>
-                    </tr>
-                    """
-
-                # Add HR information
-                if current_hr_thr > 0 or total_hr_thr > 0:
-                    html += f"""
-                    <tr>
-                        <td>Heart Rate</td>
-                        <td>{log_row.get('CurrentFailedHR', 0)}</td>
-                        <td>{log_row.get('TotalFailedHR', 0)}</td>
-                        <td>{current_hr_thr}/{total_hr_thr}</td>
-                        <td>{log_row.get('lastHRVal', 'Unknown')}</td>
-                    </tr>
-                    """
-
-                # Add Sleep information
-                if current_sleep_thr > 0 or total_sleep_thr > 0:
-                    html += f"""
-                    <tr>
-                        <td>Sleep</td>
-                        <td>{log_row.get('CurrentFailedSleep', 0)}</td>
-                        <td>{log_row.get('TotalFailedSleep', 0)}</td>
-                        <td>{current_sleep_thr}/{total_sleep_thr}</td>
-                        <td>{log_row.get('lastSleepDur', 'Unknown')}</td>
-                    </tr>
-                    """
-
-                # Add Steps information
-                if current_steps_thr > 0 or total_steps_thr > 0:
-                    html += f"""
-                    <tr>
-                        <td>Steps</td>
-                        <td>{log_row.get('CurrentFailedSteps', 0)}</td>
-                        <td>{log_row.get('TotalFailedSteps', 0)}</td>
-                        <td>{current_steps_thr}/{total_steps_thr}</td>
-                        <td>{log_row.get('lastStepsVal', 'Unknown')}</td>
-                    </tr>
-                    """
-
-                # Add Battery information
-                if battery_thr > 0:
-                    html += f"""
-                    <tr>
-                        <td>Battery</td>
-                        <td>N/A</td>
-                        <td>N/A</td>
-                        <td>{battery_thr}%</td>
-                        <td>{log_row.get('lastBattaryVal', 'Unknown')}%</td>
-                    </tr>
-                    """
-
-                # Close the watch section
-                html += """
-                    </table>
-                </div>
-                """
-            # Add a reference to the legacy dashboard website and the new one for better tracking
-            html += """
-                <div style="margin-top: 20px; padding: 15px; background-color: #f5f5f5; border-radius: 5px; border-left: 4px solid #4CAF50;">
-                    <h3 style="margin-top: 0; color: #2e7d32;">Access Your Dashboards</h3>
-                    <p>For detailed monitoring, please visit one of our dashboards:</p>
-
-                    <div style="display: flex; margin: 20px 0;">
-                        <a href="https://app.admontracker.online/Dashboard"
-                           style="display: inline-block; background-color: #2196F3; color: white; padding: 10px 20px;
-                                  text-decoration: none; border-radius: 4px; margin-right: 15px; font-weight: bold;">
-                           ↗️ New Dashboard
-                        </a>
-
-                        <a href="https://fitbitestapipy.streamlit.app/"
-                           style="display: inline-block; background-color: #757575; color: white; padding: 10px 20px;
-                                  text-decoration: none; border-radius: 4px; font-weight: bold;">
-                           ↗️ Legacy Dashboard
-                        </a>
-                    </div>
-
-                    <p><em>Note: The legacy dashboard is being phased out. Please use the new dashboard for future reference.</em></p>
-                </div>
-
-                <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd;">
-                    <p>For any questions, please contact the project manager or the system administrator:</p>
-
-                    <div style="margin-top: 15px; font-style: italic;">
-                        <p style="margin: 0; font-weight: bold;">Eden Eldar</p>
-                        <p style="margin: 0; color: #0277bd;">
-                            <a href="mailto:edenede2@gmail.com" style="color: #0277bd; text-decoration: none;">
-                                edenede2@gmail.com
-                            </a>
-                        </p>
-                    </div>
-
-                    <p style="margin-top: 15px;">Thank you!</p>
-                </div>
-            """
-
-            #  Close the HTML
-            html += """
-                <p>This is an automated alert from AdmonTracker.</p>
-            </body>
-            </html>
-            """
-
-            # Send the consolidated email
-            subject = f"Fitbit Alert: {len(watches)} watches need attention in Project {project}"
-            result = send_email_alert(", ".join(recipients), subject, html)
+            # Reuse the newest active conversation for this project and recipient
+            # group. The stable subject and RFC reply headers let Gmail and other
+            # clients display reminders as one thread.
+            thread_candidates = [
+                state for state in state_by_key.values()
+                if str(state.get('project') or '') == str(project)
+                and as_bool(state.get('active'))
+                and str(state.get('thread_recipient_fingerprint') or '') == group_fingerprint
+                and (
+                    _clean_message_id(state.get('thread_root_message_id'))
+                    or _clean_message_id(state.get('thread_last_message_id'))
+                )
+            ]
+            previous_thread = max(
+                thread_candidates,
+                key=lambda state: str(state.get('updated_at') or ''),
+                default={},
+            )
+            root_message_id = (
+                _clean_message_id(previous_thread.get('thread_root_message_id'))
+                or _clean_message_id(previous_thread.get('thread_last_message_id'))
+            )
+            previous_message_id = (
+                _clean_message_id(previous_thread.get('thread_last_message_id'))
+                or root_message_id
+            )
+            current_message_id = make_msgid(domain="admontracker.online")
+            plain_text, html = build_wearable_alert_message(
+                project=str(project),
+                watches=watches,
+                evaluated_at=now_utc,
+            )
+            subject = f"AdmonTracker Fitbit/Google Health alert - {project}"
+            result = send_email_alert(
+                ", ".join(recipients),
+                subject,
+                html,
+                plain_text_body=plain_text,
+                message_id=current_message_id,
+                in_reply_to=previous_message_id,
+                references=[root_message_id, previous_message_id],
+            )
 
             # Track results
             if result:
@@ -1164,8 +1048,33 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
                         watch_data['alert_state'],
                         reasons=watch_data['alert_reasons'],
                         now=now_utc,
+                        thread_recipient_fingerprint=group_fingerprint,
+                        thread_root_message_id=root_message_id or current_message_id,
+                        thread_last_message_id=current_message_id,
                     )
                     _persist_alert_state(spreadsheet, state_by_key, delivered_state)
+
+                # Keep the conversation pointer current for other active watches
+                # in the same group without changing their individual schedules.
+                delivered_keys = {
+                    (str(project), str(watch_data['watch_name']))
+                    for watch_data in watches
+                }
+                for state_key, active_state in list(state_by_key.items()):
+                    if state_key in delivered_keys:
+                        continue
+                    if (
+                        str(active_state.get('project') or '') == str(project)
+                        and as_bool(active_state.get('active'))
+                        and str(active_state.get('thread_recipient_fingerprint') or '') == group_fingerprint
+                    ):
+                        threaded_state = {
+                            **active_state,
+                            'thread_root_message_id': root_message_id or current_message_id,
+                            'thread_last_message_id': current_message_id,
+                            'updated_at': now_utc.isoformat(),
+                        }
+                        _persist_alert_state(spreadsheet, state_by_key, threaded_state)
 
                 print(f"Sent consolidated alert for {len(watches)} watches to {', '.join(recipients)}")
 

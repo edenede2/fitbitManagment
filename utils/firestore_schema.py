@@ -60,6 +60,7 @@ class SheetMigrationSpec:
     sensitive_fields: frozenset[str] = GLOBAL_SECRET_FIELDS
     allowed_fields: frozenset[str] | None = None
     profile: str = "core"
+    allow_sheets_fallback: bool = True
 
 
 MIGRATION_SPECS: tuple[SheetMigrationSpec, ...] = (
@@ -93,6 +94,7 @@ MIGRATION_SPECS: tuple[SheetMigrationSpec, ...] = (
         "fitbit_alert_state",
         "fitbit_alert_state",
         ("project", "watchName"),
+        allow_sheets_fallback=False,
     ),
     SheetMigrationSpec(
         "health_oauth_clients",

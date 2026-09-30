@@ -490,6 +490,22 @@ class GoogleSheetsAdapter:
         return DataBackendConfig.from_environment().sheets_read_fallback
 
     @staticmethod
+    def _sheets_read_fallback_allowed_for(sheet_name: str) -> bool:
+        """Honor per-collection policy in addition to the rollout-wide flag.
+
+        Newly created Firestore-native operational collections have no legacy
+        Sheet to fall back to. For those collections, an empty Firestore result
+        is authoritative and must not trigger an unnecessary Sheets request.
+        """
+        from utils.firestore_schema import spec_for_source_sheet
+
+        spec = spec_for_source_sheet(sheet_name)
+        return bool(
+            GoogleSheetsAdapter._sheets_read_fallback_allowed()
+            and (spec is None or spec.allow_sheets_fallback)
+        )
+
+    @staticmethod
     def _sheets_shadow(spreadsheet: Spreadsheet, operation: str, *args, **kwargs) -> None:
         """Best-effort mirror from a Firestore primary back to Sheets."""
         try:
@@ -559,12 +575,13 @@ class GoogleSheetsAdapter:
         if GoogleSheetsAdapter._is_local_demo(spreadsheet):
             return spreadsheet.get_sheet(name).data
         if GoogleSheetsAdapter._is_firestore_sheet(spreadsheet, name):
+            fallback_allowed = GoogleSheetsAdapter._sheets_read_fallback_allowed_for(name)
             try:
                 records = GoogleSheetsAdapter._firestore_store().read_sheet_rows(name)
-                if records or not GoogleSheetsAdapter._sheets_read_fallback_allowed():
+                if records or not fallback_allowed:
                     return records
             except Exception:
-                if not GoogleSheetsAdapter._sheets_read_fallback_allowed():
+                if not fallback_allowed:
                     raise
         sheets_api = SheetsAPI.get_instance()
         google_spreadsheet = sheets_api.open_spreadsheet(spreadsheet.api_key)
@@ -586,6 +603,7 @@ class GoogleSheetsAdapter:
                 None,
             )
         if GoogleSheetsAdapter._is_firestore_sheet(spreadsheet, name):
+            fallback_allowed = GoogleSheetsAdapter._sheets_read_fallback_allowed_for(name)
             try:
                 filters = {key: row[key] for key in keys}
                 records = GoogleSheetsAdapter._firestore_store().read_sheet_rows(
@@ -596,10 +614,10 @@ class GoogleSheetsAdapter:
                     (record for record in records if all(record.get(key) == row[key] for key in keys)),
                     None,
                 )
-                if match is not None or not GoogleSheetsAdapter._sheets_read_fallback_allowed():
+                if match is not None or not fallback_allowed:
                     return match
             except Exception:
-                if not GoogleSheetsAdapter._sheets_read_fallback_allowed():
+                if not fallback_allowed:
                     raise
         sheet_api = SheetsAPI.get_instance()
         google_spreadsheet = sheet_api.open_spreadsheet(spreadsheet.api_key)
@@ -622,6 +640,7 @@ class GoogleSheetsAdapter:
                 if all(record.get(key) == row[key] for key in keys)
             ]
         if GoogleSheetsAdapter._is_firestore_sheet(spreadsheet, sheet_name):
+            fallback_allowed = GoogleSheetsAdapter._sheets_read_fallback_allowed_for(sheet_name)
             try:
                 filters = {key: row[key] for key in keys}
                 records = GoogleSheetsAdapter._firestore_store().read_sheet_rows(
@@ -632,10 +651,10 @@ class GoogleSheetsAdapter:
                     record for record in records
                     if all(record.get(key) == row[key] for key in keys)
                 ]
-                if matches or not GoogleSheetsAdapter._sheets_read_fallback_allowed():
+                if matches or not fallback_allowed:
                     return matches
             except Exception:
-                if not GoogleSheetsAdapter._sheets_read_fallback_allowed():
+                if not fallback_allowed:
                     raise
         sheet_api = SheetsAPI.get_instance()
         google_spreadsheet = sheet_api.open_spreadsheet(spreadsheet.api_key)

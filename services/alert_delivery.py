@@ -3,10 +3,19 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import hashlib
 from typing import Any
 
 
 ALERT_INTERVALS_HOURS = (1, 2, 4, 8, 16, 24)
+
+
+def recipient_fingerprint(recipients: list[str]) -> str:
+    """Create a stable thread key without storing recipient addresses."""
+    normalized = ",".join(
+        sorted({str(recipient).strip().casefold() for recipient in recipients if str(recipient).strip()})
+    )
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 def as_bool(value: Any, *, default: bool = False) -> bool:
@@ -88,6 +97,9 @@ def detected_state(
         ),
         "send_count": _as_int(previous.get("send_count"), 0) if was_active and previous else 0,
         "alert_reasons": ", ".join(reasons),
+        "thread_recipient_fingerprint": "",
+        "thread_root_message_id": "",
+        "thread_last_message_id": "",
         "resolved_at": "",
         "updated_at": timestamp,
     }
@@ -98,6 +110,9 @@ def sent_state(
     *,
     reasons: list[str],
     now: datetime,
+    thread_recipient_fingerprint: str = "",
+    thread_root_message_id: str = "",
+    thread_last_message_id: str = "",
 ) -> dict[str, Any]:
     """Advance the delivery interval after a successful email."""
     send_count = _as_int(current.get("send_count"), 0) + 1
@@ -110,6 +125,9 @@ def sent_state(
         "next_interval_hours": next_interval_hours(send_count),
         "send_count": send_count,
         "alert_reasons": ", ".join(reasons),
+        "thread_recipient_fingerprint": thread_recipient_fingerprint,
+        "thread_root_message_id": thread_root_message_id,
+        "thread_last_message_id": thread_last_message_id,
         "resolved_at": "",
         "updated_at": timestamp,
     }
@@ -132,6 +150,9 @@ def resolved_state(
         "next_interval_hours": 1,
         "send_count": 0,
         "alert_reasons": "",
+        "thread_recipient_fingerprint": "",
+        "thread_root_message_id": "",
+        "thread_last_message_id": "",
         "resolved_at": timestamp,
         "updated_at": timestamp,
     }

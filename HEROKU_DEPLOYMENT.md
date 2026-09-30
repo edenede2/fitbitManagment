@@ -239,6 +239,13 @@ restart the sequence. Resolving the condition, deactivating the watch, or using
 **Mute Alerts** in Device Management resets the sequence. If an unmuted watch is
 still failing, the next monitoring run treats it as a new detection.
 
+Reminder messages use a stable subject plus standard `Message-ID`, `In-Reply-To`,
+and `References` headers, so supported email clients group one active alert
+episode into a single conversation per project and recipient group. The thread
+ends when the condition resolves or is muted; a later recurrence starts a new
+conversation. Recipient addresses are not stored in alert state: only a one-way
+fingerprint is kept for thread matching.
+
 Wearable alerts run before the isolated legacy Qualtrics/WhatsApp workflow. A
 legacy Sheets quota error therefore cannot prevent wearable alert processing.
 
