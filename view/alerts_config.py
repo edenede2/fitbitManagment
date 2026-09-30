@@ -98,7 +98,16 @@ def save_fitbit_config(spreadsheet: Spreadsheet, config_data: dict) -> bool:
         if column in new.columns:
             new = new.with_columns(pl.col(column).cast(pl.Utf8))
 
-    updated = new if current.is_empty() else pl.concat([current, new])
+    # Firestore document field order is not guaranteed, and older Sheet rows may
+    # contain a slightly different set of columns. Align by column name instead
+    # of using strict vertical stacking, which fails when (for example) the
+    # existing frame starts with ``email`` and the form row starts with
+    # ``project``.
+    updated = (
+        new
+        if current.is_empty()
+        else pl.concat([current, new], how="diagonal_relaxed")
+    )
     spreadsheet.update_sheet("fitbit_alerts_config", updated, strategy="replace")
     GoogleSheetsAdapter.save(spreadsheet, "fitbit_alerts_config")
     return True
