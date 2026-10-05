@@ -94,50 +94,86 @@ def resolve_state(sp: Spreadsheet, state: str) -> Optional[Dict[str, Any]]:
         return None
     return state_row
 
+
+def _get_latest_token_row(sp: Spreadsheet, watch_name: str) -> Optional[Dict[str, Any]]:
+    """Return token metadata without resolving any stored secret.
+
+    A fresh OAuth authorization must be able to replace a pre-migration
+    plaintext row while plaintext reads are disabled.  Secret resolution is
+    therefore deliberately kept out of this metadata lookup.
+    """
+    if sp is None:
+        raise ValueError("Spreadsheet connection unavailable")
+
+    rows = GoogleSheetsAdapter.get_rows(sp, TOKENS_TAB, "watchName", watchName=watch_name)
+    active = [
+        row
+        for row in rows
+        if str(row.get("status") or "connected").strip().casefold() == "connected"
+    ]
+    return dict(active[-1]) if active else None
+
+
 def save_tokens_for_watch(sp: Spreadsheet, *, watch_name: str, token_json: dict) -> None:
     expires_in = int(token_json.get("expires_in", 0) or 0)
     created_at = now_ts()
     expires_at = created_at + max(expires_in - 30, 0)  # 30s safety buffer
 
-    existing = get_latest_tokens(sp, watch_name)
+    existing = _get_latest_token_row(sp, watch_name)
+    access_token = str(token_json.get("access_token") or "").strip()
+    refresh_token = str(token_json.get("refresh_token") or "").strip()
+    existing_ref = str((existing or {}).get("token_secret_ref") or "").strip()
+
+    # Fitbit normally returns both tokens for an authorization-code exchange.
+    # Only consult an existing secret when a refresh response omits its rotated
+    # refresh token.  Never revive a plaintext token merely to complete a new
+    # secure authorization.
+    if not refresh_token and existing_ref:
+        existing_secret = load_json_secret(existing_ref)
+        refresh_token = str(existing_secret.get("refresh_token") or "").strip()
+    elif (
+        not refresh_token
+        and plaintext_secret_fallback_allowed()
+        and existing
+    ):
+        refresh_token = str(existing.get("refresh_token") or "").strip()
+
+    if not access_token or not refresh_token:
+        raise ValueError("Fitbit returned an incomplete token response")
+
     secret_ref = store_json_secret(
         "participant-oauth",
         ["fitbit", watch_name],
         {
-            "access_token": token_json.get("access_token", ""),
-            "refresh_token": token_json.get("refresh_token", "")
-            or (existing or {}).get("refresh_token", ""),
+            "access_token": access_token,
+            "refresh_token": refresh_token,
         },
-        existing_ref=str((existing or {}).get("token_secret_ref") or ""),
+        existing_ref=existing_ref,
     )
     protected = secret_manager_enabled()
+    if protected and not secret_ref:
+        raise RuntimeError("Secret Manager did not return a Fitbit token reference")
     row = OrderedDict([
         ("watchName", watch_name),
-        ("fitbit_user_id", token_json.get("user_id", "")),
+        ("fitbit_user_id", token_json.get("user_id", "") or (existing or {}).get("fitbit_user_id", "")),
         ("token_secret_ref", secret_ref),
-        ("access_token", "" if protected else token_json.get("access_token", "")),
-        ("refresh_token", "" if protected else token_json.get("refresh_token", "")),
+        ("access_token", "" if protected else access_token),
+        ("refresh_token", "" if protected else refresh_token),
         ("expires_at", str(expires_at)),
-        ("scope", token_json.get("scope", "")),
+        ("scope", token_json.get("scope", "") or (existing or {}).get("scope", "")),
         ("created_at", str(created_at)),
         ("status", "connected"),
         ("revoked_at", ""),
     ])
     _append(sp, TOKENS_TAB, row)
     if not protected:
-        _update_fitbit_token(sp, watch_name, token_json.get("access_token", ""))
+        _update_fitbit_token(sp, watch_name, access_token)
+
 
 def get_latest_tokens(sp: Spreadsheet, watch_name: str) -> Optional[Dict[str, Any]]:
-    if sp is None:
-        raise ValueError("Spreadsheet connection unavailable")
-
-    rows = GoogleSheetsAdapter.get_rows(sp, TOKENS_TAB, "watchName", watchName=watch_name)
-    if not rows:
+    row = _get_latest_token_row(sp, watch_name)
+    if row is None:
         return None
-    active = [row for row in rows if str(row.get("status") or "connected").casefold() == "connected"]
-    if not active:
-        return None
-    row = dict(active[-1])
     secret_ref = str(row.get("token_secret_ref") or "").strip()
     if secret_ref:
         try:

@@ -43,7 +43,12 @@ class FakeSpreadsheet:
 
 
 class FakeGoogleSheetsAdapter:
-    pass
+    get_rows = Mock(return_value=[])
+
+
+# Keep the real package object so the test can still import entity.Watch after
+# replacing only its heavy Sheet dependency.
+import entity  # noqa: F401, E402
 
 
 _install_module_stub(
@@ -177,6 +182,76 @@ class FitbitWebApiRecoveryTests(unittest.TestCase):
         self.assertNotIn("Refresh token invalid", message)
         self.assertNotIn("refresh-secret", message)
         self.assertNotIn("client-secret", message)
+
+    def test_fresh_authorization_replaces_plaintext_row_without_reading_it(self):
+        existing_plaintext = {
+            "watchName": "watch-1",
+            "fitbit_user_id": "existing-user",
+            "token_secret_ref": "",
+            "access_token": "old-plaintext-access",
+            "refresh_token": "old-plaintext-refresh",
+            "scope": "activity",
+            "status": "connected",
+        }
+
+        with patch.object(
+            fitbit_token_store.GoogleSheetsAdapter,
+            "get_rows",
+            return_value=[existing_plaintext],
+        ), patch.object(
+            fitbit_token_store,
+            "plaintext_secret_fallback_allowed",
+            return_value=False,
+        ), patch.object(
+            fitbit_token_store,
+            "secret_manager_enabled",
+            return_value=True,
+        ), patch.object(
+            fitbit_token_store,
+            "store_json_secret",
+            return_value="projects/admontracker/secrets/watch-1/versions/latest",
+        ) as store_secret, patch.object(
+            fitbit_token_store,
+            "_append",
+        ) as append_row:
+            fitbit_token_store.save_tokens_for_watch(
+                object(),
+                watch_name="watch-1",
+                token_json={
+                    "access_token": "new-access",
+                    "refresh_token": "new-refresh",
+                    "expires_in": 28800,
+                    "user_id": "new-user",
+                    "scope": "activity heartrate",
+                },
+            )
+
+        stored_payload = store_secret.call_args.args[2]
+        self.assertEqual(stored_payload["access_token"], "new-access")
+        self.assertEqual(stored_payload["refresh_token"], "new-refresh")
+        self.assertNotIn("old-plaintext-access", stored_payload.values())
+        saved_row = append_row.call_args.args[2]
+        self.assertEqual(saved_row["token_secret_ref"], "projects/admontracker/secrets/watch-1/versions/latest")
+        self.assertEqual(saved_row["access_token"], "")
+        self.assertEqual(saved_row["refresh_token"], "")
+
+    def test_plaintext_row_stays_unreadable_when_fallback_is_disabled(self):
+        with patch.object(
+            fitbit_token_store.GoogleSheetsAdapter,
+            "get_rows",
+            return_value=[{
+                "watchName": "watch-1",
+                "access_token": "old-access",
+                "refresh_token": "old-refresh",
+                "status": "connected",
+            }],
+        ), patch.object(
+            fitbit_token_store,
+            "plaintext_secret_fallback_allowed",
+            return_value=False,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "Plaintext Fitbit token fallback is disabled"):
+                fitbit_token_store.get_latest_tokens(object(), "watch-1")
 
     def test_factory_uses_legacy_token_only_when_no_oauth_row_exists(self):
         fake_spreadsheet = object()
