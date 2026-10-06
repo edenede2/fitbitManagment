@@ -2,6 +2,7 @@
 """Tests for Fitbit Web API endpoint and token recovery behavior."""
 
 import unittest
+import datetime
 import sys
 import types
 from unittest.mock import Mock, patch
@@ -58,7 +59,7 @@ _install_module_stub(
 )
 _install_module_stub("controllers.auth_controller", AuthenticationController=Mock())
 
-from entity.Watch import ApiRequestError, URL_DICT, Watch, WatchFactory
+from entity.Watch import ApiRequestError, RequestBuilder, URL_DICT, Watch, WatchFactory
 from utils.fitbit_oauth import FitbitOAuthError, refresh_tokens
 import utils.fitbit_token_store as fitbit_token_store
 
@@ -87,6 +88,74 @@ class FitbitWebApiRecoveryTests(unittest.TestCase):
             URL_DICT["Heart Rate Intraday"],
             "https://api.fitbit.com/1/user/-/activities/heart/date/{}/1d/1sec/time/{}/{}.json",
         )
+
+    def test_cross_midnight_intraday_range_is_split_across_the_correct_dates(self):
+        start = datetime.datetime(2026, 10, 5, 22, 32)
+        end = datetime.datetime(2026, 10, 6, 4, 32)
+
+        request = (
+            RequestBuilder("Steps Intraday", "test-token")
+            .with_date_range(start, end)
+            .with_time_range(start, end)
+            .build()
+        )
+
+        self.assertTrue(request["multiday"])
+        self.assertEqual(
+            request["day_params"],
+            [
+                {
+                    "start_date": "2026-10-05",
+                    "end_date": "2026-10-05",
+                    "start_time": "22:32",
+                    "end_time": "23:59",
+                },
+                {
+                    "start_date": "2026-10-06",
+                    "end_date": "2026-10-06",
+                    "start_time": "00:00",
+                    "end_time": "04:32",
+                },
+            ],
+        )
+
+    def test_current_steps_passes_the_six_hour_start_date_to_fetch(self):
+        fixed_now = datetime.datetime(2026, 10, 6, 4, 32)
+        watch = Watch(name="watch-1", project="demo", token="test-token")
+
+        with patch("entity.Watch.datetime.datetime") as mocked_datetime, patch.object(
+            watch,
+            "fetch_data",
+            return_value={},
+        ) as fetch_data, patch.object(watch, "process_data", return_value=[]):
+            mocked_datetime.now.return_value = fixed_now
+            result = watch.get_current_hourly_steps(force_fetch=True)
+
+        self.assertIsNone(result)
+        request = fetch_data.call_args.kwargs
+        self.assertEqual(request["start_date"], datetime.datetime(2026, 10, 5, 22, 32))
+        self.assertEqual(request["start_time"], datetime.datetime(2026, 10, 5, 22, 32))
+        self.assertEqual(request["end_date"], fixed_now)
+        self.assertEqual(request["end_time"], fixed_now)
+
+    def test_current_heart_rate_passes_the_previous_date_when_crossing_midnight(self):
+        fixed_now = datetime.datetime(2026, 10, 6, 0, 30)
+        watch = Watch(name="watch-1", project="demo", token="test-token")
+
+        with patch("entity.Watch.datetime.datetime") as mocked_datetime, patch.object(
+            watch,
+            "fetch_data",
+            return_value={},
+        ) as fetch_data, patch.object(watch, "process_data", return_value=[]):
+            mocked_datetime.now.return_value = fixed_now
+            result = watch.get_current_hourly_HR(force_fetch=True)
+
+        self.assertIsNone(result)
+        request = fetch_data.call_args.kwargs
+        self.assertEqual(request["start_date"], datetime.datetime(2026, 10, 5, 23, 30))
+        self.assertEqual(request["start_time"], datetime.datetime(2026, 10, 5, 23, 30))
+        self.assertEqual(request["end_date"], fixed_now)
+        self.assertEqual(request["end_time"], fixed_now)
 
     def test_fetch_data_refreshes_token_once_after_401(self):
         token_refresher = Mock(return_value="new-token")

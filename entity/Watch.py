@@ -1033,9 +1033,10 @@ class Watch:
         data = self.fetch_data(
             'Heart Rate Intraday',
             force_fetch=force_fetch,
-            start_date=current_date,
+            start_date=hour_ago,
             start_time=hour_ago,
-            end_time=current_date
+            end_date=current_date,
+            end_time=current_date,
         )
         
         processed_data = self.process_data('Heart Rate Intraday', data)
@@ -1055,9 +1056,10 @@ class Watch:
         data = self.fetch_data(
             'Steps Intraday',
             force_fetch=force_fetch,
-            start_date=current_date,
+            start_date=hours_ago,
             start_time=hours_ago,
-            end_time=current_date
+            end_date=current_date,
+            end_time=current_date,
         )
         
         processed_data = self.process_data('Steps Intraday', data)
