@@ -31,6 +31,19 @@ except ImportError:
 # ==================== ENTITY LAYER SHEET CLASSES =====================
 # =====================================================================
 
+
+def _polars_safe_temporal_values(value: Any) -> Any:
+    """Convert temporal values to ISO text when mixed row schemas need it."""
+    if isinstance(value, (datetime.datetime, datetime.date, datetime.time)):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {key: _polars_safe_temporal_values(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_polars_safe_temporal_values(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_polars_safe_temporal_values(item) for item in value)
+    return value
+
 @dataclass
 class Sheet:
     """
@@ -48,7 +61,16 @@ class Sheet:
         if engine == 'pandas':
             return pd.DataFrame(self.data)
         elif engine == 'polars':
-            return pl.DataFrame(self.data)
+            try:
+                # Inspect every row so late schema variations do not inherit a
+                # too-narrow type from Polars' default inference sample.
+                return pl.DataFrame(self.data, infer_schema_length=None)
+            except pl.exceptions.ComputeError:
+                # Firestore can return native date/datetime objects for older
+                # rows while UI edits produce ISO strings in the same column.
+                # Polars has no automatic supertype for those representations.
+                normalized = _polars_safe_temporal_values(self.data)
+                return pl.DataFrame(normalized, infer_schema_length=None)
         else:
             raise ValueError(f"Unsupported dataframe engine: {engine}")
 

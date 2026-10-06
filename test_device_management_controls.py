@@ -1,4 +1,5 @@
 import unittest
+import datetime
 from unittest.mock import patch
 
 import pandas as pd
@@ -9,9 +10,35 @@ from view.fitbit_management import (
     _apply_activation_metadata,
     _prepare_editor_dataframe,
 )
+from entity.Sheet import Sheet
 
 
 class DeviceManagementControlTests(unittest.TestCase):
+    def test_sheet_conversion_accepts_mixed_native_and_iso_dates(self):
+        sheet = Sheet(
+            name="fitbit",
+            data=[
+                {
+                    "name": "TW05",
+                    "project": "Test",
+                    "lastActivatedDate": datetime.date(2026, 10, 5),
+                },
+                {
+                    "name": "TW08",
+                    "project": "Test",
+                    "lastActivatedDate": "2026-10-06",
+                },
+            ],
+        )
+
+        frame = sheet.to_dataframe(engine="polars")
+
+        self.assertEqual(frame.schema["lastActivatedDate"], pl.String)
+        self.assertEqual(
+            frame.get_column("lastActivatedDate").to_list(),
+            ["2026-10-05", "2026-10-06"],
+        )
+
     def test_requested_columns_are_first_and_controls_are_boolean(self):
         frame = pl.DataFrame(
             [{
