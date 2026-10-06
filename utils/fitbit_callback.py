@@ -99,7 +99,6 @@ def handle_fitbit_callback(auth_controller=None) -> bool:
     except Exception as e:
         if not show_rate_limit_notice(
             e,
-            provider="google_sheets",
             key="fitbit_state_consumption",
             context="validating the Fitbit OAuth link",
         ):
@@ -123,7 +122,6 @@ def handle_fitbit_callback(auth_controller=None) -> bool:
     except Exception as e:
         if not show_rate_limit_notice(
             e,
-            provider="google_sheets",
             key="fitbit_token_store",
             context="saving Fitbit OAuth tokens",
         ):

@@ -67,7 +67,6 @@ def _active_google_client_rows():
     except Exception as e:
         if not show_rate_limit_notice(
             e,
-            provider="google_sheets",
             key="oauth_connect_google_clients",
             context="loading Google Health OAuth clients",
         ):
@@ -245,7 +244,6 @@ if is_admin:
                     except Exception as e:
                         if not show_rate_limit_notice(
                             e,
-                            provider="google_sheets",
                             key="save_google_oauth_client",
                             context="saving the OAuth client",
                         ):
@@ -363,7 +361,6 @@ if st.button("Add watch & generate link"):
     except Exception as e:
         if not show_rate_limit_notice(
             e,
-            provider="google_sheets",
             key="register_watch",
             context="registering the watch",
         ):

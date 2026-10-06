@@ -61,6 +61,7 @@ class SheetMigrationSpec:
     allowed_fields: frozenset[str] | None = None
     profile: str = "core"
     allow_sheets_fallback: bool = True
+    allow_sheets_shadow: bool = False
 
 
 MIGRATION_SPECS: tuple[SheetMigrationSpec, ...] = (
@@ -88,6 +89,10 @@ MIGRATION_SPECS: tuple[SheetMigrationSpec, ...] = (
                 "lastActivatedDate", "currentStudent",
             }
         ),
+        allow_sheets_fallback=False,
+        # Temporary bridge for the old Streamlit/Sheets dashboard. Only
+        # low-volume registry and token-reference records are mirrored.
+        allow_sheets_shadow=True,
     ),
     SheetMigrationSpec("fitbit_alerts_config", "alert_configurations", ("project", "manager", "watch")),
     SheetMigrationSpec(
@@ -101,6 +106,7 @@ MIGRATION_SPECS: tuple[SheetMigrationSpec, ...] = (
         "oauth_clients",
         ("client_key",),
         include=_active_client,
+        allow_sheets_fallback=False,
     ),
     # One current record per watch/provider is sufficient for runtime.  The
     # append-only history remains in the read-only Sheet during the rollout.
@@ -109,29 +115,57 @@ MIGRATION_SPECS: tuple[SheetMigrationSpec, ...] = (
         "health_oauth_tokens",
         ("watchName", "provider"),
         include=_active_health_token,
+        allow_sheets_fallback=False,
+        allow_sheets_shadow=True,
     ),
     SheetMigrationSpec(
         "fitbit_oauth_tokens",
         "fitbit_oauth_tokens",
         ("watchName",),
         include=_active_fitbit_token,
+        allow_sheets_fallback=False,
+        allow_sheets_shadow=True,
     ),
-    SheetMigrationSpec("health_oauth_states", "oauth_states", ("state", "provider")),
-    SheetMigrationSpec("health_oauth_state_used", "oauth_state_usage", ("state", "provider", "used_at")),
+    SheetMigrationSpec(
+        "health_oauth_states",
+        "oauth_states",
+        ("state", "provider"),
+        allow_sheets_fallback=False,
+    ),
+    SheetMigrationSpec(
+        "health_oauth_state_used",
+        "oauth_state_usage",
+        ("state", "provider", "used_at"),
+        allow_sheets_fallback=False,
+    ),
+    # Keep only these two legacy fallbacks while the old Streamlit deployment
+    # can still generate Fitbit links whose one-time state exists in Sheets.
     SheetMigrationSpec("oauth_states", "fitbit_oauth_states", ("state",)),
     SheetMigrationSpec("oauth_state_used", "fitbit_oauth_state_usage", ("state", "used_at")),
-    SheetMigrationSpec("health_oauth_consents", "oauth_consents", ("consent_id",)),
+    SheetMigrationSpec(
+        "health_oauth_consents",
+        "oauth_consents",
+        ("consent_id",),
+        allow_sheets_fallback=False,
+    ),
     SheetMigrationSpec(
         "health_reauth_queue",
         "reauth_queue",
         ("watchName", "provider"),
+        allow_sheets_fallback=False,
     ),
     SheetMigrationSpec(
         "health_connection_management",
         "connection_management",
         ("management_token_hash",),
+        allow_sheets_fallback=False,
     ),
-    SheetMigrationSpec("health_deletion_requests", "deletion_requests", ("request_id",)),
+    SheetMigrationSpec(
+        "health_deletion_requests",
+        "deletion_requests",
+        ("request_id",),
+        allow_sheets_fallback=False,
+    ),
     SheetMigrationSpec("archive_manifest", "archive_manifest", ("logical_key",)),
     SheetMigrationSpec("job_runs", "job_runs", ("run_id",)),
     SheetMigrationSpec("clock_status", "clock_status", ("process",)),
@@ -145,6 +179,7 @@ MIGRATION_SPECS: tuple[SheetMigrationSpec, ...] = (
         "health_api_logs",
         ("log_id",),
         profile="history",
+        allow_sheets_fallback=False,
     ),
     SheetMigrationSpec(
         "health_webhook_events",

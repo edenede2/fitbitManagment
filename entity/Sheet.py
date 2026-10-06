@@ -532,8 +532,13 @@ class GoogleSheetsAdapter:
         """Best-effort mirror from a Firestore primary back to Sheets."""
         try:
             from utils.data_backend import DataBackendConfig
+            from utils.firestore_schema import spec_for_source_sheet
 
-            if not DataBackendConfig.from_environment().sheets_shadow_write:
+            if not DataBackendConfig.from_environment().sheets_shadow_write or not args:
+                return
+            sheet_name = str(args[0] or "")
+            spec = spec_for_source_sheet(sheet_name)
+            if spec is None or not spec.allow_sheets_shadow:
                 return
             mirror = Spreadsheet(
                 name=spreadsheet.name,

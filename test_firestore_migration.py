@@ -364,11 +364,11 @@ class FirestoreMigrationTests(unittest.TestCase):
             filters={"project": "Yoga"},
         )
 
-    def test_firestore_missing_match_can_fall_back_to_sheets(self):
+    def test_legacy_fitbit_state_missing_match_can_fall_back_to_sheets(self):
         store = Mock()
-        store.read_sheet_rows.return_value = [{"project": "Other", "name": "N1"}]
+        store.read_sheet_rows.return_value = []
         worksheet = Mock()
-        worksheet.get_all_records.return_value = [{"project": "Yoga", "name": "YN4"}]
+        worksheet.get_all_records.return_value = [{"state": "legacy-state", "watchName": "TW05"}]
         workbook = Mock()
         workbook.worksheet.return_value = worksheet
         sheets_api = Mock()
@@ -388,12 +388,61 @@ class FirestoreMigrationTests(unittest.TestCase):
         ):
             rows = GoogleSheetsAdapter.get_rows(
                 spreadsheet,
-                "fitbit",
-                "project",
-                project="Yoga",
+                "oauth_states",
+                "state",
+                state="legacy-state",
             )
-        self.assertEqual(rows, [{"project": "Yoga", "name": "YN4"}])
+        self.assertEqual(rows, [{"state": "legacy-state", "watchName": "TW05"}])
         sheets_api.open_spreadsheet.assert_called_once_with("main")
+
+    def test_modern_oauth_and_device_misses_never_fall_back_to_sheets(self):
+        modern_sheets = (
+            "fitbit",
+            "health_oauth_clients",
+            "health_oauth_states",
+            "health_oauth_state_used",
+            "fitbit_oauth_tokens",
+            "health_oauth_tokens",
+            "health_oauth_consents",
+            "health_connection_management",
+        )
+        store = Mock()
+        store.read_sheet_rows.return_value = []
+        spreadsheet = Spreadsheet(name="main", api_key="main", source_kind="firestore")
+
+        with patch.object(
+            GoogleSheetsAdapter,
+            "_firestore_store",
+            return_value=store,
+        ), patch.object(
+            GoogleSheetsAdapter,
+            "_sheets_read_fallback_allowed",
+            return_value=True,
+        ), patch(
+            "entity.Sheet.SheetsAPI.get_instance",
+        ) as sheets_api:
+            for sheet_name in modern_sheets:
+                with self.subTest(sheet_name=sheet_name):
+                    self.assertEqual(
+                        GoogleSheetsAdapter.get_rows(spreadsheet, sheet_name),
+                        [],
+                    )
+
+        sheets_api.assert_not_called()
+
+    def test_sheets_shadow_is_limited_to_old_app_compatibility_records(self):
+        mirrored = {
+            spec.source_sheet
+            for spec in MIGRATION_SPECS
+            if spec.allow_sheets_shadow
+        }
+        self.assertEqual(
+            mirrored,
+            {"fitbit", "fitbit_oauth_tokens", "health_oauth_tokens"},
+        )
+        self.assertFalse(spec_for("health_oauth_states").allow_sheets_shadow)
+        self.assertFalse(spec_for("health_api_logs").allow_sheets_shadow)
+        self.assertFalse(spec_for("log").allow_sheets_shadow)
 
     def test_empty_alert_state_is_authoritative_and_skips_sheets(self):
         store = Mock()
