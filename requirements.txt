@@ -27,5 +27,5 @@ APScheduler>=3.10.4,<4.0
 pyyaml>=6.0
 toml>=0.10.2,<1.0
 rich>=10.14.0
-Authlib==1.6.11
+Authlib==1.6.12
 streamlit-aggrid == 1.1.0

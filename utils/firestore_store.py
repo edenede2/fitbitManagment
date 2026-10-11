@@ -170,6 +170,7 @@ class GoogleFirestoreStore:
         if spec is None:
             return 0
         documents: dict[str, dict[str, Any]] = {}
+        fenced_count = 0
         base_order = time.time_ns()
         for offset, raw in enumerate(rows):
             clean, _ = sanitize_record(spec, dict(raw))
@@ -182,14 +183,26 @@ class GoogleFirestoreStore:
                 "source_order": source_order,
                 "runtime_write": True,
             }
-            documents[document_id] = clean
-        return self.write_documents(spec.collection, documents)
+            if source_sheet in {"FitbitLog", "log"} and "collection_generation" in clean:
+                from utils.security_store import FirestoreSecurityStore
+                from utils.collection_control import collection_key
+                FirestoreSecurityStore(self.client).fenced_write(
+                    collection_key(str(clean.get("watchName") or ""), str(clean.get("provider") or "fitbit")),
+                    int(clean["collection_generation"]), spec.collection, document_id, clean)
+                fenced_count += 1
+            else:
+                documents[document_id] = clean
+        return fenced_count + self.write_documents(spec.collection, documents)
 
     def replace_sheet_rows(self, source_sheet: str, rows: Iterable[dict[str, Any]]) -> int:
         """Replace only documents managed for this source sheet."""
         spec = spec_for_source_sheet(source_sheet)
         if spec is None:
             return 0
+        if source_sheet in {"FitbitLog", "log"}:
+            # Security cutover uses per-enrollment fenced upserts. A partial
+            # worker result must not erase another enrollment's status rows.
+            return self.upsert_sheet_rows(source_sheet, rows)
         plan = build_migration_plan(spec, rows)
         existing = self.read_documents(spec.collection, source_sheet=source_sheet)
         stale_ids = sorted(set(existing) - set(plan.documents))

@@ -14,9 +14,10 @@ from utils.health_token_store import (
     assert_state_authorized_for_callback,
     mark_oauth_state_used,
     resolve_oauth_state,
+    record_oauth_exchange_outcome,
 )
 from utils.rate_limit_ui import show_rate_limit_notice
-from utils.connection_management import create_management_link
+from utils.connection_management import create_management_code
 
 
 def _get_callback_spreadsheet(auth_controller=None) -> Spreadsheet | None:
@@ -37,6 +38,10 @@ def handle_fitbit_callback(auth_controller=None) -> bool:
     qp = st.query_params
     code = qp.get("code")
     state = qp.get("state")
+    if qp.get("fitbit_callback") == "1" and qp.get("error"):
+        st.error("Fitbit authorization was cancelled or denied. Request a new link to try again.")
+        st.query_params.clear()
+        return True
 
     if qp.get("fitbit_callback") != "1":
         if not code or not state:
@@ -54,6 +59,7 @@ def handle_fitbit_callback(auth_controller=None) -> bool:
     if not code or not state:
         st.error("Fitbit OAuth callback missing code/state")
         return True
+    st.query_params.clear()
 
     sp = _get_callback_spreadsheet(auth_controller)
     if sp is None:
@@ -107,7 +113,23 @@ def handle_fitbit_callback(auth_controller=None) -> bool:
 
     try:
         token_json = exchange_code_for_tokens(code)
+        from utils.fitbit_oauth import _cfg, revoke_token
+        from utils.oauth_permissions import require_granted_scopes
+        try:
+            require_granted_scopes(token_json.get("scope"), _cfg()[3].split(), provider="fitbit")
+        except ValueError:
+            try:
+                revoke_token(str(token_json.get("access_token") or ""))
+            except Exception:
+                pass
+            raise
     except Exception as e:
+        if generic_state:
+            try:
+                record_oauth_exchange_outcome(sp, state_row,
+                    "partial_grant" if isinstance(e, ValueError) else "exchange_failed_or_uncertain")
+            except Exception:
+                pass  # A consumed state remains claimed; Admin reconciles it.
         if not show_rate_limit_notice(
             e,
             provider="fitbit",
@@ -118,8 +140,17 @@ def handle_fitbit_callback(auth_controller=None) -> bool:
         return True
 
     try:
-        save_tokens_for_watch(sp, watch_name=watch_name, token_json=token_json)
+        save_tokens_for_watch(sp, watch_name=watch_name, token_json=token_json,
+            enrollment_id=str(state_row.get("enrollment_id") or ""),
+            generation=state_row.get("collection_generation"))
+        if generic_state:
+            record_oauth_exchange_outcome(sp, state_row, "token_stored")
     except Exception as e:
+        if generic_state:
+            try:
+                record_oauth_exchange_outcome(sp, state_row, "storage_failed_or_uncertain")
+            except Exception:
+                pass
         if not show_rate_limit_notice(
             e,
             key="fitbit_token_store",
@@ -128,9 +159,9 @@ def handle_fitbit_callback(auth_controller=None) -> bool:
             st.error("The connection was authorized but could not be stored securely. Please contact the study team.")
         return True
 
-    management_url = ""
+    management_code = ""
     try:
-        management_url = create_management_link(
+        management_code = create_management_code(
             sp,
             watch_name=watch_name,
             project=str(state_row.get("project") or ""),
@@ -140,11 +171,12 @@ def handle_fitbit_callback(auth_controller=None) -> bool:
         # Authorization and secure token storage are already complete.
         pass
     st.success(f"Fitbit watch '{watch_name}' connected successfully. You can close this tab.")
-    if management_url:
-        st.info("Use the private button below to disconnect or request deletion later.")
-        st.link_button("Manage this connection", management_url)
+    if management_code:
+        st.info("Save this one-use access code privately. It expires in 24 hours; the team can issue a replacement.")
+        st.code(management_code, language=None)
+        st.page_link("pages/12_Manage_Connection.py", label="Manage this connection")
     else:
-        st.warning("The connection is active, but its management link could not be created. Contact the study team.")
+        st.warning("The connection is active, but an access code could not be created. Contact the study team.")
     try:
         st.query_params.clear()
     except Exception:

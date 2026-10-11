@@ -1,6 +1,13 @@
 # Production deployment for app.admontracker.online
 
-The web and clock processes share Google Sheets, Secret Manager, and a restricted
+**CASA branch gate:** `casa-readiness` is local and not rollout-ready. Do not deploy
+it using the old commands below without approved staff/enrollment migration,
+MFA bootstrap, legacy stop-gate compatibility and acceptance tests. Follow
+[CASA deployment/rollback](docs/casa/DEPLOYMENT.md); a rollback to the old build must
+not reactivate revoked identities, consumed states/codes or stopped collection.
+
+The web and clock processes share Firestore, Secret Manager, selected Sheets
+legacy/recovery mirrors, and a restricted
 Google Shared Drive. Heroku's filesystem is used only for temporary files.
 
 ## 1. Prepare private deployment values
@@ -27,7 +34,7 @@ The API being enabled is not sufficient. The production service account needs:
 
 - `secretmanager.secrets.create` on project `admontracker` for a new participant secret;
 - `secretmanager.versions.add`, `secretmanager.versions.access`,
-  `secretmanager.versions.list`, `secretmanager.versions.destroy`, and
+  `secretmanager.versions.list`, `secretmanager.versions.get`, `secretmanager.versions.destroy`, and
   `secretmanager.secrets.get` for the secrets
   created by the app.
 

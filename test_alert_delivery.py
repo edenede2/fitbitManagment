@@ -154,8 +154,8 @@ class AlertMessageTests(unittest.TestCase):
         expected = "Latest device snapshot: Battery 82%"
         self.assertIn(expected, plain)
         self.assertIn("Latest device snapshot:</strong> Battery 82%", html)
-        self.assertIn("Heart rate 71 bpm", plain)
-        self.assertIn("Heart rate 71 bpm", html)
+        self.assertNotIn("71 bpm", plain)
+        self.assertNotIn("71 bpm", html)
         self.assertIn("1 device</strong> currently requires attention", html)
         self.assertNotIn("24-hour diagnostics", html)
 

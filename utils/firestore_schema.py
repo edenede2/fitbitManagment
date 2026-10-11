@@ -86,7 +86,7 @@ MIGRATION_SPECS: tuple[SheetMigrationSpec, ...] = (
                 "legacy_fitbit_user_id", "last_successful_fetch_at",
                 "last_data_timestamp", "last_auth_error", "reauth_link",
                 "reauth_link_created_at", "user", "isActive", "alertsMuted",
-                "lastActivatedDate", "currentStudent",
+                "lastActivatedDate", "currentStudent", "enrollment_id", "collection_generation",
             }
         ),
         allow_sheets_fallback=False,

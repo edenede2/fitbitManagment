@@ -19,6 +19,7 @@ def render_sidebar_navigation() -> None:
         st.page_link("pages/03_Fitbit_Management.py", label="Device management", icon="⌚")
         st.page_link("pages/04_Alerts_Configuration.py", label="Alert configuration", icon="🔔")
         st.page_link("pages/07_OAuth_Connect.py", label="Connect wearable", icon="🔗")
+        st.page_link("pages/14_Research_Operations.py", label="Research operations", icon="🛡️")
 
 
 def render_app_logo(*, show_in_page: bool = False, show_navigation: bool = True) -> None:

@@ -593,11 +593,10 @@ def send_email_alert(
                 server.login(sender_email, sender_password)
                 server.sendmail(sender_email, recipient, message.as_string())
 
-            print(f"Successfully sent email alert to {recipient}")
+            print("Successfully sent operational email alert")
         return True
     except Exception as e:
-        print(f"Error sending email alert: {e}")
-        print(traceback.format_exc())
+        print(f"Error sending email alert: {type(e).__name__}")
         return False
 
 def is_end_date_passed(end_date_str):

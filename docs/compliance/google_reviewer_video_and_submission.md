@@ -1,5 +1,10 @@
 # Google OAuth reviewer video: recording script and submission runbook
 
+Release note: the CASA branch is not yet deployed or assessor-ready. Rehearse
+against the release actually under review; do not record a synthetic guest demo
+as evidence of authenticated controls. After CASA cutover, use the enrollment
+code/MFA steps below and the approved [release gates](../casa/DEPLOYMENT.md).
+
 Record one continuous English video of approximately 12 minutes. Use the exact
 production app, production OAuth client, and branding submitted for verification.
 Use a dedicated study test account and a test watch containing only non-research
@@ -71,8 +76,9 @@ Do not record the final video until all of these checks pass:
 ## Privacy-safe recording setup
 
 - Record only the browser content area. Hide the address bar whenever a private
-  authorization or management URL is open because its query string contains an
-  access token or one-time state.
+  authorization URL is open because its query string contains one-time state.
+  On the CASA branch, management uses a privately saved code, not a bearer URL;
+  crop or mask its display and entry completely.
 - Turn off browser notifications, password-manager overlays, autofill suggestions,
   bookmarks, and email/chat pop-ups.
 - Never show passwords, one-time codes, OAuth client secrets, access/refresh tokens,
@@ -160,6 +166,8 @@ show the public purpose text, bilingual tabs, exact four-scope mapping, and publ
 legal links. Then sign in using the authorized test staff account. Pause recording
 while typing credentials or completing a one-time code if necessary, then resume on
 the authenticated welcome page. Show the curated staff navigation.
+After CASA cutover, complete the approved staff MFA/session step off-camera too.
+Never record the authenticator key, approval, recovery or login codes.
 
 **Say:**
 
@@ -253,15 +261,17 @@ Then approve access using the Google button presented on screen.
 ### 7:30–7:55 — Show successful connection without exposing a token
 
 **Show and do:** Wait for the AdmonTracker success page. Show the success message and
-the **Manage this connection** button. Do not expose a raw management URL. Do not
+the **Manage this connection** button. On the CASA branch, save the one-use access
+code off-camera and exclude its entire display from the frame. Do not expose a
+raw code or management URL. Do not
 click the management button yet; leave this tab open for the final segment.
 
 **Say:**
 
 > Google returned to AdmonTracker and the test watch is connected successfully. The
-> page provides a private management button for disconnect and deletion requests.
-> The underlying token-bearing URL is not printed on the page or spoken in this
-> video.
+> page provides private participant access for disconnect and deletion requests.
+> After the enrollment-code cutover, the participant privately saves a one-use
+> access code. I do not show or speak any private code or token in this video.
 
 ### 7:55–10:15 — Demonstrate each requested scope in the dashboard
 
@@ -315,22 +325,29 @@ scope being justified.
 connection** while keeping the browser address bar outside the recording. Select
 **English**. Show **Provider: Google Health**, the disconnect explanation, the
 confirmation checkbox, and the **Deletion request** section.
+After CASA cutover, enter the saved code off-camera first. If the code/session
+expired, obtain a replacement privately from the scoped staff operations page.
 
 For the final submitted take, demonstrate the deletion-request action first if the
 approved text and button are present. Then select **I want to disconnect and stop
-future collection** and click **Disconnect connection**. Show the confirmation that
-future collection stopped and locally stored tokens were removed. Use a disposable
-review account because disconnect revokes the connection.
+future collection** and click **Disconnect connection**. Show the collection-block
+confirmation and the separate provider-revocation/credential-cleanup statuses.
+If pending, state that follow-up is needed; do not claim success. A deletion
+request already stops collection on the CASA branch, so demonstrate its recorded
+status instead of expecting a second disconnect button. Use a disposable test
+enrollment; do not demonstrate deletion of any real research data.
 
 **Say:**
 
 > I am switching back to the demo-participant role. The participant can use the
-> private connection-management page to stop future collection and revoke the active
-> connection. The same page presents the approved
+> private connection-management page to stop future collection and request provider
+> revocation. The page reports the collection block, provider revocation and local
+> credential cleanup separately. The same page presents the approved
 > deletion wording and records a deletion request for study-team handling. The
 > treatment of already collected research data follows the exact ethics-approved
-> consent. Disconnect removes the stored provider tokens and prevents future
-> collection.
+> consent. A recorded deletion request is not a claim that research data has
+> already been deleted: the Manager performs the all-copy checklist and Admin
+> verifies completion. Any pending revocation or cleanup needs follow-up.
 
 ### 11:35–12:05 — Close the demonstration
 

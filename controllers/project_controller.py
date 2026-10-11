@@ -4,7 +4,7 @@ import streamlit as st
 from entity.Sheet import Spreadsheet, GoogleSheetsAdapter
 from entity.Watch import WatchFactory
 from utils.rate_limit_ui import show_rate_limit_notice
-from utils.access_control import require_real_data_access
+from utils.access_control import require_real_data_access, require_project_access, AccessDenied
 
 class ProjectController:
     """Controller for project-related operations"""
@@ -30,7 +30,11 @@ class ProjectController:
             
             # Get project sheet
             project_sheet = spreadsheet.get_sheet("project", sheet_type="project")
-            return project_sheet.to_dataframe()
+            frame = project_sheet.to_dataframe()
+            context = require_real_data_access()
+            if context.role == "Admin" and context.project == "*":
+                return frame
+            return frame[frame["name"].map(context.allows_project)] if "name" in frame else frame.iloc[0:0]
         except Exception as e:
             show_rate_limit_notice(
                 e,
@@ -55,13 +59,19 @@ class ProjectController:
     def get_watches_for_project(self, project_name: str) -> pd.DataFrame:
         """Get watches for a specific project"""
         try:
+            context = require_real_data_access()
+            if project_name in {"Admin", "*"}:
+                if context.role != "Admin" or context.project != "*":
+                    raise AccessDenied("Cross-project access is not permitted")
+            else:
+                require_project_access(project_name, context)
             spreadsheet = self._get_spreadsheet()
             
             # Get fitbit sheet
             fitbit_sheet = spreadsheet.get_sheet("fitbit", sheet_type="fitbit")
             fitbit_df = fitbit_sheet.to_dataframe()
             
-            if project_name == "Admin":
+            if project_name in {"Admin", "*"}:
                 return fitbit_df
             else:
                 # Filter for this project
@@ -88,11 +98,10 @@ class ProjectController:
             # Get this watch's details
             watch_details = fitbit_df[fitbit_df['name'] == watch_name]
             
-            # st.write(f"Watch details: {watch_details}")
-            st.write(f"Watch details: {watch_details}")
             if len(watch_details) > 0:
                 # Convert to dict for first row
                 details = watch_details.iloc[0].to_dict()
+                require_project_access(str(details.get("project") or ""))
                 
                 # Use loaded log data if it is already present. Do not force another
                 # worksheet read here; dashboard data fetches are a hot path.
@@ -101,6 +110,9 @@ class ProjectController:
                     log_df = log_sheet.to_dataframe()
                     if not log_df.empty and "watchName" in log_df.columns:
                         watch_logs = log_df[log_df['watchName'] == watch_name]
+                        watch_logs = watch_logs[watch_logs['project'] == details.get('project')] if 'project' in watch_logs else watch_logs.iloc[0:0]
+                        if details.get('enrollment_id'):
+                            watch_logs = watch_logs[watch_logs['enrollment_id'] == details['enrollment_id']] if 'enrollment_id' in watch_logs else watch_logs.iloc[0:0]
                         if len(watch_logs) > 0:
                             watch_logs = watch_logs.sort_values(by='lastCheck', ascending=False)
                             latest_log = watch_logs.iloc[0].to_dict()
@@ -149,7 +161,8 @@ class ProjectController:
             fitbit_df = fitbit_sheet.to_dataframe()
             
             # Filter for these watches
-            return fitbit_df[fitbit_df['name'].isin(watch_names)]
+            context = require_real_data_access()
+            return fitbit_df[fitbit_df['name'].isin(watch_names) & fitbit_df['project'].map(context.allows_project)]
         except Exception as e:
             show_rate_limit_notice(
                 e,

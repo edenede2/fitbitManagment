@@ -1,0 +1,7 @@
+# Partial read-only baseline observations from Heroku v76, NOT a full lockfile.
+# Obtain the deployed dependency graph before assessor testing.
+streamlit==1.56.0
+Authlib==1.6.11
+google-cloud-secret-manager==2.31.0
+google-cloud-firestore==2.34.0
+proto-plus==1.29.0

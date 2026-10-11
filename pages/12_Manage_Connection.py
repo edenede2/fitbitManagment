@@ -1,6 +1,7 @@
 """Public pseudonymous connection-management page."""
 
 import streamlit as st
+import secrets
 
 from entity.Sheet import Spreadsheet
 from utils.branding import render_app_logo
@@ -8,8 +9,10 @@ from utils.compliance import PI_EMAIL, PI_PHONE, PUBLIC_PRIVACY_URL, deletion_te
 from utils.connection_management import (
     disconnect_connection,
     record_deletion_request,
-    resolve_management_token,
 )
+from utils.participant_sessions import exchange_management_code, resolve_management_session
+from utils.collection_control import collection_key
+from utils.security_store import get_security_store, security_key
 
 
 st.set_page_config(
@@ -24,13 +27,22 @@ language = "he" if language_label == "עברית" else "en"
 is_hebrew = language == "he"
 st.title("ניהול חיבור" if is_hebrew else "Manage Your Connection")
 
-token = str(st.query_params.get("token") or "").strip()
-if not token:
-    st.info(
-        "יש לפתוח את הקישור הפרטי שנמסר לאחר החיבור."
-        if is_hebrew
-        else "Open the private management link supplied after authorization."
-    )
+if st.query_params.get("token"):
+    st.query_params.clear()
+    st.info("Contact the study team for a replacement access code. / פנו לצוות לקבלת קוד חדש.")
+if "management_browser_nonce" not in st.session_state:
+    st.session_state.management_browser_nonce = secrets.token_urlsafe(32)
+if not st.session_state.get("management_session_id"):
+    with st.form("management_code_exchange"):
+        code = st.text_input("Access code / קוד גישה", type="password", max_chars=128)
+        submitted = st.form_submit_button("Continue / המשך")
+    if submitted:
+        try:
+            st.session_state.management_session_id = exchange_management_code(
+                code.strip(), browser_nonce=st.session_state.management_browser_nonce)
+            st.rerun()
+        except Exception:
+            st.error("Invalid, expired or rate-limited code. Contact the study team. / פנו לצוות לקבלת קוד חדש.")
     st.stop()
 
 spreadsheet_key = st.secrets.get("spreadsheet_key", "")
@@ -40,25 +52,35 @@ if not spreadsheet_key:
 spreadsheet = Spreadsheet(name="Fitbit Database", api_key=spreadsheet_key)
 
 try:
-    management = resolve_management_token(spreadsheet, token)
+    management = resolve_management_session(st.session_state.management_session_id,
+        browser_nonce=st.session_state.management_browser_nonce)
+    management["management_token_hash"] = security_key("management-enrollment", management["enrollment_id"])
+    control = get_security_store().read(collection_key(management["watchName"], management["provider"]))
+    management["revoked_at"] = control.get("collection_stopped_at", "")
+    if control.get("data_deletion_status") == "requested":
+        management["deletion_requested_at"] = "recorded"
 except Exception:
+    st.session_state.pop("management_session_id", None)
     st.error(
         "הקישור אינו תקף או פג תוקף. יש לפנות לצוות המחקר."
         if is_hebrew
-        else "This management link is invalid or expired. Contact the study team."
+        else "This session is invalid or expired. Reload to enter a replacement code from the study team."
     )
     st.stop()
 
 provider = "Google Health" if management.get("provider") == "google_health" else "Fitbit"
 st.write(("ספק: " if is_hebrew else "Provider: ") + provider)
 st.write(
-    "ניתוק מפסיק איסוף עתידי ומבטל את אסימוני הגישה."
+    "ניתוק מפסיק איסוף עתידי. ביטול הרשאת הספק וניקוי האסימונים מטופלים ומדווחים בנפרד."
     if is_hebrew
-    else "Disconnecting stops future collection and revokes active access tokens."
+    else "Disconnecting stops future collection. Provider revocation and secret cleanup are tracked separately."
 )
 
 if management.get("revoked_at"):
-    st.success("החיבור נותק." if is_hebrew else "This connection is disconnected.")
+    st.success("האיסוף הופסק." if is_hebrew else "Collection is stopped.")
+    st.write("Provider revocation: " + str(control.get("provider_revocation_status", "pending")))
+    st.write("Secret cleanup: " + str(control.get("secret_cleanup_status", "pending")))
+    st.write("Data deletion: " + str(control.get("data_deletion_status", "not_requested")))
 else:
     confirm_disconnect = st.checkbox(
         "אני מבקש/ת לנתק ולהפסיק איסוף עתידי."
@@ -72,9 +94,9 @@ else:
             try:
                 warnings = disconnect_connection(spreadsheet, management)
                 st.success(
-                    "האיסוף העתידי הופסק והאסימונים המקומיים הוסרו."
+                    "האיסוף העתידי הופסק."
                     if is_hebrew
-                    else "Future collection stopped and locally stored tokens were removed."
+                    else "Future collection stopped. Revocation and cleanup may still require follow-up."
                 )
                 if warnings:
                     st.warning(

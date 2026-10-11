@@ -51,6 +51,14 @@ class SnapshotContext:
                 continue
             watch_name = str(row.get("watchName") or "").strip()
             if watch_name:
+                from utils.collection_control import assert_collection_allowed, CollectionStopped
+                try:
+                    control = assert_collection_allowed(watch_name, "google_health")
+                except CollectionStopped:
+                    continue
+                if control.get("enrollment_id") and row.get("enrollment_id") != control["enrollment_id"]:
+                    continue
+                row["collection_generation"] = int(control.get("generation", 0))
                 secret_ref = str(row.get("token_secret_ref") or "").strip()
                 if secret_ref:
                     try:
@@ -66,6 +74,14 @@ class SnapshotContext:
                 continue
             watch_name = str(row.get("watchName") or "").strip()
             if watch_name:
+                from utils.collection_control import assert_collection_allowed, CollectionStopped
+                try:
+                    control = assert_collection_allowed(watch_name, "fitbit")
+                except CollectionStopped:
+                    continue
+                if control.get("enrollment_id") and row.get("enrollment_id") != control["enrollment_id"]:
+                    continue
+                row["collection_generation"] = int(control.get("generation", 0))
                 secret_ref = str(row.get("token_secret_ref") or "").strip()
                 if secret_ref:
                     try:
@@ -117,9 +133,12 @@ class SnapshotContext:
 
     def get_valid_google_access_token(self, row: dict[str, Any]) -> str:
         watch_name = str(row.get("name") or row.get("watchName") or "").strip()
+        from utils.collection_control import assert_collection_allowed
+        assert_collection_allowed(watch_name, "google_health", project=str(row.get("project") or ""))
         token_row = self.get_active_google_token_row(watch_name)
         if not token_row:
             raise RuntimeError(f"No active Google Health token found for {watch_name}")
+        assert_collection_allowed(watch_name, "google_health", generation=token_row.get("collection_generation"))
 
         from utils.health_token_store import is_access_token_valid, update_token_row_after_refresh
 
@@ -151,13 +170,23 @@ class SnapshotContext:
         return str(token_row.get("access_token") or "")
 
     def google_health_client(self, row: dict[str, Any]) -> SpreadsheetGoogleHealthClient:
+        from utils.collection_control import assert_collection_allowed
+        generation = assert_collection_allowed(str(row.get("name") or row.get("watchName") or ""),
+            "google_health", project=str(row.get("project") or "")).get("generation", 0)
         return SpreadsheetGoogleHealthClient(
-            access_token_provider=lambda: self.get_valid_google_access_token(row)
+            access_token_provider=lambda: self.get_valid_google_access_token(row),
+            collection_guard=lambda: assert_collection_allowed(
+                str(row.get("name") or row.get("watchName") or ""), "google_health",
+                project=str(row.get("project") or ""), generation=generation),
         )
 
     def get_valid_fitbit_access_token(self, row: dict[str, Any], *, force_refresh: bool = False) -> str:
         watch_name = str(row.get("name") or row.get("watchName") or "").strip()
+        from utils.collection_control import assert_collection_allowed
+        control = assert_collection_allowed(watch_name, "fitbit", project=str(row.get("project") or ""))
         token_row = self.fitbit_tokens_by_watch.get(watch_name)
+        if token_row:
+            assert_collection_allowed(watch_name, "fitbit", generation=token_row.get("collection_generation"))
 
         if token_row:
             from utils.fitbit_oauth import now_ts, refresh_tokens
@@ -176,7 +205,9 @@ class SnapshotContext:
             if refresh_token:
                 try:
                     new_tokens = refresh_tokens(refresh_token)
-                    save_tokens_for_watch(self.spreadsheet, watch_name=watch_name, token_json=new_tokens)
+                    assert_collection_allowed(watch_name, "fitbit", generation=control.get("generation", 0))
+                    save_tokens_for_watch(self.spreadsheet, watch_name=watch_name, token_json=new_tokens,
+                        enrollment_id=str(token_row.get("enrollment_id") or ""), generation=token_row.get("collection_generation"))
                     expires_in = int(new_tokens.get("expires_in", 0) or 0)
                     updated_row = {
                         **token_row,
@@ -190,6 +221,9 @@ class SnapshotContext:
                     self.fitbit_tokens_by_watch[watch_name] = updated_row
                     return str(updated_row.get("access_token") or "")
                 except Exception as exc:
+                    from utils.collection_control import CollectionStopped
+                    if isinstance(exc, CollectionStopped):
+                        raise
                     if access_token and not force_refresh:
                         print(
                             f"Fitbit token refresh failed for {watch_name}; "
@@ -558,6 +592,7 @@ def _fitbit_snapshot_with_token(row: Dict[str, Any], token: str) -> Dict[str, An
         name=str(row.get("name") or row.get("watchName") or ""),
         project=str(row.get("project") or ""),
         token=str(token),
+        _collection_generation=row.get("collection_generation"),
     )
     watch.update_device_info(force_fetch=True)
     hr = watch.get_current_hourly_HR(force_fetch=True) if hasattr(watch, "get_current_hourly_HR") else ""
@@ -599,7 +634,8 @@ def fitbit_snapshot(row: Dict[str, Any], context: SnapshotContext | None = None)
             return _fitbit_snapshot_with_token(row, refreshed_token)
 
     token = row.get("token")
-    if has_value(token):
+    from utils.security_store import collection_controls_enabled
+    if has_value(token) and not collection_controls_enabled():
         return _fitbit_snapshot_with_token(row, str(token))
 
     watch = WatchFactory.create_from_details(row)
@@ -664,6 +700,9 @@ def google_health_snapshot(spreadsheet, row: Dict[str, Any], context: SnapshotCo
 
         battery = device.get("batteryLevel")
         battery_supported = battery not in (None, "")
+        from utils.collection_control import assert_collection_allowed
+        assert_collection_allowed(str(row.get("name") or row.get("watchName") or ""), "google_health",
+                                  generation=row.get("collection_generation"))
 
         return {
             **row,
@@ -681,23 +720,47 @@ def google_health_snapshot(spreadsheet, row: Dict[str, Any], context: SnapshotCo
             "sleep_duration": sleep_duration if sleep_duration is not None else "",
         }
     except Exception as exc:
+        from utils.collection_control import CollectionStopped
+        if isinstance(exc, CollectionStopped):
+            raise
+        from utils.security_store import collection_controls_enabled
+        if collection_controls_enabled():
+            raise RuntimeError("Google Health collection failed; unsafe legacy fallback is disabled") from None
         print(f"Spreadsheet-backed Google Health client failed for {row.get('name', '')}: {exc}")
         return GoogleHealthClient(row).snapshot()
 
 
 def collect_watch_snapshot(row: Dict[str, Any], spreadsheet=None, context: SnapshotContext | None = None) -> Dict[str, Any]:
     row = clean_row(row)
+    from utils.collection_control import assert_collection_allowed
+    declared = normalize_provider(row.get("provider") or row.get("oauth_type"))
+    provider_name = "google_health" if declared in GOOGLE_PROVIDER_NAMES else "fitbit"
+    control = assert_collection_allowed(str(row.get("name") or row.get("watchName") or ""), provider_name,
+                                        project=str(row.get("project") or ""))
+    if control:
+        row = {**row, "enrollment_id": control.get("enrollment_id", ""),
+               "collection_generation": int(control.get("generation", 0))}
     provider, reason = choose_provider(row, context or spreadsheet)
+    from utils.security_store import collection_controls_enabled
+    if collection_controls_enabled() and provider != provider_name:
+        raise CollectionStopped("The assigned enrollment provider must be used")
     print(f"Using {provider} for watch {row.get('name', '')}: {reason}")
 
     if provider == "google_health":
         if spreadsheet is not None:
             return google_health_snapshot(spreadsheet, row, context=context)
+        if collection_controls_enabled():
+            raise RuntimeError("The authoritative credential source is required")
         return GoogleHealthClient(row).snapshot()
 
     try:
         return fitbit_snapshot(row, context=context)
     except Exception as fitbit_error:
+        from utils.collection_control import CollectionStopped
+        if isinstance(fitbit_error, CollectionStopped):
+            raise
+        if collection_controls_enabled():
+            raise
         if google_health_available(row, context or spreadsheet):
             print(f"Fitbit fetch failed for {row.get('name', '')}; falling back to Google Health: {fitbit_error}")
             if spreadsheet is not None:

@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Callable, Literal, Optional
+import time
+import math
 
 import streamlit as st
 
@@ -16,7 +18,7 @@ from utils.compliance import (
 
 
 AccessMode = Literal["anonymous", "guest", "authenticated"]
-AUTHORIZED_ROLES = {"Admin", "Manager", "Student"}
+AUTHORIZED_ROLES = {"Admin", "Manager"}
 DEVICE_MANAGER_ROLES = {"Admin", "Manager"}
 
 DEMO_DISCLOSURE = (
@@ -35,6 +37,7 @@ class AccessContext:
     email: Optional[str] = None
     role: str = "Anonymous"
     project: str = "None"
+    principal_id: str = ""
 
     @property
     def is_anonymous(self) -> bool:
@@ -66,7 +69,13 @@ class AccessContext:
 
     @property
     def fingerprint(self) -> str:
-        return f"{self.mode}:{self.email or ''}:{self.role}:{self.project}"
+        return f"{self.mode}:{self.email or ''}:{self.role}:{self.project}:{self.principal_id}"
+
+    def allows_project(self, project: str) -> bool:
+        return self.can_read_real_data and (
+            (self.role == "Admin" and self.project == "*")
+            or project in {p.strip() for p in self.project.split(";") if p.strip()}
+        )
 
     @classmethod
     def anonymous(cls) -> "AccessContext":
@@ -91,7 +100,9 @@ def lookup_access_assignment(secrets: object, email_prefix: str) -> str:
     scalar values whose first field is a supported role are accepted.
     """
     target = str(email_prefix or "").strip().casefold()
-    if not target:
+    # This compatibility helper accepts full emails only. A root/table prefix
+    # entry is never an authorization fallback, including dotted TOML keys.
+    if "@" not in target:
         return "Guest"
 
     def valid_assignment(value: object) -> bool:
@@ -132,8 +143,8 @@ def lookup_access_assignment(secrets: object, email_prefix: str) -> str:
 
 def user_access_from_secrets(secrets: object, user_email: str) -> tuple[str, str]:
     """Resolve a Streamlit OIDC email to an authorized role and project."""
-    username = str(user_email or "").strip().split("@", 1)[0]
-    if not username:
+    username = str(user_email or "").strip().casefold()
+    if "@" not in username:
         return "Guest", "None"
 
     access_value = lookup_access_assignment(secrets, username)
@@ -143,6 +154,69 @@ def user_access_from_secrets(secrets: object, user_email: str) -> tuple[str, str
         return "Guest", "None"
     project = parts[1] if len(parts) > 1 and parts[1] else "None"
     return role, project
+
+
+def staff_identity_assignment(secrets: object, claims: Mapping, *, now: float | None = None) -> AccessContext:
+    """Resolve an explicitly approved OIDC binding, never auto-link by email.
+
+    Streamlit validates the OIDC signature/nonce. Here we additionally validate
+    required claims and expiry because its identity cookie can outlive the ID
+    token. Email is a checked attribute, not the account's unique identity.
+    """
+    now = time.time() if now is None else now
+    email = str(claims.get("email") or "").strip()
+    issuer = claims.get("iss")
+    subject = claims.get("sub")
+    if (
+        claims.get("is_logged_in") is not True
+        or issuer not in ("https://accounts.google.com", "accounts.google.com")
+        or not isinstance(subject, str) or not subject.strip()
+        or claims.get("email_verified") is not True or "@" not in email
+    ):
+        return AccessContext.guest(email=email or None)
+    try:
+        expires = float(claims["exp"])
+        if not math.isfinite(expires) or expires <= now:
+            return AccessContext.guest(email=email)
+        expected = secrets.get("auth", {}).get("google", {}).get("client_id")
+        audience = claims.get("aud")
+        if expected and expected not in (audience if isinstance(audience, list) else [audience]):
+            return AccessContext.guest(email=email)
+        bindings = secrets.get("staff_identities", [])
+    except (KeyError, ValueError, TypeError, AttributeError):
+        return AccessContext.guest(email=email)
+    if not isinstance(bindings, (list, tuple)):
+        return AccessContext.guest(email=email)
+    matches = [b for b in bindings if isinstance(b, Mapping) and b.get("enabled") is True
+               and b.get("issuer") == "https://accounts.google.com" and b.get("subject") == subject]
+    if len(matches) != 1:
+        return AccessContext.guest(email=email)
+    binding = matches[0]
+    role = normalize_role(binding.get("role"))
+    project = str(binding.get("project") or "None").strip()
+    if (str(binding.get("email") or "").casefold() != email.casefold()
+            or role not in AUTHORIZED_ROLES or project in ("", "None")
+            or (role == "Admin" and project != "*")
+            or (role != "Admin" and "*" in project)):
+        return AccessContext.guest(email=email)
+    from utils.security_store import security_key
+    return AccessContext("authenticated", email, role, project,
+                         security_key("staff", "https://accounts.google.com", subject))
+
+
+def native_logout_principal(claims: Mapping) -> str:
+    """Self-revocation only, even after expiry/role removal; NEVER authorizes data.
+
+    Input is the signature-validated native Streamlit identity cookie, not an
+    uploaded JWT or participant-controlled request body.
+    """
+    subject = claims.get("sub")
+    if (claims.get("is_logged_in") is not True or claims.get("email_verified") is not True
+            or claims.get("iss") not in ("accounts.google.com", "https://accounts.google.com")
+            or not isinstance(subject, str) or not subject.strip()):
+        return ""
+    from utils.security_store import security_key
+    return security_key("staff", "https://accounts.google.com", subject)
 
 
 def build_access_context(
@@ -214,7 +288,10 @@ def synchronize_access_context(context: AccessContext) -> AccessContext:
     """Apply a context and clear cached data whenever identity or mode changes."""
     previous = st.session_state.get("access_fingerprint")
     if previous != context.fingerprint:
+        security_state = {key: st.session_state[key] for key in ("staff_session_id",)
+                          if key in st.session_state}
         clear_data_session_state()
+        st.session_state.update(security_state)
 
     if context.is_authenticated:
         # Prevent a prior demo flag from reappearing after a native Google logout.
@@ -225,6 +302,7 @@ def synchronize_access_context(context: AccessContext) -> AccessContext:
     st.session_state.user_email = context.email
     st.session_state.user_role = context.role if not context.is_anonymous else None
     st.session_state.user_project = context.project if not context.is_anonymous else None
+    st.session_state.principal_id = context.principal_id
     return context
 
 
@@ -234,15 +312,21 @@ def resolve_access_context(
     """Resolve the current Streamlit session without trusting role session keys."""
     logged_in, email = _streamlit_identity()
     if logged_in:
-        role, project = ("Guest", "None")
-        if email and access_lookup is not None:
-            role, project = access_lookup(email)
-        context = build_access_context(
-            streamlit_logged_in=True,
-            user_email=email,
-            role=role,
-            project=project,
-        )
+        # access_lookup is retained for API compatibility but cannot override
+        # validated subject bindings (including the controller's old lookup).
+        names = ("is_logged_in", "email", "iss", "sub", "email_verified", "exp", "aud")
+        claims = {name: _user_claim(st.user, name) for name in names}
+        try:
+            context = staff_identity_assignment(st.secrets, claims)
+            if context.is_authenticated:
+                from utils.staff_sessions import validate_staff_session
+                session_id = st.session_state.get("staff_session_id")
+                if not session_id:
+                    context = AccessContext.guest(email=email)
+                else:
+                    validate_staff_session(context, session_id)
+        except Exception:
+            context = AccessContext.guest(email=email)
     else:
         context = build_access_context(
             streamlit_logged_in=False,
@@ -252,40 +336,51 @@ def resolve_access_context(
 
 
 def current_access_context() -> AccessContext:
-    mode = st.session_state.get("access_mode", "anonymous")
-    if mode not in {"anonymous", "guest", "authenticated"}:
-        mode = "anonymous"
-    return AccessContext(
-        mode=mode,
-        email=st.session_state.get("user_email"),
-        role=st.session_state.get("user_role") or "Anonymous",
-        project=st.session_state.get("user_project") or "None",
-    )
+    return resolve_access_context()
+
+
+def _checked_context(context: Optional[AccessContext]) -> AccessContext:
+    if context is None:
+        return current_access_context()
+    from utils.security_store import collection_controls_enabled
+    if collection_controls_enabled():
+        live = current_access_context()
+        if live.fingerprint != context.fingerprint:
+            raise AccessDenied("This account's authorization changed; sign in again.")
+        return live
+    return context
+
+
+def require_project_access(project: str, context: Optional[AccessContext] = None) -> AccessContext:
+    context = require_real_data_access(context)
+    if not context.allows_project(project):
+        raise AccessDenied("This account is not assigned to this project.")
+    return context
 
 
 def require_real_data_access(context: Optional[AccessContext] = None) -> AccessContext:
-    context = context or current_access_context()
+    context = _checked_context(context)
     if not context.can_read_real_data:
         raise AccessDenied("This session is not permitted to access production data.")
     return context
 
 
 def require_write_access(context: Optional[AccessContext] = None) -> AccessContext:
-    context = context or current_access_context()
+    context = _checked_context(context)
     if not context.can_write:
         raise AccessDenied("Guest and anonymous sessions are read-only.")
     return context
 
 
 def require_device_management(context: Optional[AccessContext] = None) -> AccessContext:
-    context = context or current_access_context()
+    context = _checked_context(context)
     if not context.can_manage_devices:
         raise AccessDenied("Device management requires an Admin or Manager account.")
     return context
 
 
 def require_external_service_access(context: Optional[AccessContext] = None) -> AccessContext:
-    context = context or current_access_context()
+    context = _checked_context(context)
     if not context.can_call_external_services:
         raise AccessDenied("Guest sessions cannot call production services or device APIs.")
     return context

@@ -108,7 +108,7 @@ def exchange_code_for_tokens(code: str) -> dict:
         "code": code,
         "redirect_uri": redirect_uri,
     }
-    r = requests.post(TOKEN_URL, data=data, headers=headers, timeout=20)
+    r = requests.post(TOKEN_URL, data=data, headers=headers, timeout=20, allow_redirects=False)
     _raise_for_oauth_response(r, "exchange", code, client_secret)
     return r.json()
 
@@ -118,7 +118,7 @@ def refresh_tokens(refresh_token: str) -> dict:
 
     data = {"grant_type": "refresh_token", "refresh_token": refresh_token}
 
-    r = requests.post(TOKEN_URL, data=data, headers=headers, timeout=20)
+    r = requests.post(TOKEN_URL, data=data, headers=headers, timeout=20, allow_redirects=False)
     _raise_for_oauth_response(r, "refresh", refresh_token, client_secret)
     return r.json()
 
@@ -130,6 +130,7 @@ def revoke_token(token: str) -> None:
         data={"token": token},
         headers=_basic_auth_header(client_id, client_secret),
         timeout=20,
+        allow_redirects=False,
     )
     _raise_for_oauth_response(response, "revocation", token, client_secret)
 

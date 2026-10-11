@@ -1,0 +1,142 @@
+AdmonTracker — CASA readiness and remediation instructions
+Prepared: 8 October 2026
+
+You are working in my existing AdmonTracker development environment. You have access to the application repository, its public website, Heroku, and the connected Google assets. Help me prepare the actual application and its deployment for Google's required ADA-CASA AL1 assessment, and implement the necessary security fixes with evidence that they work.
+
+Use your existing project knowledge and inspect the current environment. This brief contains starting findings, not an exhaustive audit or an instruction to preserve a flawed design. Validate each finding against the current code and deployed versions. Add, reprioritize, or reject findings when the evidence supports it. Explain material decisions and tradeoffs. Do not claim guaranteed approval or certify the application yourself.
+
+1. Context and scope
+
+Google's assessment notice dated 29 September 2026 requires CASA AL1 (formerly Tier 2) by 28 December 2026 and annual reassessment. Google estimated 2–6 weeks. The lab confirmed on 5 October that it would proceed; Google acknowledged on 7 October. A draft inquiry to TAC is being prepared separately; do not assume it has been sent, that TAC has responded, or that a package has been purchased.
+
+Repository: edenede2/fitbitManagment. The previous review inspected branch heroku at f96a9836320bc120ba4ba49887a6da33d050c3f0. Verify the current branch, working tree, commits, and actual deployed release before relying on this baseline. The main branch supports an older deployment and may use another Google project. Preserve its compatibility unless we explicitly agree to retire or migrate it.
+
+Read AGENTS.md, the latest project memory (ADMONTRACKER_PROJECT_MEMORY_08_10_2026.md or its current equivalent), HEROKU_DEPLOYMENT.md, and docs/compliance/. Read the approved consent/addendum where a decision depends on its exact wording. Current implementation and verified cloud state take precedence over stale descriptive documentation; approved study commitments must still be honored.
+
+Expected architecture, to verify:
+- Public information and policies: https://admontracker.online/ on GitHub Pages.
+- Streamlit application: https://app.admontracker.online/ on Heroku.
+- Separate staff Google OIDC login and participant Google Health/Fitbit OAuth clients.
+- Firestore for operational records; Secret Manager for provider credentials and participant tokens.
+- Restricted Google Shared Drive for raw wearable JSON archives.
+- A limited Sheets recovery/legacy bridge and an older application that may still share some resources.
+- One clock process for scheduled collection/archive work and operational email alerts.
+- Four Google Health read-only scopes: activity_and_fitness, health_metrics_and_measurements, sleep, settings. No mindfulness or write scope under the current approved configuration.
+
+Scope the entire path that can access restricted data or credentials: staff UI, participant pages, callbacks, workers, integrations, storage, caches, temporary files, exports, logs, email alerts, backups/revisions, deployment pipeline, and relevant legacy access. Do not exclude a resource merely because it belongs to another branch or is not visible in navigation. Conversely, do not include unrelated lab projects without a reason.
+
+2. How to work and when to ask me
+
+Start with read-only discovery, targeted reproductions, and a short prioritized assessment. Then proceed with reversible local implementation and meaningful tests. Do not stop at a plan or repeatedly ask permission for routine engineering choices. Use an isolated branch/worktree if appropriate and preserve unrelated changes. Do not remove or rewrite local instructions.
+
+Read cloud configuration using the available authorized access, collecting only the metadata needed to assess it. Do not dump secrets, environment bundles, service-account JSON, OAuth codes/states, participant management URLs, raw health data, or personal identifiers into chat, logs, patches, reports, or tool output. Reports should contain redacted evidence and safe identifiers. Do not copy production data to a test environment.
+
+For changes to production, IAM/access membership, credentials, public policy, research retention, billing/resources, or destructive cleanup, prepare the exact reviewed change and rollback/verification plan before requesting any approval that is not already explicitly granted. Do not deploy, rotate/revoke production credentials, delete participant data, rewrite Git history, or change OAuth publication status without that authorization. Do not send messages, contact TAC/Google, submit an assessment, or upload code/evidence to a third party without my explicit instruction.
+
+Ask only questions whose answers materially change correctness, access, cost, study obligations, or the deployment plan. Batch a few related questions, give a recommended option and its consequences, and continue independent safe work while waiting. If you already have reliable project-specific answers, use them. Do not treat every uncertainty as a blocker.
+
+3. Immediate findings to reproduce and fix
+
+A. Staff identity collisions — treat as urgent until ruled out
+
+At the reviewed commit, utils/access_control.py:user_access_from_secrets strips everything after @ and assigns access using the email prefix. A local test using a synthetic configuration assigned the same Manager role to reviewer_demo@approved.example and reviewer_demo@unapproved.example. This was a code-level reproduction, not a live unauthorized login.
+
+Trace the full current OIDC and authorization path, including any upstream restrictions. Remove prefix-based authorization and any fallback that silently restores it. Prefer an explicit mapping from validated issuer/sub identity to approved staff role/project. If full verified email allowlisting is an interim migration choice, document its limitations, define secure enrollment/binding, and prevent automatic privileged account linking. Do not use a login UI domain hint as the security boundary.
+
+Plan a controlled migration of the existing staff assignments so approved staff are not silently locked out or granted wider roles. Clarify actual approved accounts through existing records; do not guess their domains. Test same-prefix/different-domain accounts, unknown accounts, absent or invalid required identity claims, changed roles, revoked access, role escalation, and project isolation. Authentication by Google alone must not grant access to research data.
+
+B. Secret version destruction — treat as urgent until ruled out
+
+At the reviewed commit, utils/secret_store.py:GoogleSecretStore.destroy_versions searches for "enabled" inside str(version.state). SecretVersion.State is a proto enum backed by IntEnum; Python 3.11+ string conversion is numeric. The repository specifies Python 3.11. An isolated reproduction on Python 3.12 with a matching numeric enum made zero destruction calls for enabled/disabled versions. The deployed SDK and actual Secret Manager state were not checked in that review.
+
+Reproduce with the real SDK type and deployed dependency versions. Replace fragile string matching with explicit supported enum comparisons. Define the intended treatment of both ENABLED and DISABLED versions for participant-token erasure; disabled secrets still retain data. Handle already-destroyed and unexpected states explicitly. Account for any configured delayed-destruction behavior and distinguish scheduled destruction from completed destruction.
+
+Use mocks for unit tests and, after confirming an isolated test resource and authorization, a disposable synthetic secret for integration verification. Read back version states, verify access is rejected as expected, and record incomplete results honestly. Do not delete shared runtime/client secrets when deleting a participant's token. Avoid falsely displaying successful deletion when cleanup was skipped or failed. Do not mass-delete old production versions as part of the code fix.
+
+C. Disconnect must stop local collection even when external services fail
+
+Inspect utils/connection_management.py, token stores, registry updates, cache behavior, all collectors, and in-flight jobs. In the reviewed code, disconnect can attempt to load a secret before recording local disconnection, so a Secret Manager error may interrupt the flow. Determine current behavior rather than assuming revocation always works.
+
+Design idempotent local collection blocking and durable revocation/cleanup status, with bounded retries for external operations. A remote revocation failure must not leave collection authorized locally. Prevent refresh races, stale caches, retries, or the legacy bridge from reactivating a disconnected connection. Inspect job checks before provider access and archive writes. Surface partial failure without leaking provider responses or claiming erasure is complete.
+
+4. Other security work, prioritized by demonstrated risk
+
+Assign P0 to a credible unauthorized-access/data-exposure path or failure to honor an immediate withdrawal; P1 to other applicable assessment blockers; P2 to useful hardening without a demonstrated blocking requirement. Adjust these labels with evidence. Separate confirmed defects, unverified concerns, configuration gaps, and documented external dependencies.
+
+Authorization and isolation:
+- Verify server-side checks at actual read/write boundaries for Admin, Manager, Student, Guest, and anonymous users. Confirm the intended Student capabilities instead of inferring them from the role name.
+- Test direct page access, altered watch/project identifiers, cross-project reads/writes, cache isolation, account switching, and stale sessions. Hidden navigation and disabled widgets are not sufficient authorization.
+- Confirm the guest demo cannot reach real data, provider APIs, or writes.
+- Firestore server-client access relies on IAM rather than browser Security Rules; assess both appropriately for the actual architecture. Do not claim restrictive browser rules protect an overprivileged server service account.
+
+Participant links and OAuth:
+- The reviewed management link carries a bearer token in the URL and defaults to 365 days. Hashing it in storage does not protect browser history, referrers, screenshots, or request logs.
+- Evaluate a short-lived, single-use link exchanged for a properly protected session, or another justified design that preserves participant withdrawal access. Assess replay, expiry, reissue/recovery, rate limits, referrer/cache behavior, and infrastructure logging. Distinguish necessary OAuth callback parameters from long-lived application bearer credentials.
+- Bind management authority to a specific enrollment/connection lifecycle. Check whether an old link could affect a different participant after a watch is reused or reconnected.
+- Review state validation, consent/version checks, redirect allowlists, provider endpoints, and optional PKCE support. Do not assert PKCE is universally mandated for every confidential-client flow without checking applicable requirements.
+- In the reviewed state flow, validation and consumption are separate operations. Test concurrency and implement atomic consumption where needed; an append-only usage record alone is not proof of atomic replay protection.
+- Validate actual granted scopes, partial grants, cancelled authorization, refresh/revocation errors, and reauthorization. Do not broaden scopes to simplify the assessment.
+
+Sessions and administrative MFA:
+- Verify MFA enforcement for application administrative access and privileged infrastructure accounts. Google SSO by itself is not evidence of enforced MFA. Establish what can actually be enforced for institutional versus personal accounts.
+- Review idle/absolute timeout, server-side revocation, privilege-change invalidation, and simultaneous tabs/devices. Streamlit 1.56 documentation describes a 30-day identity cookie and existing tabs retaining their st.user state after logout elsewhere; verify your deployed behavior and close relevant gaps.
+- Inspect Secure/HttpOnly/SameSite attributes, HTTPS redirects, CSRF/CORS protections, and WebSocket origin handling. Preserve working Google OAuth and Streamlit behavior. Avoid adding a generic CSP or proxy change without testing compatibility.
+
+Secrets, dependencies, and deployment:
+- Verify actual production SECRET_MANAGER_ENABLED=true and ALLOW_PLAINTEXT_SECRET_FALLBACK=false. The reviewed generator/defaults allow plaintext during staged migration. Prefer a clear production fail-closed configuration while retaining explicitly supported legacy behavior where necessary.
+- Check plaintext remnants in Sheets, Firestore, exports, deployment outputs, logs, notebooks, and Git history using redacted reporting. If exposed credentials are found, stop their disclosure, assess impact, and prepare rotation/cleanup for approval.
+- Review effective service-account permissions, human access, Shared Drive inheritance/sharing, GitHub/Heroku access, logs/add-ons, and bootstrap-key handling. Recommend narrowly scoped permissions without assuming IAM labels alone establish least privilege.
+- Inventory the exact deployed dependency graph and runtime/build environment. requirements.txt currently has many loose constraints; a scan of newly resolved local packages does not prove the deployed release is safe. Use appropriate SCA/SAST/secret-scanning tools and retain reproducible versions/reports. Do not invent CVEs or blindly upgrade everything.
+- Review user-controlled inputs reaching HTML, email, URLs, filenames, file uploads, dynamic execution, and external requests. Assess actual reachable paths, including relevant legacy code.
+- Check TLS, security headers, public errors/debug output, DNS/custom domains, and safe rollback. Replacing the framework, hosting provider, or entire authentication stack is not the default; propose it only if needed to solve a demonstrated requirement.
+
+5. Retention, withdrawal, and all copies of data
+
+The current project memory says the approved Google Health addendum permits one month of collection plus up to one additional month for processing/quality checks, with withdrawal stopping collection and requiring deletion unless separate explicit retention consent is obtained. Verify the exact approved text. These commitments are not a generic CASA retention rule.
+
+The reviewed implementation records deletion requests and relies on manual completion; it does not establish automated end-to-end erasure or scheduled one-month deactivation. A manual procedure may be acceptable if it is operational, timely, and evidenced. Do not label automation itself mandatory without a basis.
+
+Map measurement data, operational status containing health values, identity links, tokens and historical versions, raw archives, recovery copies, downloaded/derived datasets, mailbox copies, temporary files, caches, backups, revision history, and legal/administrative records. Alert email code can include a heart-rate value, so mailboxes need an explicit place in the data map and retention/minimization decision. Distinguish operational deletion from provider-side retention and document technical limits honestly.
+
+Propose a practical workflow with ownership, deadlines, collection-stop enforcement, retry/exception handling, and auditable completion. Use enrollment identifiers rather than deleting everything ever associated with a reusable watch. Avoid recording deleted health values in the deletion audit. Clarify whether the current "request deletion" action also means withdrawal and should stop collection, since it is separate from "disconnect" in the reviewed UI.
+
+Ask me only for unresolved policy decisions such as which approved retention rule applies to each study/provider, how historical data are covered, who approves exceptions, and who executes manual tasks. Do not change signed consent, shorten research retention arbitrarily, or execute deletion on real participants to demonstrate readiness.
+
+6. Assessment preparation and evidence
+
+Confirm the assessment basis with TAC once a response is available. Google's notice links to the ADA CASA specification; the prior review found version 2.1.1 dated 3 June 2026. Some older Tier 2 self-scan instructions are deprecated, and public pages are not perfectly consistent. Verify the assigned version, checklist, evidence requirements, and accepted scan coverage rather than treating an old 134-item checklist or a single scanner report as definitive.
+
+Prepare an assessor-approved approach for authenticated Streamlit/Google SSO/WebSocket coverage. The synthetic read-only guest demo does not exercise production authorization, writes, callbacks, or deletion. Prefer a faithfully configured isolated environment and dedicated synthetic test accounts/data, with separate projects/roles to test isolation. Document any differences from production and how they are verified. Do not bypass authentication or MFA to make a scanner pass. Confirm production scan scope, safe operations, timing, rate limits, and participant impact before active testing there.
+
+Prepare a compact evidence matrix: requirement/version; applicability or justified N/A; implementation/control; evidence and date; tested release/environment; owner; status; remaining action. Only mark a control verified when there is relevant evidence. Keep scanner false positives documented and subject to assessor acceptance, not silently suppressed.
+
+Update architecture/data-flow and compliance documents to match reality. The reviewed docs/compliance/data_flow_and_security.md still described ZIP archives and broader Sheets mirroring than the project memory/current design. Reconcile these with code and deployment. Existing privacy and consent documents should only change through the appropriate approved process.
+
+Useful references to verify when needed:
+- https://github.com/appdefensealliance/ASA-WG/blob/main/CASA/CASA%20Specification.md
+- https://appdefensealliance.dev/casa/tier-2/getting-started
+- https://casa.tacsecurity.com/site/home
+- https://tacsecurity.com/esof-appsec-ada-casa-faqs/
+- https://docs.streamlit.io/1.56.0/develop/api-reference/user/st.login
+- https://docs.streamlit.io/1.56.0/develop/api-reference/user/st.logout
+- https://developers.google.com/identity/openid-connect/openid-connect
+- https://docs.python.org/3.11/library/enum.html
+- https://googleapis.dev/python/proto-plus/latest/messages.html
+
+7. Deliverables and completion criteria
+
+Produce and maintain:
+1) A concise prioritized findings list, separating verified code issues, verified deployment issues, hypotheses, and external decisions. Include evidence, practical impact, proposed correction, and affected release.
+2) Focused local patches and meaningful regression tests for confirmed defects, with a migration plan for staff identities and any schema changes. Respect existing authorization for commits/PRs; prepare a reviewable diff when publishing changes is not authorized.
+3) A small decision list for me: question, why it matters, recommended option, alternatives, and whether it blocks local work, deployment, or assessment only.
+4) A deployment/rollback plan with prerequisites, affected assets, test-data cleanup, and post-deployment checks. Identify destructive or non-reversible steps separately.
+5) An evidence matrix and assessor handoff package containing safe architecture, scope, test procedures, results, and open items. Keep secrets and participant data out of it.
+6) An updated project memory/runbook describing completed changes, remaining limitations, and externally unverified claims.
+
+Before recommending formal submission, demonstrate: unauthorized accounts/project access are denied; participant OAuth and refresh work; disconnect prevents subsequent collection under tested failure/race conditions; synthetic-secret cleanup is verified; a synthetic participant deletion completes across the declared stores or has explicitly accepted documented limits; required session/MFA controls are evidenced; relevant dependency/code/secret findings are resolved or dispositioned with the assessor; and the evidence matches the deployed release.
+
+Run targeted tests during implementation and the repository's appropriate full suite before handoff. The previous memory reported 152 passing tests, but that is historical evidence, not the current result or a security certification. Use the project's documented test command/environment and report exactly what ran, what did not, and why. Do not run tests that can touch real accounts or data without isolation.
+
+Report readiness in stages: ready for internal testing, ready for assessor testing, and externally validated. State what remains for TAC/Google. A LoV and final Google verification are separate milestones; do not claim either is complete without external confirmation.
+
+Start now by identifying the actual current/deployed versions, checking the two immediate code findings, and presenting the first prioritized conclusions and decision questions. Continue into safe local fixes and verification rather than waiting for approval of a broad generic plan.

@@ -197,7 +197,8 @@ class FitbitWebApiRecoveryTests(unittest.TestCase):
         error = raised.exception
         self.assertEqual(error.status_code, 400)
         self.assertEqual(error.url_path, "/1/user/-/devices.json")
-        self.assertIn("bad endpoint", str(error))
+        self.assertNotIn("bad endpoint", str(error))
+        self.assertEqual(error.response_text, "")
         self.assertNotIn("secret-token-value", str(error))
 
     def test_force_refresh_ignores_future_expires_at(self):

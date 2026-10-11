@@ -32,3 +32,23 @@ This procedure implements the approved Google Health addendum, final version 1.0
 These are research-team operational steps. AdmonTracker's connection-management page
 supports revocation and recording a deletion request; the research team remains
 responsible for verifying deletion across every approved storage location.
+
+## CASA operations ownership — pending implementation/cutover
+
+The Manager owns manual stopping and per-enrollment deletion; Admin verifies
+completion, is backup, and handles overdue escalation. The PI approves policy
+exceptions and confirms any applicability to legacy Fitbit consent. No routine
+automatic collection-end stopping or automatic research-data deletion is added.
+
+Use original activation, a calendar-month collection end (month-end clamped,
+Asia/Jerusalem display), actual measurement end and the approved deletion due
+date. Reauthorization must not extend them. Deadline warning computation exists
+locally; scheduled 72h/24h/deadline delivery, failure handling and a durable
+completion checklist are unfinished release gates.
+
+Report collection blocked, provider revocation confirmed/pending, secret cleanup
+confirmed/pending and research-data deletion requested/verified independently.
+Do not report deletion merely because a token was revoked. Cover Firestore, Drive
+files/revisions/trash, Sheet mirrors, tokens, caches, temporary files, exports,
+derived data/identity links, mailboxes and backups. Never delete by reusable watch
+name alone. Details: [internal operations runbook](../casa/RUNBOOK.md).

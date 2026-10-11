@@ -48,6 +48,10 @@ def create_health_connect_link(
     adult_verified: bool = False,
 ) -> str:
     provider = provider or "fitbit"
+    from utils.security_store import collection_controls_enabled
+    if collection_controls_enabled():
+        from utils.access_control import require_project_access
+        require_project_access(project)
     state = str(uuid4())
 
     if provider not in {"fitbit", "google_health"}:

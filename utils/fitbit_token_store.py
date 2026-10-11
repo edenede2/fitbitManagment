@@ -114,12 +114,17 @@ def _get_latest_token_row(sp: Spreadsheet, watch_name: str) -> Optional[Dict[str
     return dict(active[-1]) if active else None
 
 
-def save_tokens_for_watch(sp: Spreadsheet, *, watch_name: str, token_json: dict) -> None:
+def save_tokens_for_watch(sp: Spreadsheet, *, watch_name: str, token_json: dict,
+                          enrollment_id: str = "", generation: int | None = None) -> None:
+    from utils.collection_control import assert_collection_allowed, publish_token_row
+    control = assert_collection_allowed(watch_name, "fitbit", enrollment_id=enrollment_id, generation=generation)
     expires_in = int(token_json.get("expires_in", 0) or 0)
     created_at = now_ts()
     expires_at = created_at + max(expires_in - 30, 0)  # 30s safety buffer
 
     existing = _get_latest_token_row(sp, watch_name)
+    if control.get("enrollment_id") and (existing or {}).get("enrollment_id") != control["enrollment_id"]:
+        existing = None  # Never borrow a previous subject's tokens or secret.
     access_token = str(token_json.get("access_token") or "").strip()
     refresh_token = str(token_json.get("refresh_token") or "").strip()
     existing_ref = str((existing or {}).get("token_secret_ref") or "").strip()
@@ -143,12 +148,13 @@ def save_tokens_for_watch(sp: Spreadsheet, *, watch_name: str, token_json: dict)
 
     secret_ref = store_json_secret(
         "participant-oauth",
-        ["fitbit", watch_name],
+        ["fitbit", watch_name, control.get("enrollment_id", "legacy")],
         {
             "access_token": access_token,
             "refresh_token": refresh_token,
         },
         existing_ref=existing_ref,
+        pin_version=bool(control),
     )
     protected = secret_manager_enabled()
     if protected and not secret_ref:
@@ -164,16 +170,33 @@ def save_tokens_for_watch(sp: Spreadsheet, *, watch_name: str, token_json: dict)
         ("created_at", str(created_at)),
         ("status", "connected"),
         ("revoked_at", ""),
+        ("enrollment_id", control.get("enrollment_id", "")),
+        ("collection_generation", int(control.get("generation", 0))),
     ])
-    _append(sp, TOKENS_TAB, row)
+    try:
+        if not publish_token_row(sp, TOKENS_TAB, row, control):
+            _append(sp, TOKENS_TAB, row)
+    except Exception:
+        from utils.collection_control import record_token_publication_failure
+        try:
+            record_token_publication_failure(watch_name, "fitbit", control, secret_ref)
+        except Exception:
+            raise RuntimeError("Token publication is uncertain; Admin must reconcile credentials and metadata") from None
+        raise RuntimeError("Token publication failed; credential review is pending") from None
     if not protected:
         _update_fitbit_token(sp, watch_name, access_token)
 
 
 def get_latest_tokens(sp: Spreadsheet, watch_name: str) -> Optional[Dict[str, Any]]:
+    from utils.collection_control import assert_collection_allowed, CollectionStopped
+    control = assert_collection_allowed(watch_name, "fitbit")
     row = _get_latest_token_row(sp, watch_name)
     if row is None:
         return None
+    control = assert_collection_allowed(watch_name, "fitbit")
+    if control.get("enrollment_id") and row.get("enrollment_id") != control["enrollment_id"]:
+        raise CollectionStopped("Credentials belong to a previous enrollment; authorize the current subject")
+    row["collection_generation"] = int(control.get("generation", 0))
     secret_ref = str(row.get("token_secret_ref") or "").strip()
     if secret_ref:
         try:
@@ -183,10 +206,13 @@ def get_latest_tokens(sp: Spreadsheet, watch_name: str) -> Optional[Dict[str, An
                 raise
     elif not plaintext_secret_fallback_allowed() and (row.get("access_token") or row.get("refresh_token")):
         raise RuntimeError("Plaintext Fitbit token fallback is disabled")
+    assert_collection_allowed(watch_name, "fitbit", generation=row.get("collection_generation"))
     return row
 
 def get_legacy_fitbit_token(sp: Spreadsheet, watch_name: str) -> str:
     """Return the static token from the legacy fitbit sheet, if one exists."""
+    from utils.collection_control import assert_collection_allowed, CollectionStopped
+    control = assert_collection_allowed(watch_name, "fitbit")
     if sp is None:
         raise ValueError("Spreadsheet connection unavailable")
 
@@ -195,6 +221,8 @@ def get_legacy_fitbit_token(sp: Spreadsheet, watch_name: str) -> str:
         raise ValueError(f"No fitbit row found for watch '{watch_name}'")
 
     row = rows[-1]
+    if control.get("enrollment_id") and row.get("enrollment_id") != control["enrollment_id"]:
+        raise CollectionStopped("Legacy credentials are not bound to the current enrollment")
     token = row.get("token", "")
     secret_ref = str(row.get("token_secret_ref") or "").strip()
     if secret_ref:
@@ -216,6 +244,7 @@ def get_valid_access_token(sp: Spreadsheet, watch_name: str, *, force_refresh: b
     Returns a valid access token for this watch.
     If expired, or force_refresh=True, refresh and store new token row, then return new token.
     """
+    from utils.collection_control import assert_collection_allowed
     tok = get_latest_tokens(sp, watch_name)
     if not tok:
         raise ValueError(f"No OAuth tokens found for watch '{watch_name}'")
@@ -235,5 +264,7 @@ def get_valid_access_token(sp: Spreadsheet, watch_name: str, *, force_refresh: b
 
     # Refresh
     new_tok = refresh_tokens(refresh_token_val)
-    save_tokens_for_watch(sp, watch_name=watch_name, token_json=new_tok)
+    assert_collection_allowed(watch_name, "fitbit", generation=tok.get("collection_generation"))
+    save_tokens_for_watch(sp, watch_name=watch_name, token_json=new_tok,
+        enrollment_id=str(tok.get("enrollment_id") or ""), generation=tok.get("collection_generation"))
     return new_tok.get("access_token", "")

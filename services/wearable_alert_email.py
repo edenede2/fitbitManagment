@@ -67,16 +67,8 @@ def _latest_snapshot(log_row: dict, reasons: list[str]) -> list[str]:
         maximum=100,
         unit="%",
     )
-    heart_rate = _measurement(
-        log_row.get("lastHRVal"),
-        minimum=1,
-        maximum=300,
-        unit=" bpm",
-    )
     if battery and not battery_already_reported:
         snapshot.append(f"Battery {battery}")
-    if heart_rate:
-        snapshot.append(f"Heart rate {heart_rate}")
     return snapshot
 
 

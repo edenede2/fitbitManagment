@@ -13,6 +13,12 @@ GOOGLE_HEALTH_BASE_URL = "https://health.googleapis.com/v4"
 GOOGLE_REVOKE_URI = "https://oauth2.googleapis.com/revoke"
 
 
+def validate_google_endpoint(uri: str, *, authorization: bool = False) -> None:
+    allowed = {GOOGLE_AUTH_URI, "https://accounts.google.com/o/oauth2/auth"} if authorization else {GOOGLE_TOKEN_URI}
+    if uri not in allowed:
+        raise ValueError("Unapproved Google OAuth endpoint")
+
+
 def _provider_error(action: str, response) -> RuntimeError:
     # Provider bodies can echo codes, tokens, client credentials, or account data.
     # Keep details in provider-side logs and expose only the HTTP status locally.
@@ -32,6 +38,7 @@ def build_google_health_authorize_url(
     auth_uri: str = GOOGLE_AUTH_URI,
     prompt: str = "consent",
 ) -> str:
+    validate_google_endpoint(auth_uri, authorization=True)
     params = {
         "client_id": client_id,
         "redirect_uri": redirect_uri,
@@ -71,6 +78,7 @@ def exchange_code_for_google_health_tokens(
     redirect_uri: str,
     token_uri: str = GOOGLE_TOKEN_URI,
 ) -> dict[str, Any]:
+    validate_google_endpoint(token_uri)
     response = requests.post(
         token_uri,
         data={
@@ -81,6 +89,7 @@ def exchange_code_for_google_health_tokens(
             "grant_type": "authorization_code",
         },
         timeout=30,
+        allow_redirects=False,
     )
     if not response.ok:
         raise _provider_error("token exchange", response)
@@ -94,6 +103,7 @@ def refresh_google_health_tokens(
     client_secret: str,
     token_uri: str = GOOGLE_TOKEN_URI,
 ) -> dict[str, Any]:
+    validate_google_endpoint(token_uri)
     response = requests.post(
         token_uri,
         data={
@@ -103,6 +113,7 @@ def refresh_google_health_tokens(
             "grant_type": "refresh_token",
         },
         timeout=30,
+        allow_redirects=False,
     )
     if not response.ok:
         raise _provider_error("token refresh", response)
@@ -125,11 +136,14 @@ def get_google_health_identity(access_token: str) -> dict[str, Any]:
 
 
 def revoke_google_health_token(token: str, revoke_uri: str = GOOGLE_REVOKE_URI) -> None:
+    if revoke_uri != GOOGLE_REVOKE_URI:
+        raise ValueError("Unapproved Google revocation endpoint")
     response = requests.post(
         revoke_uri,
         data={"token": token},
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         timeout=30,
+        allow_redirects=False,
     )
     if not response.ok:
         raise _provider_error("token revocation", response)

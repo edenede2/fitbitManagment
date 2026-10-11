@@ -229,12 +229,18 @@ def _fitbit_api_json(
     path: str,
     *,
     data_type: str,
+    collection_guard=None,
 ) -> dict[str, Any]:
+    if collection_guard:
+        collection_guard()
     response = requests.get(
         f"https://api.fitbit.com/{path.lstrip('/')}",
         headers={"Authorization": f"Bearer {token}"},
         timeout=60,
+        allow_redirects=False,
     )
+    if collection_guard:
+        collection_guard()
     if not response.ok:
         # Never include Fitbit response bodies in logs: they may contain user
         # data or provider details that do not belong in operational logs.
@@ -261,6 +267,7 @@ def _fitbit_datetime(date_text: str, time_text: str) -> str:
 def _fitbit_heart_rate_records(
     token: str,
     window: PeriodWindow,
+    collection_guard=None,
 ) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     for target in pd.date_range(window.start_date, window.end_date):
@@ -272,6 +279,7 @@ def _fitbit_heart_rate_records(
                 "time/00:00/23:59.json"
             ),
             data_type="heart_rate",
+            collection_guard=collection_guard,
         )
         summaries = payload.get("activities-heart") or []
         date_text = str(
@@ -303,6 +311,7 @@ def _fitbit_intraday_records(
     window: PeriodWindow,
     *,
     signal: str,
+    collection_guard=None,
 ) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     for target in pd.date_range(window.start_date, window.end_date):
@@ -314,6 +323,7 @@ def _fitbit_intraday_records(
                 "time/00:00/23:59.json"
             ),
             data_type=signal,
+            collection_guard=collection_guard,
         )
         summaries = payload.get(f"activities-{signal}") or []
         date_text = str(
@@ -338,7 +348,7 @@ def _fitbit_intraday_records(
     return records
 
 
-def _fitbit_sleep_records(token: str, window: PeriodWindow) -> list[dict[str, Any]]:
+def _fitbit_sleep_records(token: str, window: PeriodWindow, collection_guard=None) -> list[dict[str, Any]]:
     payload = _fitbit_api_json(
         token,
         (
@@ -346,6 +356,7 @@ def _fitbit_sleep_records(token: str, window: PeriodWindow) -> list[dict[str, An
             f"{window.start_date.isoformat()}/{window.end_date.isoformat()}.json"
         ),
         data_type="sleep",
+        collection_guard=collection_guard,
     )
     records: list[dict[str, Any]] = []
     for source in payload.get("sleep") or []:
@@ -363,6 +374,7 @@ def _fitbit_range_records(
     window: PeriodWindow,
     *,
     data_type: str,
+    collection_guard=None,
 ) -> list[dict[str, Any]]:
     start = window.start_date.isoformat()
     end = window.end_date.isoformat()
@@ -378,7 +390,7 @@ def _fitbit_range_records(
         ), "hrv"
     else:
         raise ValueError(f"Unsupported Fitbit range data type: {data_type}")
-    payload = _fitbit_api_json(token, path, data_type=data_type)
+    payload = _fitbit_api_json(token, path, data_type=data_type, collection_guard=collection_guard)
     return [item for item in payload.get(response_key) or [] if isinstance(item, dict)]
 
 
@@ -388,24 +400,33 @@ def _fitbit_package(
     data_type: str,
     window: PeriodWindow,
 ) -> ArchiveArtifact:
+    from utils.collection_control import assert_collection_allowed
+    watch = str(row.get("name") or row.get("watchName") or "")
+    control = assert_collection_allowed(watch, "fitbit", project=str(row.get("project") or ""),
+        enrollment_id=str(row.get("enrollment_id") or ""), generation=row.get("collection_generation"))
+    def guard():
+        assert_collection_allowed(watch, "fitbit", project=str(row.get("project") or ""),
+            generation=int(control.get("generation", 0)))
     token = _resolve_watch_access_token(row, spreadsheet)
     if not token:
         raise RuntimeError("No active Fitbit token")
     if data_type == "heart_rate":
-        records = _fitbit_heart_rate_records(token, window)
+        records = _fitbit_heart_rate_records(token, window, collection_guard=guard)
     elif data_type in {"steps", "calories"}:
         records = _fitbit_intraday_records(
             token,
             window,
             signal=data_type,
+            collection_guard=guard,
         )
     elif data_type == "sleep":
-        records = _fitbit_sleep_records(token, window)
+        records = _fitbit_sleep_records(token, window, collection_guard=guard)
     else:
         records = _fitbit_range_records(
             token,
             window,
             data_type=data_type,
+            collection_guard=guard,
         )
     if not records:
         raise RuntimeError("Provider returned no archiveable Fitbit data")
@@ -530,6 +551,13 @@ def _collect_archive_item(
     this item.  Empty provider responses are a valid terminal outcome and are not
     retried.
     """
+    from utils.collection_control import assert_collection_allowed, CollectionStopped
+    watch = str(row.get("name") or row.get("watchName") or "")
+    control = assert_collection_allowed(watch, provider, project=str(row.get("project") or ""))
+    generation = int(control.get("generation", 0))
+    enrollment_id = str(control.get("enrollment_id") or "")
+    if control:
+        row = {**row, "enrollment_id": enrollment_id, "collection_generation": generation}
     base_record = _archive_base_record(
         row,
         provider=provider,
@@ -537,6 +565,9 @@ def _collect_archive_item(
         cadence=cadence,
         window=window,
     )
+    if enrollment_id:
+        base_record["logical_key"] += "/" + enrollment_id
+        base_record.update(enrollment_id=enrollment_id, collection_generation=generation)
     try:
         artifact = (
             _google_package(spreadsheet, row, data_type, window)
@@ -553,6 +584,7 @@ def _collect_archive_item(
         )
         return "empty"
 
+    assert_collection_allowed(watch, provider, generation=generation)
     checksum = sha256_bytes(artifact.content)
     existing = get_archive_record(spreadsheet, base_record["logical_key"])
     if (
@@ -578,10 +610,19 @@ def _collect_archive_item(
         watch_name=base_record["watchName"],
         provider=PROVIDER_FOLDER_NAMES[provider],
         category=artifact.category,
-        filename=artifact.filename,
+        filename=(artifact.filename.rsplit(".", 1)[0] + "_" + enrollment_id + ".json") if enrollment_id else artifact.filename,
         content=artifact.content,
         mime_type=artifact.mime_type,
     )
+    try:
+        assert_collection_allowed(watch, provider, generation=generation)
+    except CollectionStopped:
+        # An already-in-flight Drive upload cannot be cancelled atomically with
+        # Firestore. Record the file ID for MANUAL review; never delete real data
+        # automatically or mark it a successful collection.
+        upsert_archive_record(spreadsheet, {**base_record, "drive_file_id": upload.file_id,
+            "status": "withdrawal_review", "message": "In-flight upload requires enrollment-specific manual review"})
+        raise
     upsert_archive_record(
         spreadsheet,
         {

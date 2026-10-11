@@ -34,6 +34,7 @@ STATE_COLUMNS = [
     "staff_consent_verified", "staff_consent_verified_at", "adult_verified",
     "participant_language", "participant_disclosure_version",
     "participant_document_hash", "participant_acknowledged_at",
+    "enrollment_id", "collection_generation",
 ]
 USED_COLUMNS = ["state", "provider", "watchName", "used_at", "code_hash"]
 TOKEN_COLUMNS = [
@@ -42,6 +43,7 @@ TOKEN_COLUMNS = [
     "access_expires_at", "refresh_expires_at", "refresh_token_expires_in", "scope",
     "token_type", "auth_status", "last_refresh_at", "last_refresh_error",
     "created_at", "updated_at", "is_active",
+    "enrollment_id", "collection_generation",
 ]
 CONSENT_COLUMNS = [
     "consent_id", "state", "watchName", "project", "provider", "purpose",
@@ -128,6 +130,11 @@ def save_oauth_state(
     ttl_hours: int = 48,
 ) -> None:
     now = utc_now()
+    from utils.collection_control import assert_collection_allowed
+    from utils.security_store import collection_controls_enabled
+    control = assert_collection_allowed(watchName, provider, project=project)
+    if collection_controls_enabled() and not control.get("enrollment_id"):
+        raise ValueError("Review and initialize the enrollment before creating an authorization link")
     _append(
         spreadsheet,
         HEALTH_STATES_TAB,
@@ -152,6 +159,8 @@ def save_oauth_state(
             "participant_disclosure_version": "",
             "participant_document_hash": "",
             "participant_acknowledged_at": "",
+            "enrollment_id": control.get("enrollment_id", ""),
+            "collection_generation": int(control.get("generation", 0)),
         },
     )
 
@@ -211,6 +220,14 @@ def _is_true(value: Any) -> bool:
 
 def assert_state_authorized_for_callback(state_row: dict[str, Any]) -> None:
     """Fail closed once the ethics-approved participant disclosure is enforced."""
+    from utils.collection_control import assert_collection_allowed
+    from utils.security_store import collection_controls_enabled
+    if collection_controls_enabled():
+        if not state_row.get("enrollment_id"):
+            raise ValueError("A reviewed enrollment is required for this authorization")
+        assert_collection_allowed(state_row["watchName"], state_row["provider"],
+            project=state_row["project"], enrollment_id=state_row["enrollment_id"],
+            generation=state_row.get("collection_generation"))
     if not participant_disclosure_enforced():
         return
     if not _is_true(state_row.get("staff_consent_verified")):
@@ -250,6 +267,23 @@ def acknowledge_oauth_state(
         "participant_document_hash": document_hash,
         "participant_acknowledged_at": acknowledged_at,
     }
+    if GoogleSheetsAdapter._is_firestore_sheet(spreadsheet, HEALTH_STATES_TAB):
+        def acknowledge(current):
+            _assert_current_state(current)
+            if not _is_true(current.get("staff_consent_verified")) or not _is_true(current.get("adult_verified")):
+                raise ValueError("Staff consent or adult verification is missing")
+            if current.get("participant_acknowledged_at"):
+                return current
+            # Canonical append-once evidence and acknowledgement are committed
+            # together. The legacy audit projection can be repaired separately.
+            return {**current, **updates, "consent_evidence": {
+                "consent_id": new_uuid_value, "language": language,
+                "document_hash": document_hash, "disclosure_version": version,
+                "participant_acknowledged_at": acknowledged_at,
+                "staff_consent_verified_at": current.get("staff_consent_verified_at", ""),
+            }}
+        new_uuid_value = new_uuid()  # generated outside the retried callback
+        return _atomic_state_transition(state_row, acknowledge)
     # Append the immutable audit record first. The state is only marked as
     # acknowledged after the consent record exists, so a partial Sheets failure
     # cannot allow a callback without its corresponding audit evidence.
@@ -291,6 +325,23 @@ def mark_oauth_state_used(
 ) -> None:
     code_hash = hashlib.sha256(code.encode()).hexdigest() if code else ""
     used_at = utc_now_iso()
+    if GoogleSheetsAdapter._is_firestore_sheet(spreadsheet, HEALTH_STATES_TAB):
+        expected_version = disclosure_version()
+        disclosure_is_enforced = participant_disclosure_enforced()
+        def consume(current):
+            _assert_current_state(current)
+            if disclosure_is_enforced:
+                if (not _is_true(current.get("staff_consent_verified"))
+                        or not _is_true(current.get("adult_verified"))
+                        or not current.get("participant_acknowledged_at")
+                        or current.get("participant_disclosure_version") != expected_version
+                        or current.get("participant_document_hash") != disclosure_document_hash_value):
+                    raise ValueError("Required participant disclosure is missing or changed")
+            return {**current, "used": "TRUE", "used_at": used_at,
+                    "code_hash": code_hash, "exchange_status": "claimed"}
+        disclosure_document_hash_value = disclosure_document_hash()
+        _atomic_state_transition(state_row, consume)
+        return
     _append(
         spreadsheet,
         HEALTH_USED_TAB,
@@ -311,6 +362,56 @@ def mark_oauth_state_used(
     )
 
 
+def _assert_current_state(row: dict) -> None:
+    if not row or _is_true(row.get("used")):
+        raise ValueError("OAuth state is missing or already consumed")
+    expires = iso_to_dt(str(row.get("expires_at") or ""))
+    if not expires or utc_now() >= expires:
+        raise ValueError("OAuth state expired")
+
+
+def record_oauth_exchange_outcome(spreadsheet: Spreadsheet, state_row: dict, outcome: str) -> None:
+    """Consumed states never reopen, including ambiguous external exchanges.
+
+    Only a bounded status is persisted, never a credential or provider body.
+    A crash before this write leaves 'claimed': review it and issue a new link,
+    never retry a potentially completed external code exchange.
+    """
+    if outcome not in {"token_stored", "exchange_failed_or_uncertain", "storage_failed_or_uncertain", "partial_grant"}:
+        raise ValueError("Unsupported exchange status")
+    if GoogleSheetsAdapter._is_firestore_sheet(spreadsheet, HEALTH_STATES_TAB):
+        from utils.security_store import get_security_store
+        from utils.firestore_schema import spec_for_source_sheet, stable_document_id
+        spec = spec_for_source_sheet(HEALTH_STATES_TAB)
+        timestamp = utc_now_iso()
+        def update(current):
+            if not _is_true(current.get("used")) or any(current.get(k) != state_row.get(k) for k in ("state", "provider", "enrollment_id", "oauth_client_key")):
+                raise ValueError("OAuth exchange record changed")
+            return {**current, "exchange_status": outcome, "exchange_updated_at": timestamp}
+        get_security_store().mutate_document(spec.collection, stable_document_id(spec, state_row, 0), update)
+    else:
+        _update_row_by_keys(spreadsheet, HEALTH_STATES_TAB,
+            keys={"state": state_row["state"], "provider": state_row["provider"]},
+            updates={"exchange_status": outcome})
+
+
+def _atomic_state_transition(state_row: dict, change) -> dict:
+    from utils.security_store import get_security_store
+    from utils.firestore_schema import spec_for_source_sheet, stable_document_id
+    spec = spec_for_source_sheet(HEALTH_STATES_TAB)
+    key = stable_document_id(spec, state_row, 0)
+    from utils.collection_control import collection_key, CollectionStopped
+    def validate(current, dependencies):
+        control = dependencies[0]
+        if (not current.get("enrollment_id") or control.get("collection_stopped")
+                or any(current.get(k) != control.get(k) for k in ("enrollment_id", "project", "provider"))
+                or current.get("collection_generation") != control.get("generation")):
+            raise CollectionStopped("The OAuth enrollment is no longer current")
+    return get_security_store().mutate_document(spec.collection, key, change,
+        dependency_keys=[collection_key(state_row["watchName"], state_row["provider"])],
+        validate_dependencies=validate)
+
+
 def _identity_value(identity: dict[str, Any] | None, *keys: str) -> str:
     if not identity:
         return ""
@@ -327,6 +428,8 @@ def get_active_token_row(
     watchName: str,
     provider: str,
 ) -> dict[str, Any] | None:
+    from utils.collection_control import assert_collection_allowed
+    control = assert_collection_allowed(watchName, provider)
     rows = GoogleSheetsAdapter.get_rows(
         spreadsheet,
         HEALTH_TOKENS_TAB,
@@ -335,10 +438,12 @@ def get_active_token_row(
         watchName=watchName,
         provider=provider,
     )
-    active = [row for row in rows if str(row.get("is_active", "TRUE")).upper() == "TRUE"]
+    active = [row for row in rows if str(row.get("is_active", "TRUE")).upper() == "TRUE"
+              and (not control.get("enrollment_id") or row.get("enrollment_id") == control["enrollment_id"])]
     if not active:
         return None
     row = dict(active[-1])
+    row["collection_generation"] = int(control.get("generation", 0))
     secret_ref = str(row.get("token_secret_ref") or "").strip()
     if secret_ref:
         try:
@@ -348,6 +453,7 @@ def get_active_token_row(
                 raise
     elif not plaintext_secret_fallback_allowed() and (row.get("access_token") or row.get("refresh_token")):
         raise RuntimeError("Plaintext OAuth token fallback is disabled")
+    assert_collection_allowed(watchName, provider, generation=row.get("collection_generation"))
     return row
 
 
@@ -359,14 +465,18 @@ def _store_token_payload(
     token_id: str,
     token_data: dict[str, Any],
     existing_ref: str = "",
+    enrollment_id: str = "",
 ) -> tuple[str, str, str]:
     access_token = str(token_data.get("access_token") or "")
     refresh_token = str(token_data.get("refresh_token") or "")
+    if not access_token or not refresh_token:
+        raise ValueError("Provider returned an incomplete token response")
     secret_ref = store_json_secret(
         "participant-oauth",
-        [provider, project, watch_name, token_id],
+        [provider, project, watch_name, enrollment_id or "legacy", token_id],
         {"access_token": access_token, "refresh_token": refresh_token},
         existing_ref=existing_ref,
+        pin_version=bool(enrollment_id),
     )
     if secret_manager_enabled():
         if not secret_ref:
@@ -382,7 +492,11 @@ def is_access_token_valid(token_row: dict[str, Any], safety_margin_minutes: int 
     return utc_now() < expires_at - timedelta(minutes=safety_margin_minutes)
 
 
-def upsert_active_token_row(spreadsheet: Spreadsheet, row: dict[str, Any]) -> None:
+def upsert_active_token_row(spreadsheet: Spreadsheet, row: dict[str, Any], control: dict | None = None) -> None:
+    from utils.collection_control import assert_collection_allowed, publish_token_row
+    control = control if control is not None else assert_collection_allowed(row["watchName"], row["provider"])
+    if publish_token_row(spreadsheet, HEALTH_TOKENS_TAB, row, control):
+        return
     updated = _update_row_by_keys(
         spreadsheet,
         HEALTH_TOKENS_TAB,
@@ -405,7 +519,12 @@ def save_google_health_tokens_for_watch(
     oauth_client_key: str,
     token_data: dict[str, Any],
     identity: dict[str, Any] | None = None,
+    enrollment_id: str = "",
+    generation: int | None = None,
 ) -> None:
+    from utils.collection_control import assert_collection_allowed
+    control = assert_collection_allowed(watchName, "google_health", project=project,
+                                        enrollment_id=enrollment_id, generation=generation)
     now = utc_now_iso()
     existing = get_active_token_row(spreadsheet, watchName=watchName, provider="google_health")
     refresh_token = token_data.get("refresh_token") or (existing or {}).get("refresh_token", "")
@@ -427,6 +546,7 @@ def save_google_health_tokens_for_watch(
         token_id=token_id,
         token_data={**token_data, "refresh_token": refresh_token},
         existing_ref=str((existing or {}).get("token_secret_ref") or ""),
+        enrollment_id=control.get("enrollment_id", ""),
     )
     row = {
         "token_id": token_id,
@@ -450,8 +570,19 @@ def save_google_health_tokens_for_watch(
         "created_at": (existing or {}).get("created_at") or now,
         "updated_at": now,
         "is_active": "TRUE",
+        "enrollment_id": control.get("enrollment_id", ""),
+        "collection_generation": int(control.get("generation", 0)),
     }
-    upsert_active_token_row(spreadsheet, row)
+    try:
+        upsert_active_token_row(spreadsheet, row, control)
+    except Exception:
+        from utils.collection_control import record_token_publication_failure
+        try:
+            record_token_publication_failure(watchName, "google_health", control, token_secret_ref)
+        except Exception:
+            raise RuntimeError("Token publication is uncertain; Admin must reconcile credentials and metadata") from None
+        raise RuntimeError("Token publication failed; credential review is pending") from None
+    assert_collection_allowed(watchName, "google_health", generation=control.get("generation", 0))
     update_fitbit_registry_after_auth(
         spreadsheet,
         watchName=watchName,
@@ -469,6 +600,11 @@ def update_token_row_after_refresh(
     token_row: dict[str, Any],
     token_data: dict[str, Any],
 ) -> None:
+    from utils.collection_control import assert_collection_allowed, publish_token_row
+    control = assert_collection_allowed(str(token_row.get("watchName") or ""),
+                                        str(token_row.get("provider") or "google_health"),
+                                        enrollment_id=str(token_row.get("enrollment_id") or ""),
+                                        generation=token_row.get("collection_generation"))
     now = utc_now_iso()
     refresh_token = token_data.get("refresh_token") or token_row.get("refresh_token", "")
     secret_ref, access_token, stored_refresh_token = _store_token_payload(
@@ -478,6 +614,7 @@ def update_token_row_after_refresh(
         token_id=str(token_row.get("token_id") or new_uuid()),
         token_data={**token_data, "refresh_token": refresh_token},
         existing_ref=str(token_row.get("token_secret_ref") or ""),
+        enrollment_id=control.get("enrollment_id", ""),
     )
     updates = {
         "token_secret_ref": secret_ref,
@@ -494,6 +631,16 @@ def update_token_row_after_refresh(
         "updated_at": now,
         "is_active": "TRUE",
     }
+    try:
+        if publish_token_row(spreadsheet, HEALTH_TOKENS_TAB, {**token_row, **updates}, control):
+            return
+    except Exception:
+        from utils.collection_control import record_token_publication_failure
+        try:
+            record_token_publication_failure(str(token_row["watchName"]), str(token_row["provider"]), control, secret_ref)
+        except Exception:
+            raise RuntimeError("Token publication is uncertain; Admin must reconcile credentials and metadata") from None
+        raise RuntimeError("Token publication failed; credential review is pending") from None
     _update_row_by_keys(
         spreadsheet,
         HEALTH_TOKENS_TAB,

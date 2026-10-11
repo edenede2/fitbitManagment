@@ -12,8 +12,9 @@ class GoogleHealthClient:
     BASE_URL = "https://health.googleapis.com/v4"
     DEFAULT_TZ = ZoneInfo("Asia/Jerusalem")
 
-    def __init__(self, *, access_token_provider: Callable[[], str]):
+    def __init__(self, *, access_token_provider: Callable[[], str], collection_guard: Callable | None = None):
         self.access_token_provider = access_token_provider
+        self.collection_guard = collection_guard
 
     def _headers(self) -> dict[str, str]:
         return {
@@ -31,6 +32,8 @@ class GoogleHealthClient:
         json_body: dict[str, Any] | None = None,
         timeout: int = 60,
     ) -> dict[str, Any]:
+        if self.collection_guard:
+            self.collection_guard()
         response = requests.request(
             method=method.upper(),
             url=f"{self.BASE_URL}/{path.lstrip('/')}",
@@ -39,6 +42,8 @@ class GoogleHealthClient:
             json=json_body,
             timeout=timeout,
         )
+        if self.collection_guard:
+            self.collection_guard()
         if not response.ok:
             raise RuntimeError(f"Google Health API failed with HTTP {response.status_code}")
         return response.json() if response.text else {}

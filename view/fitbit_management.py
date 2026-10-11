@@ -7,7 +7,7 @@ import polars as pl
 from services.alert_delivery import as_bool
 from utils.health_oauth_clients import load_active_oauth_clients
 from utils.rate_limit_ui import show_rate_limit_notice
-from utils.access_control import require_device_management, require_write_access
+from utils.access_control import require_device_management, require_write_access, require_project_access
 
 
 def _google_oauth_client_label(row: dict) -> str:
@@ -213,7 +213,8 @@ def display_admin_interface(fitbit_df: pl.DataFrame, user_df: pl.DataFrame,
             
             new_project = st.selectbox("Project", all_projects)
             new_name = st.text_input("Device Name")
-            new_token = st.text_input("Token")
+            from utils.security_store import collection_controls_enabled
+            new_token = "" if collection_controls_enabled() else st.text_input("Token", type="password")
             new_provider = st.selectbox(
                 "Provider",
                 options=["fitbit", "google_health"],
@@ -434,18 +435,23 @@ def display_editable_table(fitbit_df: pl.DataFrame, user_df: pl.DataFrame, is_ad
 def save_changes(edited_df: pl.DataFrame, fitbit_sheet: Any, spreadsheet: Spreadsheet) -> None:
     """Save changes made to the Fitbit devices table."""
     try:
-        require_write_access()
+        context = require_write_access()
         st.warning("⚠️ Please note: Changes may take 2-3 minutes to fully update in the cloud. Meanwhile, you can continue using the app.")
         edited_df = _apply_activation_metadata(edited_df, fitbit_sheet.data)
-        # Update sheet data with edited DataFrame
-        spreadsheet.update_sheet(
-            "fitbit",
-            edited_df,
-            strategy="replace"  # Replace the entire sheet with the edited DataFrame
-        )
-        
-        # Save changes to Google Sheets
-        GoogleSheetsAdapter.save(spreadsheet, "fitbit")
+        # Never replace the entire registry with a Manager's filtered table:
+        # that could erase devices belonging to other projects.
+        rows = edited_df.to_dicts()
+        originals = {(str(r.get("project") or ""), str(r.get("name") or "")): r for r in fitbit_sheet.data}
+        editable = {"isActive", "alertsMuted", "lastActivatedDate", "user", "currentStudent"}
+        for row in rows:
+            project, name = str(row.get("project") or ""), str(row.get("name") or "")
+            require_project_access(project, context)
+            if (project, name) not in originals:
+                raise PermissionError("Register or reassign devices through the approved enrollment workflow")
+        for row in rows:
+            GoogleSheetsAdapter.update_matching_rows(spreadsheet, "fitbit",
+                keys={"project": str(row["project"]), "name": str(row["name"])},
+                updates={k: v for k, v in row.items() if k in editable})
         
         # Show success message
         st.success("Changes saved successfully!")

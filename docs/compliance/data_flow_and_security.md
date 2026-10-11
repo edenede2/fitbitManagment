@@ -1,5 +1,9 @@
 # AdmonTracker data flow and security description
 
+Version note: this document describes the production baseline plus the local
+CASA design below. CASA changes are **not yet deployed**; do not submit them as
+release evidence until acceptance/cutover. See [CASA status](../casa/README.md).
+
 ## Identities and entry points
 
 - Research staff authenticate with a basic OIDC client (`openid profile email`) and
@@ -19,7 +23,7 @@ Participant -> public disclosure -> Google Health/Fitbit OAuth
                                   -> access-controlled Sheets recovery mirror
 
 Clock worker -> Secret Manager token -> provider read-only API
-             -> temporary JSON/CSV ZIP -> restricted Google Shared Drive
+             -> temporary provider-compatible JSON -> restricted Google Shared Drive
              -> checksum/file reference -> archive_manifest in Firestore
              -> access-controlled Sheets recovery mirror
 ```
@@ -38,11 +42,30 @@ lab-mounted archive remains read-only and is not migrated.
   in Secret Manager; Firestore and the Sheets recovery mirror contain references
   and operational metadata, not plaintext OAuth secrets.
 - Shared Drive API calls set `supportsAllDrives`; folder and filenames are sanitized;
-  deterministic ZIP hashes make retries idempotent.
+  deterministic JSON checksums and manifest identities make retries idempotent.
 - One clock process, non-overlapping APScheduler jobs, restart coalescing, bounded
   misfire handling, heartbeats, and job/manifest audit rows.
 - Provider error bodies and credential-bearing values are not displayed or logged.
-- Public management tokens are random; only their SHA-256 hashes are stored.
+- The prior release uses random, hashed management URL tokens. The CASA branch
+  replaces these with hashed one-use enrollment codes and server-side sessions.
+
+## Local CASA overlay — pending rollout
+
+Staff use approved issuer/subject bindings and MFA-backed revocable sessions;
+prefix assignments never authorize access. Firestore acknowledgement/state claim
+transactions contain no external provider/credential calls. A consumed state is
+never reopened after an ambiguous exchange; a new link is required.
+
+Enrollment identity is separate from watch name. Canonical stop generations are
+checked before/after provider requests and at token/status publication, with no
+security fallback to Sheets. New token references use concrete secret versions.
+Code/session replacement and watch reassignment invalidate prior participant
+access. Archive manifests/files distinguish enrollments; in-flight uploads may
+require manual removal, not an automatic claim of deletion.
+
+These local controls still require reviewed migration, legacy gate compatibility,
+cloud/browser integration, complete service-boundary testing and manual deadline/
+all-copy deletion evidence. See the [control matrix](../casa/CONTROL_MATRIX.md).
 
 ## Approved retention and withdrawal
 

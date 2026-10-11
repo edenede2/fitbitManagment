@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import requests
-import pickle
 from pathlib import Path
 import pandas as pd
 import numpy as np
@@ -321,7 +320,7 @@ def getTempFiles(path, start_date, end_date, token):
             'Authorization': 'Bearer ' + token,
         }
 
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=60, allow_redirects=False)
 
         responses.append(response)
 
@@ -356,7 +355,7 @@ def getHRVfiles(path, start_date, end_date, token):
             'Authorization': 'Bearer ' + token,
         }
 
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=60, allow_redirects=False)
 
         responses.append(response)
 
@@ -399,7 +398,7 @@ def getfilesHR(path, start_date, end_date, token):
             'Authorization': 'Bearer ' + token,
         }
 
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=60, allow_redirects=False)
 
         if response.status_code == 200:
             response = response.json()
@@ -444,7 +443,7 @@ def getfilesSteps(path, start_date, end_date, token):
             'Authorization': 'Bearer ' + token,
         }
 
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=60, allow_redirects=False)
 
         if response.status_code == 200:
             response = response.json()
@@ -523,7 +522,7 @@ def generateRespiratoryRateCSV(path, start_date, end_date, token):
             'Authorization': 'Bearer ' + token,
         }
 
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=60, allow_redirects=False)
 
         if response.status_code == 200:
             response = response.json()
@@ -559,7 +558,7 @@ def getCalories(path, start_date, end_date, token):
             'Authorization': 'Bearer ' + token,
         }
 
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=60, allow_redirects=False)
 
         if response.status_code == 200:
             response = response.json()
@@ -636,7 +635,7 @@ def getSleepfiles(path, start_date, end_date, token):
             'Authorization': 'Bearer ' + token,
         }
 
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=60, allow_redirects=False)
 
         if response.status_code == 200:
             response = response.json()
@@ -889,6 +888,10 @@ def _resolve_watch_access_token(watch_row, spreadsheet=None):
 
     if not watch_name:
         return ""
+    from utils.collection_control import assert_collection_allowed
+    from utils.secret_store import plaintext_secret_fallback_allowed
+    assert_collection_allowed(watch_name, "fitbit", project=str(watch_row.get('project') or ''),
+        enrollment_id=str(watch_row.get('enrollment_id') or ''), generation=watch_row.get('collection_generation'))
 
     if spreadsheet is not None:
         oauth_tokens = None
@@ -905,7 +908,7 @@ def _resolve_watch_access_token(watch_row, spreadsheet=None):
         except ValueError:
             pass
 
-    return legacy_token
+    return legacy_token if plaintext_secret_fallback_allowed() else ""
 
 def process_watch_data_downloads(watch_row, tracking_df, initial_days=None, spreadsheet=None):
     """

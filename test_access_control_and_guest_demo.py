@@ -61,7 +61,7 @@ class AccessContextTests(unittest.TestCase):
         self.assertFalse(context.can_read_real_data)
 
     def test_authorized_roles_receive_expected_capabilities(self):
-        for role in ("Admin", "Manager", "Student"):
+        for role in ("Admin", "Manager"):
             with self.subTest(role=role):
                 context = build_access_context(
                     streamlit_logged_in=True,
@@ -80,11 +80,17 @@ class AccessContextTests(unittest.TestCase):
             user={
                 "is_logged_in": True,
                 "email": "shvartzmanrotem@campus.haifa.ac.il",
+                "iss": "https://accounts.google.com", "sub": "synthetic-sub",
+                "email_verified": True, "exp": 4102444800,
             },
+            secrets={"staff_identities": [{"issuer": "https://accounts.google.com",
+                "subject": "synthetic-sub", "email": "shvartzmanrotem@campus.haifa.ac.il",
+                "role": "Manager", "project": "mdma", "enabled": True}]},
             session_state=SessionState(),
         )
 
-        with patch("utils.access_control.st", fake_streamlit):
+        fake_streamlit.session_state["staff_session_id"] = "synthetic-session"
+        with patch("utils.access_control.st", fake_streamlit), patch("utils.staff_sessions.validate_staff_session"):
             context = resolve_access_context(
                 lambda email: ("Manager", "mdma")
                 if email.split("@", 1)[0].casefold() == "shvartzmanrotem"
@@ -98,7 +104,7 @@ class AccessContextTests(unittest.TestCase):
 
     def test_user_access_assignment_keeps_manager_out_of_guest_mode(self):
         secrets = {
-            "shvartzmanrotem": "Manager,mdma",
+            "shvartzmanrotem@campus.haifa.ac.il": "Manager,mdma",
             "unknown_setting": "not-a-role",
         }
         role, project = user_access_from_secrets(
@@ -110,7 +116,7 @@ class AccessContextTests(unittest.TestCase):
 
     def test_user_access_assignment_can_live_in_grouped_secrets(self):
         role, project = user_access_from_secrets(
-            {"users": {"shvartzmanrotem": "Manager,metiv"}},
+            {"users": {"shvartzmanrotem@campus.haifa.ac.il": "Manager,metiv"}},
             "shvartzmanrotem@campus.haifa.ac.il",
         )
 
@@ -124,7 +130,7 @@ class AccessContextTests(unittest.TestCase):
 
         self.assertEqual(
             user_access_from_secrets(secrets, "anuta89.ap@example.invalid"),
-            ("Manager", "metiv"),
+            ("Guest", "None"),
         )
         self.assertEqual(
             user_access_from_secrets(secrets, "unrecognized@example.invalid"),
@@ -395,7 +401,8 @@ class PageBoundaryAndLegalTests(unittest.TestCase):
             with self.subTest(callback=callback):
                 source = (PROJECT_ROOT / "utils" / callback).read_text()
                 self.assertNotIn("st.code(management_url)", source)
-                self.assertIn('st.link_button("Manage this connection", management_url)', source)
+                self.assertNotIn('st.link_button("Manage this connection", management_url)', source)
+                self.assertIn('st.page_link("pages/12_Manage_Connection.py", label="Manage this connection")', source)
 
     def test_every_functional_page_branches_guest_before_production_source(self):
         expected_pages = {

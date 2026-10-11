@@ -24,11 +24,11 @@ def _env_flag(name: str, default: bool = False) -> bool:
 
 
 def secret_manager_enabled() -> bool:
-    return _env_flag("SECRET_MANAGER_ENABLED", False)
+    return _env_flag("SECRET_MANAGER_ENABLED", os.getenv("DATA_BACKEND", "").casefold() == "firestore")
 
 
 def plaintext_secret_fallback_allowed() -> bool:
-    return _env_flag("ALLOW_PLAINTEXT_SECRET_FALLBACK", True)
+    return _env_flag("ALLOW_PLAINTEXT_SECRET_FALLBACK", os.getenv("DATA_BACKEND", "").casefold() != "firestore")
 
 
 def safe_secret_id(kind: str, *identifiers: str) -> str:
@@ -71,9 +71,10 @@ class GoogleSecretStore:
         secret_id: str,
         payload: dict[str, Any],
         existing_ref: str = "",
+        pin_version: bool = False,
     ) -> str:
         parent = f"projects/{self.project_id}"
-        name = existing_ref.strip() or _secret_name(self.project_id, secret_id)
+        name = existing_ref.strip().split("/versions/", 1)[0] or _secret_name(self.project_id, secret_id)
         if not existing_ref:
             try:
                 self.client.create_secret(
@@ -89,9 +90,16 @@ class GoogleSecretStore:
                 if "already exists" not in str(exc).casefold() and "alreadyexists" not in type(exc).__name__.casefold():
                     raise
         encoded = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
-        self.client.add_secret_version(
+        version = self.client.add_secret_version(
             request={"parent": name, "payload": {"data": encoded}}
         )
+        if pin_version:
+            # Unpublished refresh versions must not be visible through 'latest'.
+            # The trusted Google API can canonicalize a project ID to its number.
+            secret_component = name.rsplit("/", 1)[-1]
+            if not re.fullmatch(r"projects/[^/]+/secrets/" + re.escape(secret_component) + r"/versions/[0-9]+", str(version.name)):
+                raise RuntimeError("Secret Manager did not return a concrete version")
+            return str(version.name)
         return name
 
     def get_json(self, secret_ref: str) -> dict[str, Any]:
@@ -106,12 +114,32 @@ class GoogleSecretStore:
         return parsed
 
     def destroy_versions(self, secret_ref: str) -> None:
-        """Destroy all enabled versions while retaining the auditable secret shell."""
+        """Destroy and verify enabled *and disabled* versions; never claim a no-op.
+
+        The API enum uses 1=ENABLED, 2=DISABLED, 3=DESTROYED. Comparing
+        integers handles both SDK enums and Python 3.11 IntEnum rendering.
+        Delayed destruction can return DISABLED; it is pending, not complete.
+        """
         parent = secret_ref.split("/versions/", 1)[0].rstrip("/")
+        if not re.fullmatch(r"projects/[^/]+/secrets/[^/]+", parent):
+            raise ValueError("Invalid secret resource reference")
+        pending = False
         for version in self.client.list_secret_versions(request={"parent": parent}):
-            state = str(getattr(version, "state", "")).casefold()
-            if "enabled" in state:
+            state = int(version.state)
+            if state == 3:
+                continue
+            if state not in (1, 2):
+                raise RuntimeError("Secret cleanup encountered an unknown version state")
+            try:
                 self.client.destroy_secret_version(request={"name": version.name})
+                verified = self.client.get_secret_version(request={"name": version.name})
+                pending = pending or int(verified.state) != 3
+            except Exception:
+                # Continue other versions. Do not include provider bodies or
+                # credential material in the exception reported to callers.
+                pending = True
+        if pending:
+            raise RuntimeError("Secret destruction remains pending; verify and retry cleanup")
 
 
 def get_secret_store() -> GoogleSecretStore | None:
@@ -126,6 +154,7 @@ def store_json_secret(
     payload: dict[str, Any],
     *,
     existing_ref: str = "",
+    pin_version: bool = False,
 ) -> str:
     store = get_secret_store()
     if store is None:
@@ -134,6 +163,7 @@ def store_json_secret(
         secret_id=safe_secret_id(kind, *identifiers),
         payload=payload,
         existing_ref=existing_ref,
+        pin_version=pin_version,
     )
 
 

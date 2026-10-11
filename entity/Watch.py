@@ -655,6 +655,7 @@ class Watch:
     device_type: Optional[str] = None
     # Add data caching
     _cached_data: Dict[str, Dict] = field(default_factory=dict)
+    _collection_generation: Optional[int] = None
     
     def __post_init__(self):
         """Initialize after the dataclass initialization"""
@@ -669,6 +670,14 @@ class Watch:
     def __hash__(self):
         """Hash for using in dictionaries and sets"""
         return hash((self.name, self.project))
+
+    def _assert_collection_allowed(self) -> None:
+        from utils.collection_control import assert_collection_allowed
+        provider = "google_health" if self.health_client is not None else "fitbit"
+        control = assert_collection_allowed(self.name, provider, project=self.project,
+                                            generation=self._collection_generation)
+        if self._collection_generation is None:
+            self._collection_generation = int(control.get("generation", 0))
 
     def _set_token(self, token: str) -> None:
         self.token = str(token or "")
@@ -688,7 +697,8 @@ class Watch:
             return str(url)
 
     def _raise_api_error(self, endpoint_type: str, response, url: str, context: str = "") -> None:
-        response_text = self._redact_response_text(getattr(response, "text", ""))
+        # Provider error bodies may contain health/credential information.
+        response_text = ""
         url_path = self._url_path(url)
         context_text = f" {context}" if context else ""
         message = (
@@ -714,7 +724,7 @@ class Watch:
             refreshed_token = self.token_refresher()
         except Exception as exc:
             raise ApiAuthError(
-                f"Fitbit API auth failed fetching {endpoint_type}; token refresh failed: {exc}"
+                f"Fitbit API auth failed fetching {endpoint_type}; token refresh failed: {type(exc).__name__}"
             ) from exc
         if not refreshed_token:
             raise ApiAuthError(
@@ -724,7 +734,9 @@ class Watch:
         self.clear_cache()
 
     def _request_fitbit_json(self, endpoint_type: str, url: str, headers: Dict, context: str = "") -> Any:
-        response = requests.get(url, headers=headers)
+        self._assert_collection_allowed()
+        response = requests.get(url, headers=headers, timeout=60)
+        self._assert_collection_allowed()
 
         if response.status_code == 401:
             context_text = f" {context}" if context else ""
@@ -772,6 +784,7 @@ class Watch:
     
     def fetch_data(self, endpoint_type: str, force_fetch: bool = False, **kwargs) -> Dict:
         """Fetch data from Fitbit API using the Builder pattern"""
+        self._assert_collection_allowed()
         if self.health_client is not None:
             return self.health_client.fetch_raw(endpoint_type, **kwargs)
 
@@ -1141,13 +1154,9 @@ class Watch:
             List of dictionaries with date and missing data hint
         """
         url = f"https://api.fitbit.com/1/user/-/activities/heart/date/{start_date}/{end_date}.json"
-        response = requests.get(url, headers=self.header)
+        response_data = self._request_fitbit_json("Heart Rate coverage", url, self.header)
         
-        if response.status_code != 200:
-            print(f"Error in quick_scan: {response.status_code}")
-            return []
-            
-        js = response.json()
+        js = response_data
         
         rows = []
         for d in js.get("activities-heart", []):
@@ -1261,6 +1270,14 @@ class WatchFactory:
         name = details.get('name') or details.get('watchName')
         project_name = details.get('project')
         token = details.get('token')
+        from utils.security_store import collection_controls_enabled
+        if collection_controls_enabled():
+            # Never use a recovery Sheet/details-dict plaintext credential.
+            token = None
+        from utils.collection_control import assert_collection_allowed
+        canonical_provider = "google_health" if str(details.get('provider') or details.get('oauth_type') or '').lower() in {'google', 'google_health', 'google_health_api', 'health'} else "fitbit"
+        starting_control = assert_collection_allowed(str(details.get('name') or details.get('watchName') or ''),
+            canonical_provider, project=str(details.get('project') or ''), enrollment_id=str(details.get('enrollment_id') or ''))
         provider = (
             str(details.get('oauth_type') or details.get('provider') or 'fitbit')
             .strip()
@@ -1320,6 +1337,7 @@ class WatchFactory:
             token=token or "",
             health_client=health_client,
             token_refresher=token_refresher,
+            _collection_generation=int(starting_control.get('generation', 0)) if starting_control else None,
         )
         
         if 'isActive' in details:

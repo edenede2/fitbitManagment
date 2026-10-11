@@ -16,6 +16,7 @@ ARCHIVE_COLUMNS = [
     "logical_key", "project", "watchName", "provider", "data_type", "cadence",
     "period", "source_start", "source_end", "checksum", "drive_file_id",
     "drive_web_view_link", "size_bytes", "status", "message", "created_at", "updated_at",
+    "enrollment_id", "collection_generation",
 ]
 JOB_COLUMNS = [
     "run_id", "job_name", "started_at", "finished_at", "status", "message",

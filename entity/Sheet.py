@@ -1960,6 +1960,9 @@ class ServerLogFile:
 
                 # Build the log entry with updated failure counters
                 log_entry = {
+                    "provider": row.get("provider", "fitbit"),
+                    "enrollment_id": row.get("enrollment_id", ""),
+                    "collection_generation": row.get("collection_generation", 0),
                     "project": row.get("project", ""),
                     "watchName": row.get("name", ""),
                     "lastCheck": now,
@@ -2220,6 +2223,9 @@ class ServerLogFile:
 
             # Build the log entry
             log_entry = {
+                "provider": row.get("provider", "fitbit"),
+                "enrollment_id": row.get("enrollment_id", ""),
+                "collection_generation": row.get("collection_generation", 0),
                 "project": row.get("project", ""),
                 "watchName": row.get("name", ""),
                 "lastCheck": now,

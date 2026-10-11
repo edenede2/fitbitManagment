@@ -205,7 +205,7 @@ class SecretStorageTests(unittest.TestCase):
             return_value="projects/p/secrets/token",
         ), patch(
             "utils.health_token_store.upsert_active_token_row",
-            side_effect=lambda _, row: captured.update(row),
+            side_effect=lambda _, row, control=None: captured.update(row),
         ), patch("utils.health_token_store.update_fitbit_registry_after_auth"):
             save_google_health_tokens_for_watch(
                 Mock(),
@@ -358,7 +358,9 @@ class ArchiveBehaviorTests(unittest.TestCase):
             "monthly",
         )
 
-        def response(_token, path, *, data_type):
+        def response(_token, path, *, data_type, collection_guard=None):
+            if collection_guard:
+                collection_guard()
             date_text = "2026-06-29" if "2026-06-29" in path else "2026-06-30"
             return {
                 "activities-steps": [{"dateTime": date_text}],
