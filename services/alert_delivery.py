@@ -35,7 +35,7 @@ def as_bool(value: Any, *, default: bool = False) -> bool:
 def _as_int(value: Any, default: int) -> int:
     try:
         return int(float(value))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return default
 
 
@@ -57,6 +57,32 @@ def next_interval_hours(send_count: int) -> int:
     return ALERT_INTERVALS_HOURS[index]
 
 
+def _state_interval_hours(state: dict[str, Any]) -> int:
+    """Use successful sends as the authority; tolerate older state records.
+
+    The cached interval is redundant with send_count. A stale/corrupt cached
+    value must not shorten or extend the configured reminder sequence.
+    """
+    send_count = _as_int(state.get("send_count"), 0)
+    if send_count > 0:
+        return next_interval_hours(send_count)
+    return min(max(_as_int(state.get("next_interval_hours"), 1), 1), 24)
+
+
+def next_alert_due_at(state: dict[str, Any]) -> datetime | None:
+    """UTC deadline for the next reminder, or the first unsent detection.
+
+    Closed/muted episodes have no reminder job. The same deadline calculation
+    drives both the clock timer and the alert job's final due check.
+    """
+    if not as_bool(state.get("active")) or as_bool(state.get("muted")):
+        return None
+    last_sent = parse_timestamp(state.get("last_sent_at"))
+    if last_sent is None:
+        return parse_timestamp(state.get("first_detected_at"))
+    return last_sent + timedelta(hours=_state_interval_hours(state))
+
+
 def alert_is_due(state: dict[str, Any] | None, now: datetime) -> bool:
     """Return whether an active problem should generate an email now."""
     if not state or not as_bool(state.get("active")):
@@ -64,7 +90,7 @@ def alert_is_due(state: dict[str, Any] | None, now: datetime) -> bool:
     last_sent = parse_timestamp(state.get("last_sent_at"))
     if last_sent is None:
         return True
-    interval = max(_as_int(state.get("next_interval_hours"), 1), 0)
+    interval = _state_interval_hours(state)
     return now.astimezone(timezone.utc) >= last_sent + timedelta(hours=interval)
 
 
@@ -91,7 +117,7 @@ def detected_state(
         ),
         "last_sent_at": str(previous.get("last_sent_at") or "") if was_active and previous else "",
         "next_interval_hours": (
-            _as_int(previous.get("next_interval_hours"), 1)
+            _state_interval_hours(previous)
             if was_active and previous
             else 1
         ),
@@ -115,7 +141,7 @@ def sent_state(
     thread_last_message_id: str = "",
 ) -> dict[str, Any]:
     """Advance the delivery interval after a successful email."""
-    send_count = _as_int(current.get("send_count"), 0) + 1
+    send_count = max(_as_int(current.get("send_count"), 0), 0) + 1
     timestamp = now.astimezone(timezone.utc).isoformat()
     return {
         **current,

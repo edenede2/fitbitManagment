@@ -7,20 +7,29 @@ import os
 import threading
 import time
 import traceback
+from datetime import datetime, timedelta, timezone
 
+from apscheduler.jobstores.base import JobLookupError
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
-from entity.Sheet import Spreadsheet
+from entity.Sheet import Spreadsheet, GoogleSheetsAdapter
 from model.config import get_secrets
-from run_data_collection import hourly_data_collection, load_runtime_config
+from run_data_collection import (
+    ALERT_STATE_TAB, check_saved_wearable_alerts, hourly_data_collection, load_runtime_config,
+)
 from run_drive_archive_collection import collect_drive_archives
 from services.archive_manifest import finish_job, heartbeat, start_job
+from services.alert_delivery import next_alert_due_at
 
 
 TIMEZONE = os.getenv("SCHEDULER_TIMEZONE", "Asia/Jerusalem")
 _job_lock = threading.Lock()
+_scheduler = None
+ALERT_REMINDER_JOB_ID = "wearable-alert-reminder"
+ALERT_RETRY_SECONDS = 300
 
 
 def _enabled() -> bool:
@@ -122,8 +131,64 @@ def _run_audited(
         _job_lock.release()
 
 
+def _clock_now_utc():
+    return datetime.now(timezone.utc)
+
+
+def _schedule_alert_reminder() -> None:
+    """One earliest-deadline timer, restored from persistent state on startup.
+
+    This is not a polling loop. SMTP/clock failures get a bounded five-minute
+    retry, while successful deliveries get the next 1/2/4/8/16/24-hour deadline.
+    """
+    if _scheduler is None or not _enabled():
+        return
+    try:
+        rows = GoogleSheetsAdapter.get_rows(_spreadsheet(), ALERT_STATE_TAB)
+        due_times = [due for row in rows if (due := next_alert_due_at(row)) is not None]
+        if not due_times:
+            try:
+                _scheduler.remove_job(ALERT_REMINDER_JOB_ID)
+            except JobLookupError:
+                pass
+            return
+        now = _clock_now_utc()
+        due = min(due_times)
+        if due <= now:
+            due = now + timedelta(seconds=ALERT_RETRY_SECONDS)
+        _scheduler.add_job(
+            run_alert_reminders,
+            DateTrigger(run_date=due, timezone=TIMEZONE),
+            id=ALERT_REMINDER_JOB_ID,
+            replace_existing=True,
+        )
+    except Exception as exc:
+        # A schedule read failure must not kill the hourly monitor. Restore the
+        # timer after five minutes rather than silently waiting another hour.
+        print(f"Wearable reminder scheduling needs retry: {type(exc).__name__}")
+        _scheduler.add_job(
+            run_alert_reminders,
+            DateTrigger(
+                run_date=_clock_now_utc() + timedelta(seconds=ALERT_RETRY_SECONDS),
+                timezone=TIMEZONE,
+            ),
+            id=ALERT_REMINDER_JOB_ID,
+            replace_existing=True,
+        )
+
+
 def run_monitoring() -> None:
-    _run_audited("hourly-monitoring", hourly_data_collection)
+    try:
+        _run_audited("hourly-monitoring", hourly_data_collection)
+    finally:
+        _schedule_alert_reminder()
+
+
+def run_alert_reminders() -> None:
+    try:
+        _run_audited(ALERT_REMINDER_JOB_ID, check_saved_wearable_alerts)
+    finally:
+        _schedule_alert_reminder()
 
 
 def run_archive() -> None:
@@ -147,6 +212,7 @@ def write_heartbeat() -> None:
 
 
 def build_scheduler() -> BlockingScheduler:
+    global _scheduler
     scheduler = BlockingScheduler(
         timezone=TIMEZONE,
         job_defaults={
@@ -173,11 +239,13 @@ def build_scheduler() -> BlockingScheduler:
         id="clock-heartbeat",
         replace_existing=True,
     )
+    _scheduler = scheduler
     return scheduler
 
 
 def main() -> int:
     print(f"Starting AdmonTracker clock in timezone {TIMEZONE}; jobs_enabled={_enabled()}")
+    scheduler = build_scheduler()
     catch_up = os.getenv("CLOCK_CATCH_UP_ON_START", "true").strip().casefold() in {
         "1", "true", "yes", "on",
     }
@@ -189,7 +257,8 @@ def main() -> int:
                 catch_up_job()
             except Exception as exc:
                 print(f"Clock catch-up failed with {type(exc).__name__}; regular scheduling will continue")
-    build_scheduler().start()
+    _schedule_alert_reminder()
+    scheduler.start()
     return 0
 
 

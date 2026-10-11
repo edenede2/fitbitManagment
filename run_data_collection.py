@@ -588,7 +588,7 @@ def send_email_alert(
             ))
             message.attach(MIMEText(message_body, "html", "utf-8"))
 
-            with smtplib.SMTP(smtp_server, smtp_port) as server:
+            with smtplib.SMTP(smtp_server, smtp_port, timeout=30) as server:
                 server.starttls()
                 server.login(sender_email, sender_password)
                 server.sendmail(sender_email, recipient, message.as_string())
@@ -692,6 +692,11 @@ def _persist_alert_state(
         _append(spreadsheet, ALERT_STATE_TAB, ALERT_STATE_COLUMNS, state)
     state_by_key[key] = dict(state)
 
+def _alert_now_utc():
+    """Fresh clock readings separate evaluation from SMTP delivery time."""
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
 def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_data=None):
     """
     Check Fitbit data against alert thresholds and send email alerts.
@@ -713,7 +718,7 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
             print("No data available for Fitbit alerts check")
             return alerts_sent
 
-        now_utc = datetime.datetime.now(datetime.timezone.utc)
+        now_utc = _alert_now_utc()
 
         # Alert state persists the backoff across dyno restarts. One bounded read
         # replaces repeated per-watch state reads for both Sheets and Firestore.
@@ -1022,7 +1027,7 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
             plain_text, html = build_wearable_alert_message(
                 project=str(project),
                 watches=watches,
-                evaluated_at=now_utc,
+                evaluated_at=_alert_now_utc(),
             )
             subject = f"AdmonTracker Fitbit/Google Health alert - {project}"
             result = send_email_alert(
@@ -1037,6 +1042,9 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
 
             # Track results
             if result:
+                # Base the next gap on successful SMTP completion, not a
+                # potentially much earlier monitoring/evaluation timestamp.
+                delivered_at = _alert_now_utc()
                 if project not in alerts_sent:
                     alerts_sent[project] = {
                         'watches': [],
@@ -1051,7 +1059,7 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
                     delivered_state = sent_state(
                         watch_data['alert_state'],
                         reasons=watch_data['alert_reasons'],
-                        now=now_utc,
+                        now=delivered_at,
                         thread_recipient_fingerprint=group_fingerprint,
                         thread_root_message_id=root_message_id or current_message_id,
                         thread_last_message_id=current_message_id,
@@ -1076,7 +1084,7 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
                             **active_state,
                             'thread_root_message_id': root_message_id or current_message_id,
                             'thread_last_message_id': current_message_id,
-                            'updated_at': now_utc.isoformat(),
+                            'updated_at': delivered_at.isoformat(),
                         }
                         _persist_alert_state(spreadsheet, state_by_key, threaded_state)
 
@@ -1094,6 +1102,26 @@ def check_fitbit_alerts(spreadsheet:Spreadsheet,log_data, config_data, fitbit_da
         print(f"Error checking Fitbit alerts: {e}")
         print(traceback.format_exc())
         return alerts_sent
+
+def check_saved_wearable_alerts():
+    """Deliver due reminders using latest saved status, never provider polling.
+
+    The hourly monitor owns detection and updates the bounded 'log' snapshot.
+    Reminder timers read that snapshot, not the historical FitbitLog table.
+    """
+    load_runtime_config()
+    key = str(os.getenv("SPREADSHEET_KEY") or "").strip()
+    if not key:
+        raise RuntimeError("SPREADSHEET_KEY is required for wearable reminders")
+    spreadsheet = Spreadsheet(name="FitbitData", api_key=key)
+    GoogleSheetsAdapter.connect(spreadsheet)
+    config = spreadsheet.get_sheet(
+        "fitbit_alerts_config", sheet_type="fitbit_alerts_config",
+    ).to_dataframe(engine="polars")
+    devices = spreadsheet.get_sheet("fitbit", sheet_type="fitbit").to_dataframe(engine="polars")
+    latest = spreadsheet.get_sheet("log", sheet_type="log").to_dataframe(engine="polars")
+    sent = check_fitbit_alerts(spreadsheet, latest, config, devices)
+    return {"alert_projects": len(sent)}
 
 def check_qualtrics_alerts(suspicious_numbers, config_data):
     """

@@ -235,7 +235,24 @@ detects it. While the same problem remains active, later emails are sent 1, 2,
 4, 8, 16, and 24 hours after the preceding successful email, then every 24
 hours. Delivery state is stored in the `fitbit_alert_state` Firestore collection
 (or a same-named Sheet before Firestore cutover), so a dyno restart does not
-restart the sequence. Resolving the condition, deactivating the watch, or using
+restart the sequence. The cumulative ideal delivery offsets are 0, 1, 3, 7,
+15, 31, 55, 79, 103 hours; these are not gaps measured from first detection.
+The successful send count determines each next gap, even if an older cached
+interval is inconsistent. A failed SMTP delivery does not advance the sequence.
+SMTP connections have a 30-second timeout, and `last_sent_at` is recorded after
+successful SMTP completion rather than at monitoring-job start.
+
+Monitoring detects new problems hourly. An additional **one-shot reminder timer**
+in the existing clock dyno schedules the earliest active episode's due time, so
+an email delivered just after the hour does not have to wait for another hourly
+tick. This timer reads the bounded latest `log` status, current configuration and
+device/mute state; it does not read historical `FitbitLog` or poll either provider.
+Each execution rearms the earliest remaining deadline, and startup restores it
+from persisted state. SMTP, scheduling or overlap failures retry after five
+minutes. Downtime or a busy clock can delay mail; one overdue reminder is sent,
+not a burst of missed reminders. There is no new dyno or cloud resource, but
+reminder jobs add metadata reads and job/state audit writes.
+Resolving the condition, deactivating the watch, or using
 **Mute Alerts** in Device Management resets the sequence. If an unmuted watch is
 still failing, the next monitoring run treats it as a new detection.
 
@@ -245,6 +262,23 @@ episode into a single conversation per project and recipient group. The thread
 ends when the condition resolves or is muted; a later recurrence starts a new
 conversation. Recipient addresses are not stored in alert state: only a one-way
 fingerprint is kept for thread matching.
+
+Local verification (11 October 2026): the isolated `heroku` regression suite
+passed 160 tests, with 10 unsafe standalone lab smoke cases explicitly skipped.
+The 58 targeted alert/configuration/Firestore tests also passed with the minimum
+supported APScheduler 3.10.4; the full suite used APScheduler 3.11.3 and local
+Python 3.10. Tests blocked network access and used synthetic persistent state
+and SMTP, including a real paused scheduler with no cloud jobs executed. This is
+not a live SMTP-delivery or exact production-runtime acceptance result.
+The [APScheduler date trigger](https://apscheduler.readthedocs.io/en/3.x/modules/triggers/date.html)
+provides the one-shot timer; Firestore alert state remains the restart authority.
+
+Release impact: this is an alert-only code change with no config or data migration
+and no new infrastructure. It adds metadata/audit operations when reminders are
+due; actual Firestore charges depend on active alert/device counts and applicable
+allowances. Deployment still requires operator approval and a controlled live
+mail smoke test. Reverting this alert-only patch removes the new timer; preserve
+`fitbit_alert_state` send counts/timestamps rather than clearing schedules.
 
 Each alert contains a compact latest-device snapshot with the current battery
 and heart-rate values when those values are available in the existing status

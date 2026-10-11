@@ -1,6 +1,8 @@
 import datetime
 import os
 import unittest
+from contextlib import contextmanager
+from copy import deepcopy
 from email import message_from_string
 from unittest.mock import Mock, patch
 
@@ -89,6 +91,29 @@ class AlertScheduleTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertNotIn("manager", first)
         self.assertNotIn("@", first)
+
+    def test_send_count_overrides_a_stale_cached_interval(self):
+        last_sent = datetime.datetime(2026, 10, 11, 8, tzinfo=UTC)
+        for cached_interval in (0, -1, 1, 2, 999, "bad", float("inf")):
+            with self.subTest(cached_interval=cached_interval):
+                state = {
+                    "active": "TRUE", "send_count": 3,
+                    "last_sent_at": last_sent.isoformat(),
+                    "next_interval_hours": cached_interval,
+                }
+                self.assertFalse(alert_is_due(state, last_sent + datetime.timedelta(hours=4, seconds=-1)))
+                self.assertTrue(alert_is_due(state, last_sent + datetime.timedelta(hours=4)))
+
+    def test_legacy_intervals_are_bounded_when_send_count_is_missing(self):
+        last_sent = datetime.datetime(2026, 10, 11, 8, tzinfo=UTC)
+        for cached_interval, gap in ((2, 2), (0, 1), (-1, 1), (999, 24), ("bad", 1), (float("inf"), 1)):
+            with self.subTest(cached_interval=cached_interval):
+                state = {
+                    "active": "TRUE", "last_sent_at": last_sent.isoformat(),
+                    "next_interval_hours": cached_interval,
+                }
+                self.assertFalse(alert_is_due(state, last_sent + datetime.timedelta(hours=gap, seconds=-1)))
+                self.assertTrue(alert_is_due(state, last_sent + datetime.timedelta(hours=gap)))
 
 
 class AlertMessageTests(unittest.TestCase):
@@ -193,6 +218,8 @@ class EmailSenderTests(unittest.TestCase):
 
         self.assertTrue(result)
         self.assertEqual(smtp_class.call_count, 2)
+        for call in smtp_class.call_args_list:
+            self.assertEqual(call.kwargs["timeout"], 30)
         self.assertEqual(smtp.starttls.call_count, 2)
         self.assertEqual(smtp.login.call_count, 2)
         recipients = [call.args[1] for call in smtp.sendmail.call_args_list]
@@ -258,6 +285,162 @@ class AlertJobTests(unittest.TestCase):
         spreadsheet = Mock()
         spreadsheet.get_sheet.return_value = user_sheet
         return spreadsheet
+
+    @contextmanager
+    def _persistent_job(self):
+        """Run the real alert job against persisted synthetic state and SMTP."""
+        records = {}
+        clock = {"now": datetime.datetime(2026, 10, 11, 8, tzinfo=UTC)}
+        spreadsheet = self._spreadsheet()
+
+        def append(_spreadsheet, tab, _columns, row):
+            self.assertEqual(tab, run_data_collection.ALERT_STATE_TAB)
+            records[(row["project"], row["watchName"])] = deepcopy(row)
+
+        def update(_spreadsheet, tab, *, keys, updates):
+            self.assertEqual(tab, run_data_collection.ALERT_STATE_TAB)
+            key = (keys["project"], keys["watchName"])
+            if key not in records:
+                return False
+            records[key].update(deepcopy(updates))
+            return True
+
+        def run(*, failing=True, muted=False, active=True, provider="fitbit"):
+            devices = self._devices(muted=muted).with_columns(
+                pl.lit(provider).alias("provider"),
+                pl.lit("TRUE" if active else "FALSE").alias("isActive"),
+            )
+            return run_data_collection.check_fitbit_alerts(
+                spreadsheet,
+                self._log(current_failed_sync=1 if failing else 0),
+                self._config(),
+                devices,
+            )
+
+        with patch.object(
+            run_data_collection.GoogleSheetsAdapter, "get_rows",
+            side_effect=lambda *args, **kwargs: deepcopy(list(records.values())),
+        ), patch.object(
+            run_data_collection, "_append", side_effect=append,
+        ), patch.object(
+            run_data_collection, "_update_row_by_keys", side_effect=update,
+        ), patch.object(
+            run_data_collection, "_alert_now_utc", side_effect=lambda: clock["now"],
+        ), patch.object(
+            run_data_collection, "send_email_alert", return_value=True,
+        ) as send:
+            yield run, records, clock, send
+
+    def test_full_persisted_cadence_for_both_wearable_providers(self):
+        # These are cumulative offsets. Each reminder gap is measured from the
+        # preceding successful mail, not from the first detected threshold.
+        expected_hours = [0, 1, 3, 7, 15, 31, 55, 79, 103]
+        for provider in ("fitbit", "google_health"):
+            with self.subTest(provider=provider), self._persistent_job() as (run, records, clock, send):
+                start = clock["now"]
+                for send_index, elapsed in enumerate(expected_hours):
+                    if send_index:
+                        clock["now"] = start + datetime.timedelta(hours=elapsed, seconds=-1)
+                        self.assertEqual(run(provider=provider), {})
+                        self.assertEqual(send.call_count, send_index)
+                    clock["now"] = start + datetime.timedelta(hours=elapsed)
+                    result = run(provider=provider)
+                    state = records[("Yoga", "YN4")]
+                    self.assertEqual(result["Yoga"]["count"], 1)
+                    self.assertEqual(send.call_count, send_index + 1)
+                    self.assertEqual(state["send_count"], send_index + 1)
+                    self.assertEqual(state["next_interval_hours"], next_interval_hours(send_index + 1))
+                    self.assertEqual(state["last_sent_at"], clock["now"].isoformat())
+                    # A duplicate job/restart using persisted state must not mail again.
+                    self.assertEqual(run(provider=provider), {})
+                    self.assertEqual(send.call_count, send_index + 1)
+
+    def test_failed_smtp_does_not_advance_or_delay_the_sequence(self):
+        with self._persistent_job() as (run, records, clock, send):
+            send.return_value = False
+            self.assertEqual(run(), {})
+            state = records[("Yoga", "YN4")]
+            self.assertEqual(state["send_count"], 0)
+            self.assertEqual(state["last_sent_at"], "")
+
+            send.return_value = True
+            clock["now"] += datetime.timedelta(minutes=5)
+            run()
+            first_sent = records[("Yoga", "YN4")]["last_sent_at"]
+            clock["now"] += datetime.timedelta(hours=1)
+            send.return_value = False
+            self.assertEqual(run(), {})
+            self.assertEqual(records[("Yoga", "YN4")]["send_count"], 1)
+            self.assertEqual(records[("Yoga", "YN4")]["last_sent_at"], first_sent)
+            send.return_value = True
+            clock["now"] += datetime.timedelta(minutes=1)
+            run()
+            self.assertEqual(records[("Yoga", "YN4")]["send_count"], 2)
+            self.assertEqual(records[("Yoga", "YN4")]["next_interval_hours"], 2)
+
+    def test_gap_starts_after_smtp_completion_not_evaluation(self):
+        with self._persistent_job() as (run, records, clock, send):
+            evaluated_at = clock["now"]
+
+            def smtp_delay(*args, **kwargs):
+                clock["now"] += datetime.timedelta(minutes=5)
+                return True
+
+            send.side_effect = smtp_delay
+            run()
+            self.assertEqual(records[("Yoga", "YN4")]["last_sent_at"], clock["now"].isoformat())
+            clock["now"] = evaluated_at + datetime.timedelta(hours=1)
+            self.assertEqual(run(), {})
+            self.assertEqual(send.call_count, 1)
+            clock["now"] += datetime.timedelta(minutes=5)
+            run()
+            self.assertEqual(send.call_count, 2)
+
+    def test_saved_reminder_job_uses_latest_status_without_provider_collection(self):
+        frames = {
+            "fitbit_alerts_config": self._config(),
+            "fitbit": self._devices(),
+            "log": self._log(),
+        }
+        spreadsheet = Mock()
+        spreadsheet.get_sheet.side_effect = lambda name, **kwargs: Mock(
+            to_dataframe=Mock(return_value=frames[name])
+        )
+        with patch.dict(os.environ, {"SPREADSHEET_KEY": "synthetic-sheet"}), patch.object(
+            run_data_collection, "load_runtime_config",
+        ), patch.object(
+            run_data_collection, "Spreadsheet", return_value=spreadsheet,
+        ), patch.object(
+            run_data_collection.GoogleSheetsAdapter, "connect",
+        ), patch.object(
+            run_data_collection, "check_fitbit_alerts", return_value={"Yoga": {"count": 1}},
+        ) as alert, patch.object(run_data_collection, "get_watch_details") as collect:
+            self.assertEqual(run_data_collection.check_saved_wearable_alerts(), {"alert_projects": 1})
+        collect.assert_not_called()
+        self.assertEqual([call.args[0] for call in spreadsheet.get_sheet.call_args_list], list(frames))
+        self.assertEqual(alert.call_args.args[1].to_dicts(), self._log().to_dicts())
+
+    def test_recovery_mute_and_deactivation_reset_the_episode(self):
+        for reset_arguments in ({"failing": False}, {"muted": True}, {"active": False}):
+            with self.subTest(reset_arguments=reset_arguments), self._persistent_job() as (run, records, clock, send):
+                run()
+                clock["now"] += datetime.timedelta(hours=1)
+                run()
+                prior_thread = records[("Yoga", "YN4")]["thread_root_message_id"]
+                clock["now"] += datetime.timedelta(minutes=1)
+                self.assertEqual(run(**reset_arguments), {})
+                reset_state = records[("Yoga", "YN4")]
+                self.assertEqual(reset_state["active"], "FALSE")
+                self.assertEqual(reset_state["send_count"], 0)
+                self.assertEqual(send.call_count, 2)
+                clock["now"] += datetime.timedelta(minutes=1)
+                run()
+                state = records[("Yoga", "YN4")]
+                self.assertEqual(send.call_count, 3)
+                self.assertEqual(state["send_count"], 1)
+                self.assertEqual(state["next_interval_hours"], 1)
+                self.assertNotEqual(state["thread_root_message_id"], prior_thread)
+                self.assertEqual(send.call_args.kwargs["in_reply_to"], "")
 
     def test_detected_problem_sends_now_and_persists_next_interval(self):
         spreadsheet = self._spreadsheet()
